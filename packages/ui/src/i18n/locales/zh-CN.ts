@@ -63,22 +63,21 @@ const zhCN: Record<string, string> = {
   "occupationOnboarding.suggestions": "开启主动任务推荐",
   "occupationOnboarding.suggestionsDescription": "在新对话中显示任务建议，点击后填入输入框。",
   "occupationOnboarding.close": "退出引导",
-  "startup.global.silent": "正在启动 ZCode",
+  "startup.global.silent": "正在启动 YCode",
   "startup.global.upgrading": "正在升级本地数据",
   "startup.global.initializing": "正在初始化本地数据",
   "startup.global.waiting": "正在等待数据库准备",
   "startup.global.saving": "正在保存更新",
   "startup.global.finishing": "正在完成启动",
   "startup.global.servicesFailed":
-    "本地数据准备已完成，但应用服务启动失败。请复制诊断信息，退出并重新打开 ZCode。",
+    "本地数据准备已完成，但应用服务启动失败。请复制诊断信息，退出并重新打开 YCode。",
   "startup.global.starting": "正在准备本地数据",
   "startup.global.preparing_host_storage": "正在更新任务索引",
   "startup.global.preparing_session_storage": "正在更新聊天记录",
-  "startup.global.starting_services": "正在启动 ZCode",
+  "startup.global.starting_services": "正在启动 YCode",
   "startup.global.ready": "本地数据已就绪",
   "startup.global.failed": "无法完成启动准备",
-  "startup.global.help":
-    "准备完成后将自动进入 ZCode。历史记录较多时可能需要较长时间，请保持应用运行。",
+  "startup.global.help": "正在准备就绪，即将进入 YCode。",
   "startup.global.diagnostic": "诊断 ID",
   "startup.global.copy": "复制诊断信息",
   "startup.global.exit": "退出",
@@ -97,15 +96,15 @@ const zhCN: Record<string, string> = {
   "startup.global.error.open_failed":
     "无法打开数据库。请检查数据目录是否存在且可访问，处理后点击重试。",
   "startup.global.error.lock_timeout":
-    "等待数据库写锁超时。请检查其他 ZCode 或 CLI 进程是否仍在更新数据，待其完成后点击重试。",
+    "等待数据库写锁超时。请检查其他 YCode 或 CLI 进程是否仍在更新数据，待其完成后点击重试。",
   "startup.global.error.sql_failed":
     "准备过程未完成。请复制诊断信息查看日志，排除问题后手动重试。应用不会自动重试。",
   "startup.global.error.startup_status_timeout":
-    "未能收到启动状态。请退出并重新打开 ZCode；如果仍失败，请提供诊断信息。",
+    "未能收到启动状态。请退出并重新打开 YCode；如果仍失败，请提供诊断信息。",
   "startup.global.error.transport_closed":
-    "数据准备进程意外退出或连接中断。请退出并重新打开 ZCode，应用会重新检查迁移记录。",
+    "数据准备进程意外退出或连接中断。请退出并重新打开 YCode，应用会重新检查迁移记录。",
   "startup.global.error.unsupported_runtime":
-    "当前配置的 Agent 不支持独立存储准备。请恢复配套的 Agent 后重新打开 ZCode。",
+    "当前配置的 Agent 不支持独立存储准备。请恢复配套的 Agent 后重新打开 YCode。",
 
   "startup.database.checking": "正在检查历史数据",
   "startup.database.waiting_for_lock": "数据库正被其他进程使用，正在等待",

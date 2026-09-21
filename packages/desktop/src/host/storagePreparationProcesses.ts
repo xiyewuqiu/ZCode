@@ -4,6 +4,7 @@ import { Worker } from "node:worker_threads";
 import { createInterface } from "node:readline";
 import { z } from "zod";
 import {
+  classifyDatabaseStartupError,
   databaseStartupErrorCodeSchema,
   databaseMigrationFactsSchema,
   type DatabaseMigrationFacts,
@@ -11,34 +12,12 @@ import {
   zcodeStoragePreparationFrameSchema,
   type DatabaseStartupState,
 } from "@zcode/shared";
-import { resolveDefaultZCodeAgentCommand } from "@zcode/services/storage-startup";
+import {
+  prepareTasksIndexStorage,
+  resolveDefaultZCodeAgentCommand,
+} from "@zcode/services/storage-startup";
 
 type Phase = NonNullable<DatabaseStartupState["databasePhase"]>;
-const workerMessageSchema = z.discriminatedUnion("type", [
-  z
-    .object({
-      type: z.literal("progress"),
-      migration: databaseMigrationFactsSchema.optional(),
-      phase: z.enum([
-        "checking",
-        "waiting_for_lock",
-        "migrating",
-        "committing",
-        "maintaining",
-        "ready",
-      ]),
-    })
-    .strict(),
-  z.object({ type: z.literal("done") }).strict(),
-  z
-    .object({
-      type: z.literal("failed"),
-      errorCode: databaseStartupErrorCodeSchema,
-      migration: databaseMigrationFactsSchema.optional(),
-      ...databaseStartupErrorDetailsSchema.shape,
-    })
-    .strict(),
-]);
 const statusError = (
   kind: string,
   details?: {
@@ -58,52 +37,34 @@ const statusError = (
       databaseId && details?.migration ? { databaseId, migration: details.migration } : undefined,
   });
 
-export function prepareHostStorage(
+export async function prepareHostStorage(
   path: string,
   report: (phase: Phase, migration?: DatabaseMigrationFacts) => void,
   signal: AbortSignal,
 ): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const worker = new Worker(new URL("./tasksStorageWorker.js", import.meta.url), {
-      workerData: { path },
+  if (signal.aborted) throw statusError("transport_closed");
+  try {
+    await prepareTasksIndexStorage(path, (phase, migration) => {
+      if (signal.aborted) throw statusError("transport_closed");
+      report(phase, migration);
     });
-    let done = false;
-    let failure: unknown;
-    let firstState = false;
-    const firstStateTimer = setTimeout(() => {
-      failure = statusError("startup_status_timeout");
-      void worker.terminate();
-    }, 30_000);
-    const abort = () => {
-      failure = statusError("transport_closed");
-      void worker.terminate();
-    };
-    signal.addEventListener("abort", abort, { once: true });
-    worker.on("message", (raw: unknown) => {
-      const result = workerMessageSchema.safeParse(raw);
-      if (!result.success) {
-        failure = statusError("transport_closed");
-        void worker.terminate();
-        return;
-      }
-      firstState = true;
-      clearTimeout(firstStateTimer);
-      const message = result.data;
-      if (message.type === "progress") report(message.phase, message.migration);
-      else if (message.type === "done") done = true;
-      else failure = statusError(message.errorCode, message, "tasks-index");
-    });
-    worker.once("error", (error) => {
-      failure = error;
-    });
-    worker.once("exit", (code) => {
-      clearTimeout(firstStateTimer);
-      signal.removeEventListener("abort", abort);
-      if (done && code === 0 && !failure && firstState) resolve();
-      else reject(failure ?? statusError("transport_closed"));
-    });
-    if (signal.aborted) abort();
-  });
+  } catch (error) {
+    const migration = databaseMigrationFactsSchema.safeParse(
+      error && typeof error === "object"
+        ? (error as { startupMigration?: unknown }).startupMigration
+        : undefined,
+    );
+    throw statusError(
+      classifyDatabaseStartupError(error),
+      {
+        sqliteCode: (error as { errcode?: number })?.errcode,
+        systemCode: (error as { code?: string })?.code,
+        migrationId: (error as { migrationId?: string })?.migrationId,
+        migration: migration.success ? migration.data : undefined,
+      },
+      "tasks-index",
+    );
+  }
 }
 
 /** 在 Host 所属 Worker 运行同一 CLI bundle 的存储入口；Host 退出不会留下持锁孤儿进程。 */
