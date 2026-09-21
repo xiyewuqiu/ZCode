@@ -159,8 +159,6 @@ export default defineConfig(({ mode }) => {
     env: zcodeEnv,
     envBaseOrigin: env.ZCODE_BASE_URL ?? env.ZCODE_ENDPOINT_ORIGIN,
   });
-  const codingPlanWebviewOrigin =
-    env.VITE_CODING_PLAN_WEBVIEW_ORIGIN ?? process.env.VITE_CODING_PLAN_WEBVIEW_ORIGIN ?? "";
   const plugins = [
     ...(e2eCoverageEnabled ? [createE2EUIRendererCoveragePlugin(repoRoot)] : []),
     pdfJsCMapsPlugin(),
@@ -198,7 +196,6 @@ export default defineConfig(({ mode }) => {
       "import.meta.env.VITE_ZCODE_BASE_URL": JSON.stringify(zcodeEndpointOrigin),
       // 兼容旧 renderer 读取名；新代码统一读 VITE_ZCODE_BASE_URL。
       "import.meta.env.VITE_ZCODE_ENDPOINT_ORIGIN": JSON.stringify(zcodeEndpointOrigin),
-      "import.meta.env.VITE_CODING_PLAN_WEBVIEW_ORIGIN": JSON.stringify(codingPlanWebviewOrigin),
       "import.meta.env.VITE_REWARDS_WEBVIEW_ORIGIN": JSON.stringify(
         env.VITE_REWARDS_WEBVIEW_ORIGIN ?? process.env.VITE_REWARDS_WEBVIEW_ORIGIN ?? "",
       ),
@@ -230,6 +227,16 @@ export default defineConfig(({ mode }) => {
           "resource-manager": resolve(__dirname, "src/renderer/resource-manager.html"),
           "cua-permission-panel": resolve(__dirname, "src/renderer/cua-permission-panel.html"),
         },
+        // 不配置 output.codeSplitting.groups：Rolldown 的分组会把"匹配 test 的全部模块"
+        // 合成一个 chunk，而引用它的首屏 chunk 必须整体加载——即使其中大部分模块只被 lazy 页面
+        // 使用。实测（.arts/measure-initial.mjs，同一份源码）：
+        //   lucide 全量聚合        → 首屏闭包 7886 → 8065 KiB（+179，lucide 单 chunk 719 KiB，
+        //                            而首屏真正用到的图标合计仅 ~80 KiB）
+        //   lucide entriesAware    → 7806 KiB（分桶仍以 HTML entry 为单位，动态 import 的
+        //                            页面与首屏同桶，仍多带 ~371 KiB）
+        //   vendor-react 聚合      → 7703 KiB（react/react-dom 里只有 lazy 路径使用的部分被一并提起）
+        // 结论：本仓库的首屏收益来自源码侧的 lazy 边界，不来自聚合分组；lucide 的 2768 个碎片
+        // chunk 是 lazy 路径的请求数问题，若要解决应另找手段（按边界聚合），不能拿首屏字节换。
       },
     },
   };

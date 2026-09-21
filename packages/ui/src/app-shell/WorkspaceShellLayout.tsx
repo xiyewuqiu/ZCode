@@ -1,5 +1,5 @@
 /* eslint-disable max-lines -- workspace shell 当前集中编排 sidebar、chat、terminal 和 browser pane 的布局联动，先保持单文件收口，避免为满足行数限制打散关键布局状态。*/
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   CSSProperties,
   KeyboardEvent as ReactKeyboardEvent,
@@ -38,14 +38,24 @@ import { useIsOfficeMode } from "@/hooks/useInterfaceMode.js";
 import { GitBranchSwitcher } from "@/GitBranchSwitcher.js";
 import { ScopedErrorBoundary } from "@/ErrorBoundary.js";
 
-import { AUTOMATIONS_TOAST_ANCHOR_ID, AutomationsSection } from "@/settings/AutomationsSection.js";
+// 锚点常量独立导出：shell 只挂锚点，不应为此静态引入整个定时任务页面（约 550KB 源码）。
+import { AUTOMATIONS_TOAST_ANCHOR_ID } from "@/settings/automationsToastAnchor.js";
+const AutomationsSection = lazy(() =>
+  import("@/settings/AutomationsSection.js").then((module) => ({
+    default: module.AutomationsSection,
+  })),
+);
 import type {
   SavedWorkflowLaunchTarget,
   SavedWorkflowsOpenArtifactParams,
   SavedWorkflowsOpenRunParams,
 } from "@/settings/saved-workflows/SavedWorkflowsSection.js";
 import { AutomationsMainBreadcrumbFrame } from "@/settings/AutomationsMainBreadcrumbFrame.js";
-import { PluginStorePage } from "@/settings/PluginStorePage.js";
+// 插件商店是 workspace 内的独立视图分支，不参与首屏。
+// 静态导入会把 pinyin-pro 拼音词典（约 900KB）拖进首屏闭包，这里改为按需加载。
+const PluginStorePage = lazy(() =>
+  import("@/settings/PluginStorePage.js").then((module) => ({ default: module.PluginStorePage })),
+);
 import { TaskFindDialog } from "@/quickpick/TaskFindDialog.js";
 import { WorkspaceHeader } from "@/WorkspaceHeader.js";
 import { WorkspaceSidebar, type SidebarFileTreeOpenRequest } from "@/WorkspaceSidebar.js";
@@ -54,7 +64,13 @@ import {
   findScreenshotSurfaceTabForRender,
   useBrowserScreenshotSurfaceRequest,
 } from "@/browser-use/useBrowserScreenshotSurfaceRequest.js";
-import { AnimatedTerminalPanel } from "@/app-shell/AnimatedTerminalPanel.js";
+// 下侧终端面板携带 @xterm/xterm（数百 KB JS）：静态导入会把整条终端依赖链拖进首屏闭包。
+// 终端按需展开，与 AutomationsSection / PluginStorePage 一样走 lazy 边界。
+const AnimatedTerminalPanel = lazy(() =>
+  import("@/app-shell/AnimatedTerminalPanel.js").then((module) => ({
+    default: module.AnimatedTerminalPanel,
+  })),
+);
 import { SIDE_PANE_DEFAULT_EXPANDED_SIZE } from "@/app-shell/sidePaneLayout.js";
 import { useAnimatedResizablePanel } from "@/app-shell/useAnimatedResizablePanel.js";
 import { ensureTaskNavigationWorkspace } from "@/app-shell/taskNavigationWorkspace.js";
@@ -1770,28 +1786,36 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
                                 className="min-h-full"
                               >
                                 <div className="mx-auto flex w-full max-w-5xl flex-col px-4 py-4 md:px-6 md:py-6">
-                                  <AutomationsSection
-                                    workspacePath={workspaceAbsPath}
-                                    workspaceIdentity={workspaceIdentity}
-                                    onCreateViaChat={handleCreateAutomationInChat}
-                                    onNavigateToLaunchedRun={handleNavigateToLaunchedRun}
-                                    onOpenWorkflowRun={handleOpenSavedWorkflowRun}
-                                    onOpenWorkflowArtifact={handleOpenSavedWorkflowArtifact}
-                                    openAutomationId={openAutomationId}
-                                    openAutomationTab={openAutomationTab}
-                                    onOpenAutomationConsumed={onOpenAutomationConsumed}
-                                    onOpenSession={({
-                                      sessionId,
-                                      workspacePath,
-                                      workspaceIdentity,
-                                    }) =>
-                                      handleSelectTaskInChat(
-                                        workspacePath,
-                                        sessionId,
-                                        workspaceIdentity,
-                                      )
+                                  <Suspense
+                                    fallback={
+                                      <div className="p-3 text-ui-base text-foreground-subtle">
+                                        {intl.formatMessage({ id: "common.loading" })}
+                                      </div>
                                     }
-                                  />
+                                  >
+                                    <AutomationsSection
+                                      workspacePath={workspaceAbsPath}
+                                      workspaceIdentity={workspaceIdentity}
+                                      onCreateViaChat={handleCreateAutomationInChat}
+                                      onNavigateToLaunchedRun={handleNavigateToLaunchedRun}
+                                      onOpenWorkflowRun={handleOpenSavedWorkflowRun}
+                                      onOpenWorkflowArtifact={handleOpenSavedWorkflowArtifact}
+                                      openAutomationId={openAutomationId}
+                                      openAutomationTab={openAutomationTab}
+                                      onOpenAutomationConsumed={onOpenAutomationConsumed}
+                                      onOpenSession={({
+                                        sessionId,
+                                        workspacePath,
+                                        workspaceIdentity,
+                                      }) =>
+                                        handleSelectTaskInChat(
+                                          workspacePath,
+                                          sessionId,
+                                          workspaceIdentity,
+                                        )
+                                      }
+                                    />
+                                  </Suspense>
                                 </div>
                               </ScopedErrorBoundary>
                             </div>
@@ -1810,13 +1834,21 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
                           >
                             <div className="min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]">
                               <div className="mx-auto flex w-full max-w-4xl flex-col px-4 py-4 md:px-6 md:py-6">
-                                <PluginStorePage
-                                  key={`plugin-store:${pluginStoreOpenVersion}`}
-                                  workspacePath={workspaceAbsPath}
-                                  workspaceIdentity={workspaceIdentity}
-                                  onCreateTask={handleCreateTaskInChat}
-                                  onManageInstalled={handleManageInstalledPlugins}
-                                />
+                                <Suspense
+                                  fallback={
+                                    <div className="p-3 text-ui-base text-foreground-subtle">
+                                      {intl.formatMessage({ id: "common.loading" })}
+                                    </div>
+                                  }
+                                >
+                                  <PluginStorePage
+                                    key={`plugin-store:${pluginStoreOpenVersion}`}
+                                    workspacePath={workspaceAbsPath}
+                                    workspaceIdentity={workspaceIdentity}
+                                    onCreateTask={handleCreateTaskInChat}
+                                    onManageInstalled={handleManageInstalledPlugins}
+                                  />
+                                </Suspense>
                               </div>
                             </div>
                           </AutomationsMainBreadcrumbFrame>
@@ -1900,32 +1932,36 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
                   </section>
                 </ResizablePanel>
                 {workspaceMainView !== "automations" && workspaceMainView !== "plugin-store" ? (
-                  <AnimatedTerminalPanel
-                    frameClassName={cn(
-                      isSidePaneVisible
-                        ? "rounded-[var(--workspace-panel-radius)] border border-border"
-                        : resolveWorkspaceShellWindowChromeClass({
-                            isMacDesktop,
-                            isWindowsDesktop,
-                            isLinuxDesktop,
-                            macOSMajorVersion: desktopWindowChromeState?.macOSMajorVersion,
-                            isWindowsMaximized: desktopWindowChromeState?.isMaximized ?? false,
-                            supportsNativeRoundedCorners:
-                              desktopWindowChromeState?.supportsNativeRoundedCorners ?? null,
-                          }),
-                      "rounded-t-[var(--workspace-panel-radius)] border-t",
-                    )}
-                    services={services}
-                    workspaceAbsPath={workspaceAbsPath}
-                    workspaceIdentity={workspaceIdentity}
-                    openWorkspaceKeys={openWorkspaceKeys}
-                    isVisible={isTerminalVisible}
-                    isWindowsDesktop={isWindowsDesktop}
-                    panelRef={terminalPanelRef}
-                    panelElementRef={terminalPanelElementRef}
-                    onClose={() => setIsTerminalOpen(false)}
-                    onOpenBrowserUrl={handleOpenBrowserUrl}
-                  />
+                  /* chunk 加载期间面板缺席是既有合法形态：workspaceMainView 切换时同样会
+                     短暂移除该 panel，ResizablePanelGroup 支持子面板动态挂载。 */
+                  <Suspense fallback={null}>
+                    <AnimatedTerminalPanel
+                      frameClassName={cn(
+                        isSidePaneVisible
+                          ? "rounded-[var(--workspace-panel-radius)] border border-border"
+                          : resolveWorkspaceShellWindowChromeClass({
+                              isMacDesktop,
+                              isWindowsDesktop,
+                              isLinuxDesktop,
+                              macOSMajorVersion: desktopWindowChromeState?.macOSMajorVersion,
+                              isWindowsMaximized: desktopWindowChromeState?.isMaximized ?? false,
+                              supportsNativeRoundedCorners:
+                                desktopWindowChromeState?.supportsNativeRoundedCorners ?? null,
+                            }),
+                        "rounded-t-[var(--workspace-panel-radius)] border-t",
+                      )}
+                      services={services}
+                      workspaceAbsPath={workspaceAbsPath}
+                      workspaceIdentity={workspaceIdentity}
+                      openWorkspaceKeys={openWorkspaceKeys}
+                      isVisible={isTerminalVisible}
+                      isWindowsDesktop={isWindowsDesktop}
+                      panelRef={terminalPanelRef}
+                      panelElementRef={terminalPanelElementRef}
+                      onClose={() => setIsTerminalOpen(false)}
+                      onOpenBrowserUrl={handleOpenBrowserUrl}
+                    />
+                  </Suspense>
                 ) : null}
               </ResizablePanelGroup>
             </ResizablePanel>

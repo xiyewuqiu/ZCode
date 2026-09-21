@@ -1,6 +1,15 @@
 /* eslint-disable max-lines -- Side pane 当前集中承载 tabs、browser/git/code-viewer 内容；完整拆分需按 pane 功能边界继续推进。 */
 import { ServiceProvider } from "@/hooks/useServices.js";
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type RefObject } from "react";
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type RefObject,
+} from "react";
 import type { PanelImperativeHandle } from "react-resizable-panels";
 import type { IServiceAccessor } from "@zcode/services";
 import {
@@ -15,8 +24,17 @@ import {
 } from "@dnd-kit/core";
 import { horizontalListSortingStrategy, SortableContext } from "@dnd-kit/sortable";
 import type { BrowserViewScreenshotSurfacePreparePayload, GitChangeSourceId } from "@zcode/shared";
-import { PreviewPane } from "@/PreviewPane.js";
-import { SidePaneTerminalPane } from "@/SidePaneTerminalPane.js";
+// PreviewPane（内部含懒加载的 PDF/PPTX/Office 重查看器）与 SidePaneTerminalPane（@xterm/xterm）
+// 都是重依赖：静态 import 会把整条依赖链拖进首屏闭包。side pane 的这两个 tab 都按需打开，
+// 与 WorkspaceArtifactBody / WorkspaceShellLayout 的 lazy 边界保持同一模式。
+const PreviewPane = lazy(() =>
+  import("@/PreviewPane.js").then((module) => ({ default: module.PreviewPane })),
+);
+const SidePaneTerminalPane = lazy(() =>
+  import("@/SidePaneTerminalPane.js").then((module) => ({
+    default: module.SidePaneTerminalPane,
+  })),
+);
 import { useIsOfficeMode } from "@/hooks/useInterfaceMode.js";
 import { WorkspaceSidePaneToggleButton } from "@/WorkspaceSidePaneToggleButton.js";
 import { DesktopWindowControls } from "@/DesktopWindowControls.js";
@@ -1184,28 +1202,30 @@ export function AnimatedSidePanePanel({
                               : { onRevealFileInTree: onRevealGitFileInTree })}
                           />
                         ) : tab.type === "code-viewer" ? (
-                          <PreviewPane
-                            markdownSelectionTarget={{ sessionId: activeTaskId, workspaceKey }}
-                            source={tab.source}
-                            onClose={onCloseCodeViewer}
-                            workspacePath={workspaceAbsPath}
-                            onOpenBrowserUrl={onOpenBrowserUrl}
-                            onOpenCodeViewer={onOpenCodeViewer}
-                            // inactive/窄条/resize 中的 code preview 不应继续让
-                            // @pierre/diffs 的千行 Shadow DOM 参与布局；这里只裁剪 body，保留 tab/source/file state。
-                            renderHeavyContent={shouldRenderPreviewPaneHeavyContent({
-                              isActiveTab: tab.id === visibleActiveTabId,
-                              // video/audio 原生全屏会触发 resize，resize settling
-                              // 期间必须保持当前媒体节点挂载，否则浏览器会立即退出全屏。
-                              isMediaPreview:
-                                tab.source.type === "media" ||
-                                (tab.source.type === "file" &&
-                                  inferMediaPreview(tab.source.path) !== null),
-                              isResizeSettling: isWindowResizeSettling,
-                              isSidePaneVisible: isVisible,
-                              visibleInlineSizePx: sidePaneVisibleInlineSizePx,
-                            })}
-                          />
+                          <Suspense fallback={null}>
+                            <PreviewPane
+                              markdownSelectionTarget={{ sessionId: activeTaskId, workspaceKey }}
+                              source={tab.source}
+                              onClose={onCloseCodeViewer}
+                              workspacePath={workspaceAbsPath}
+                              onOpenBrowserUrl={onOpenBrowserUrl}
+                              onOpenCodeViewer={onOpenCodeViewer}
+                              // inactive/窄条/resize 中的 code preview 不应继续让
+                              // @pierre/diffs 的千行 Shadow DOM 参与布局；这里只裁剪 body，保留 tab/source/file state。
+                              renderHeavyContent={shouldRenderPreviewPaneHeavyContent({
+                                isActiveTab: tab.id === visibleActiveTabId,
+                                // video/audio 原生全屏会触发 resize，resize settling
+                                // 期间必须保持当前媒体节点挂载，否则浏览器会立即退出全屏。
+                                isMediaPreview:
+                                  tab.source.type === "media" ||
+                                  (tab.source.type === "file" &&
+                                    inferMediaPreview(tab.source.path) !== null),
+                                isResizeSettling: isWindowResizeSettling,
+                                isSidePaneVisible: isVisible,
+                                visibleInlineSizePx: sidePaneVisibleInlineSizePx,
+                              })}
+                            />
+                          </Suspense>
                         ) : tab.type === "git" ? (
                           <GitPane
                             workspacePath={workspaceAbsPath}
@@ -1254,15 +1274,17 @@ export function AnimatedSidePanePanel({
                             />
                           </ServiceProvider>
                         ) : tab.type === "terminal" ? (
-                          <SidePaneTerminalPane
-                            services={services}
-                            sessionId={tab.id}
-                            workspaceKey={workspaceKey}
-                            cwd={tab.cwd ?? workspaceAbsPath}
-                            isVisible={isVisible && tab.id === visibleActiveTabId}
-                            isWindowsDesktop={isWindowsDesktop}
-                            onOpenBrowserUrl={onOpenBrowserUrl}
-                          />
+                          <Suspense fallback={null}>
+                            <SidePaneTerminalPane
+                              services={services}
+                              sessionId={tab.id}
+                              workspaceKey={workspaceKey}
+                              cwd={tab.cwd ?? workspaceAbsPath}
+                              isVisible={isVisible && tab.id === visibleActiveTabId}
+                              isWindowsDesktop={isWindowsDesktop}
+                              onOpenBrowserUrl={onOpenBrowserUrl}
+                            />
+                          </Suspense>
                         ) : (
                           <HumanBrowserView
                             browserKey={tab.id}

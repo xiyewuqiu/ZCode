@@ -5,7 +5,7 @@
  */
 /* eslint-disable max-lines -- 空态工作区菜单集中维护本地、远程与会话 workspace 的筛选和切换交互，局部样式扩展需保持同一套语义。 */
 import type { ReactNode } from "react";
-import { useMemo, useState } from "react";
+import { lazy, Suspense, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button.js";
 import {
   DropdownMenu,
@@ -35,7 +35,10 @@ import {
   hasRemoteWorkspaceIdentity,
 } from "@/lib/remoteWorkspaceHistory.js";
 import { logger } from "@/logger.js";
-import { SSHDialog } from "@/SSHDialog.js";
+// SSHDialog（含 SSH 表单与远程会话列表，约 150KB）只在用户点开远程入口后才需要，
+// 静态 import 会把它整条依赖链钉在首屏闭包里——Root.tsx 早已按同样方式懒加载，
+// 这里保持同一模式：首个 RemoteConnectionDialog 与 Root 复用同一个 lazy chunk。
+const SSHDialog = lazy(() => import("@/SSHDialog.js").then((m) => ({ default: m.SSHDialog })));
 import {
   TID_COMPOSER_PROJECT_DETACH,
   TID_COMPOSER_REMOTE_CONNECTION,
@@ -447,17 +450,21 @@ export function ChatEmptyWorkspacePreviewMenu({
         </div>
       </DropdownMenuContent>
       {canUseRemoteWorkspace ? (
-        <SSHDialog
-          onConnect={onConnectRemote}
-          onSelectProject={onSelectRemoteProject}
-          onCancelSession={onCancelRemoteProject}
-          localWorkspacePath={localWorkspacePathForRemoteConnection}
-          isWindowsDesktop={isWindowsDesktop}
-          remoteWorkspaceSessions={remoteWorkspaceSessions}
-          open={sshDialogOpen}
-          onOpenChange={setSshDialogOpen}
-          hideTriggerWhenClosed
-        />
+        // 与 Root.tsx 的 SSHDialog 一致：加载中不渲染任何内容，
+        // 该弹窗在 open=false 时本来就不可见，fallback={null} 不会造成闪烁或白屏。
+        <Suspense fallback={null}>
+          <SSHDialog
+            onConnect={onConnectRemote}
+            onSelectProject={onSelectRemoteProject}
+            onCancelSession={onCancelRemoteProject}
+            localWorkspacePath={localWorkspacePathForRemoteConnection}
+            isWindowsDesktop={isWindowsDesktop}
+            remoteWorkspaceSessions={remoteWorkspaceSessions}
+            open={sshDialogOpen}
+            onOpenChange={setSshDialogOpen}
+            hideTriggerWhenClosed
+          />
+        </Suspense>
       ) : null}
     </DropdownMenu>
   );

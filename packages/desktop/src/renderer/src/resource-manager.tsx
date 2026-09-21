@@ -1,8 +1,10 @@
 import { createRoot } from "react-dom/client";
 import type { ResourceUsageSnapshot, StorageManagementBridge } from "@zcode/shared";
 import "@zcode/ui/styles.css";
+// ResourceManagerApp 已从 @zcode/ui barrel 移除：barrel 静态 re-export 会把资源管理器
+// 的组件图拖进主窗口首屏闭包。独立窗口改为子路径直接导入。
+import { ResourceManagerApp } from "@zcode/ui/resource-manager";
 import {
-  ResourceManagerApp,
   ZCodeIntlProvider,
   applyUiFontSizePx,
   loadUiFontSizePx,

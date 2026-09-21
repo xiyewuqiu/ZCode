@@ -1,4 +1,5 @@
-export { App } from "./App.js";
+// App 仅由 root/RootWorkspaceContent 直接导入（@/App.js），不在此 re-export：
+// barrel 静态导出会让所有 @zcode/ui 消费方的首屏闭包都携带完整 App 图。
 export { AppErrorBoundary, ScopedErrorBoundary } from "./ErrorBoundary.js";
 export type { ScopedErrorBoundaryVariant } from "./ErrorBoundary.js";
 export { Button, buttonVariants } from "./components/ui/button.js";
@@ -10,19 +11,8 @@ export {
 export { Root } from "./Root.js";
 export { UpdateStatusWindowRoot } from "./UpdateStatusWindowRoot.js";
 export { ConfirmDialogHost } from "./ConfirmDialog.js";
-export { Terminal } from "./Terminal.js";
-export { GitGraphPane } from "./git-graph/GitGraphPane.js";
-export { layoutGitGraph } from "./git-graph/layout.js";
-export type {
-  GitGraphCommit,
-  GitGraphLayout,
-  GitGraphLayoutEdge,
-  GitGraphLayoutOptions,
-  GitGraphLayoutRow,
-  GitGraphRef,
-  GitGraphRefKind,
-} from "./git-graph/layout.js";
-export { SSHDialog, RemoteConnectionDialog } from "./SSHDialog.js";
+// Terminal / GitGraphPane / layoutGitGraph 不再从 barrel 导出：Terminal 拖入 @xterm/xterm，
+// git-graph 拖入 @pierre/diffs，均只被内部模块直接导入（AnimatedTerminalPanel、GitGraphDialog）。
 export { useTheme } from "./useTheme.js";
 export type { Theme } from "./useTheme.js";
 export { useTestActions } from "./test-actions.js";
@@ -60,17 +50,11 @@ export {
   useRecentProjects,
   useConfirmDialog,
   useCredentials,
-  useAuthToken,
   useGitRepository,
   useGitActions,
 } from "./hooks/index.js";
 
 export { ZCodeIntlProvider, useZCodeIntl, LocaleSwitcher } from "./i18n/index.js";
-export { ResourceManagerApp } from "./resource-manager/ResourceManagerApp.js";
-export type {
-  ResourceManagerAppProps,
-  ResourceManagerTab,
-} from "./resource-manager/ResourceManagerApp.js";
 export type { IntlInstance } from "./i18n/index.js";
 export {
   FileDisplayInline,
