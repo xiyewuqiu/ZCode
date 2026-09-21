@@ -1,34 +1,14 @@
 import { AppUsagePanel } from "@/settings/usage-stats/AppUsagePanel.js";
-import {
-  CodingPlanUsagePanel,
-  type CodingPlanUsageSource,
-} from "@/settings/usage-stats/CodingPlanUsagePanel.js";
 
-export type UsageStatsSectionTab = "app" | "codingPlan" | `codingPlan:${string}`;
-
-export function UsageStatsSection({
-  activeTab,
-  providerSourcesLoading,
-  workspaceIdentity,
-  workspacePath,
-  selectedCodingPlanSource,
-}: {
-  activeTab: UsageStatsSectionTab;
-  providerSourcesLoading: boolean;
+/**
+ * 用量统计分区。
+ *
+ * Coding Plan / Start Plan 套餐用量面板已随购买/订阅界面整体下线，
+ * 这里只保留纯通用的 App 用量统计。
+ */
+export function UsageStatsSection(_props: {
   workspaceIdentity?: string;
   workspacePath?: string;
-  selectedCodingPlanSource?: CodingPlanUsageSource | null;
 }) {
-  if (activeTab === "app") {
-    return <AppUsagePanel />;
-  }
-
-  return (
-    <CodingPlanUsagePanel
-      loadingSources={providerSourcesLoading}
-      workspaceIdentity={workspaceIdentity}
-      workspacePath={workspacePath}
-      selectedSource={selectedCodingPlanSource}
-    />
-  );
+  return <AppUsagePanel />;
 }
