@@ -195,7 +195,9 @@ const firstStartupStateTimer =
   windowKind === "update-status"
     ? undefined
     : setTimeout(() => {
-        if (databaseStartupAdmission.state) return;
+        // ServicePort 在 dom-ready 就会投递，不等数据库 ready；业务已挂载时首个状态帧可能还没到。
+        // 此时不能再落这个兜底失败态，否则会把正在运行的应用整屏替换成“启动准备失败”。
+        if (databaseStartupAdmission.state || appInitialized) return;
         const now = Date.now();
         databaseStartupAdmission.state = {
           schemaVersion: 1,
@@ -261,7 +263,10 @@ function StartupReadyNotifier() {
 function handleServicePortMessage(event: MessageEvent): void {
   if (event.source === window && event.data?.type === InternalChannels.DatabaseStartupState) {
     const result = databaseStartupStateSchema.safeParse(event.data.state);
-    if (!result.success || appInitialized) return;
+    // 端口先到、状态帧后到是合法顺序：早期版本在 appInitialized 后直接丢弃状态帧，
+    // 导致 12 秒兜底把已挂载的应用误判成 startup_status_timeout。这里只做解析与序号校验，
+    // 失败/迁移界面仍由下面的 !appInitialized 分支负责，不会覆盖已挂载的应用。
+    if (!result.success) return;
     const next = result.data;
     if (!databaseStartupAdmission.acceptState(next)) return;
     if (firstStartupStateTimer) clearTimeout(firstStartupStateTimer);
