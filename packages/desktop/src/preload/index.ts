@@ -812,17 +812,38 @@ contextBridge.exposeInMainWorld("zcode", {
   getDeviceId: () => ipcRenderer.invoke(PlatformChannels.GetDeviceId),
 });
 
+let heldServicePortMessage: {
+  payload: Record<string, unknown>;
+  port: MessagePort;
+} | null = null;
+let isRendererReadyForServicePort = false;
+
+function flushHeldServicePort(): void {
+  if (!heldServicePortMessage || !isRendererReadyForServicePort) return;
+  const { payload, port } = heldServicePortMessage;
+  heldServicePortMessage = null;
+  window.postMessage({ type: InternalChannels.ServicePort, ...payload }, "*", [port]);
+}
+
 /**
  * MessagePort 不能通过 contextBridge 传递（contextBridge 会把它包成 Proxy，
  * 丢失 addEventListener 等原生方法）。改用 window.postMessage 的 transfer
  * 机制将 MessagePort 原样传递到 renderer 的 window context 中。
+ * 增加与 renderer 的安全握手：若 renderer 尚未完成监听器注册，先在 preload 持有端口，
+ * 避免 dom-ready 早投导致端口在 window 穿透丢失。
  */
 ipcRenderer.on(InternalChannels.ServicePort, (event, payload: unknown) => {
   const [port] = event.ports;
   const parsed = databaseStartupPortPayloadSchema.safeParse(payload);
-  if (port && parsed.success)
-    window.postMessage({ type: InternalChannels.ServicePort, ...parsed.data }, "*", [port]);
-  else port?.close();
+  if (port && parsed.success) {
+    if (heldServicePortMessage) {
+      heldServicePortMessage.port.close();
+    }
+    heldServicePortMessage = { payload: parsed.data, port };
+    flushHeldServicePort();
+  } else {
+    port?.close();
+  }
 });
 
 ipcRenderer.on(
@@ -860,6 +881,11 @@ window.addEventListener("message", (event) => {
     attachmentId?: unknown;
     sessionId?: unknown;
   };
+  if (payload.type === InternalChannels.RendererReadyForServicePort) {
+    isRendererReadyForServicePort = true;
+    flushHeldServicePort();
+    return;
+  }
   if (
     payload.type !== InternalChannels.ScopedServicePortReady ||
     typeof payload.attachmentId !== "string" ||

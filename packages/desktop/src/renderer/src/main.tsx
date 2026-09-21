@@ -266,7 +266,11 @@ function handleServicePortMessage(event: MessageEvent): void {
     if (!databaseStartupAdmission.acceptState(next)) return;
     if (firstStartupStateTimer) clearTimeout(firstStartupStateTimer);
     enterAppIfPrepared();
-    if (!appInitialized && next.phase === "failed") {
+    if (
+      !appInitialized &&
+      (next.phase === "failed" ||
+        (next.migration !== undefined && next.migration.kind !== "none"))
+    ) {
       renderDatabaseStartup();
     }
     return;
@@ -355,7 +359,8 @@ function initializeBusinessRoot(port: MessagePort): void {
 
 window.addEventListener("message", handleServicePortMessage);
 if (windowKind !== "update-status") {
-  renderDatabaseStartup();
+  // 通知 preload 当前 renderer 的 message 监听器已就绪，安全释放暂存的 ServicePort
+  window.postMessage({ type: InternalChannels.RendererReadyForServicePort }, "*");
   sendStartupControl({ action: "snapshot" });
 }
 

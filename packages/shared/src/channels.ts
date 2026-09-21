@@ -488,6 +488,8 @@ export const InternalChannels = {
   ScopedServicePort: "zcode:scoped-service-port",
   /** renderer → main：scoped MessagePort 已注册，可安全切换 attachment */
   ScopedServicePortReady: "zcode:scoped-service-port-ready",
+  /** renderer → preload：renderer 已挂载 MessagePort 监听器，可安全转发端口 */
+  RendererReadyForServicePort: "zcode:renderer-ready-for-service-port",
   /** preload → renderer：主进程已确认系统通知展示，renderer 可播放提示音 */
   TaskNotificationSound: "zcode:task-notification-sound",
 } as const;
