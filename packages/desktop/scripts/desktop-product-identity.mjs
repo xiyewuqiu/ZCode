@@ -7,19 +7,19 @@ export const ZCODE_PREVIEW_IDENTITY_ENV = "ZCODE_PREVIEW_IDENTITY";
 
 const PRODUCTION_IDENTITY = Object.freeze({
   flavor: "production",
-  appId: "dev.zcode.app",
-  productName: "ZCode",
-  linuxExecutableName: "zcode",
-  linuxPackageName: "zcode",
+  appId: "dev.xcode.app",
+  productName: "XCode",
+  linuxExecutableName: "xcode",
+  linuxPackageName: "xcode",
   cuaHelperInstallVariant: null,
 });
 
 const PREVIEW_IDENTITY = Object.freeze({
   flavor: "preview",
-  appId: "dev.zcode.app.preview",
-  productName: "ZCode Preview",
-  linuxExecutableName: "zcode-preview",
-  linuxPackageName: "zcode-preview",
+  appId: "dev.xcode.app.preview",
+  productName: "XCode Preview",
+  linuxExecutableName: "xcode-preview",
+  linuxPackageName: "xcode-preview",
   cuaHelperInstallVariant: "preview",
 });
 
@@ -81,7 +81,7 @@ export function resolveDesktopArtifactSuffix(env = process.env) {
  */
 export function resolveWindowsAppUserModelIdForFlavor(flavor, runtime = { isPackaged: true }) {
   if (runtime.isPackaged === false) {
-    return "cn.aminer.zcode";
+    return "cn.aminer.xcode";
   }
   return desktopProductIdentities[flavor === "preview" ? "preview" : "production"].appId;
 }
