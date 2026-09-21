@@ -33,7 +33,7 @@ function getZCodeDataDir() {
 }
 
 function getZCodeCliDir() {
-  return join(homedir(), ".zcode", "cli");
+  return join(homedir(), ".ycode", "cli");
 }
 
 function getZCodeCliLogDir() {
@@ -46,7 +46,7 @@ function getZCodeCliLogDir() {
  * helperExitLogPathFor）。同目录下还有 `.tokens` broker 凭据，收集时必须按文件名白名单。
  */
 function getCuaHelperRunDir() {
-  return join(homedir(), ".zcode", "computer-use", "run");
+  return join(homedir(), ".ycode", "computer-use", "run");
 }
 
 function isCuaHelperDiagnosticFileName(fileName: string): boolean {
@@ -962,7 +962,7 @@ async function createLogArchiveArtifacts(
   // 如果导出日志只扫描 v2，定位 agent CLI 启动、协议或崩溃问题时会缺少最关键的原生侧日志。
   await collectLogArchiveFilesFromDirectory(
     zcodeCliLogDir,
-    posix.join(".zcode", "cli", "log"),
+    posix.join(".ycode", "cli", "log"),
     visitedDirs,
     files,
   );
@@ -973,12 +973,12 @@ async function createLogArchiveArtifacts(
   // 二者都不在 ~/.zcode/cli/log 下，需要额外收集才能完整还原现场。
   await collectLogArchiveFile(
     join(zcodeCliDir, "config.json"),
-    posix.join(".zcode", "cli", "config.json"),
+    posix.join(".ycode", "cli", "config.json"),
     files,
   );
   await collectLogArchiveFilesFromDirectory(
     join(zcodeCliDir, "rollout"),
-    posix.join(".zcode", "cli", "rollout"),
+    posix.join(".ycode", "cli", "rollout"),
     visitedDirs,
     files,
   );
@@ -990,7 +990,7 @@ async function createLogArchiveArtifacts(
   // 同目录下有 .tokens broker 凭据，因此按文件名白名单只收 *.exit.log，不递归该目录。
   await collectLogArchiveFilesByName(
     getCuaHelperRunDir(),
-    posix.join(".zcode", "computer-use", "run"),
+    posix.join(".ycode", "computer-use", "run"),
     isCuaHelperDiagnosticFileName,
     files,
   );
