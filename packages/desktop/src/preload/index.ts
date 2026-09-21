@@ -43,6 +43,7 @@ import type {
   BrowserViewRestoredTabShell,
   BrowserViewRestoreTabsRequest,
   BrowserViewportSize,
+  DatabaseStartupState,
   DesktopZoomState,
   DesktopWindowChromeState,
   DesktopCommandId,
@@ -816,6 +817,7 @@ let heldServicePortMessage: {
   payload: Record<string, unknown>;
   port: MessagePort;
 } | null = null;
+let heldStartupState: DatabaseStartupState | null = null;
 let isRendererReadyForServicePort = false;
 
 function flushHeldServicePort(): void {
@@ -823,6 +825,14 @@ function flushHeldServicePort(): void {
   const { payload, port } = heldServicePortMessage;
   heldServicePortMessage = null;
   window.postMessage({ type: InternalChannels.ServicePort, ...payload }, "*", [port]);
+}
+
+/** 启动状态与 ServicePort 同源同速：Main 可能在 renderer 监听器就绪前投递，先缓存后补投。 */
+function flushHeldStartupState(): void {
+  if (!heldStartupState || !isRendererReadyForServicePort) return;
+  const state = heldStartupState;
+  heldStartupState = null;
+  window.postMessage({ type: InternalChannels.DatabaseStartupState, state }, "*");
 }
 
 /**
@@ -883,6 +893,7 @@ window.addEventListener("message", (event) => {
   };
   if (payload.type === InternalChannels.RendererReadyForServicePort) {
     isRendererReadyForServicePort = true;
+    flushHeldStartupState();
     flushHeldServicePort();
     return;
   }
@@ -928,8 +939,11 @@ scheduleArmsEventBridgePatch();
 // 启动控制面先于普通 RPC；reload 从 Main 的通知镜像补齐，不触发新迁移。
 ipcRenderer.on(InternalChannels.DatabaseStartupState, (_event, raw: unknown) => {
   const parsed = databaseStartupStateSchema.safeParse(raw);
-  if (parsed.success)
+  if (!parsed.success) return;
+  heldStartupState = parsed.data;
+  if (isRendererReadyForServicePort) {
     window.postMessage({ type: InternalChannels.DatabaseStartupState, state: parsed.data }, "*");
+  }
 });
 window.addEventListener("message", (event) => {
   if (event.source !== window || event.data?.type !== InternalChannels.DatabaseStartupControl)

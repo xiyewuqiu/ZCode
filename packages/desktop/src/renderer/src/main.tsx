@@ -209,7 +209,7 @@ const firstStartupStateTimer =
           disk: [],
         };
         renderDatabaseStartup();
-      }, 30_000);
+      }, 12_000);
 
 function registerRemoteWorkspaceServicePort(params: RemoteWorkspaceServicePortRegistration) {
   if (!baseServicesForRemoteSessions) {
@@ -362,6 +362,15 @@ if (windowKind !== "update-status") {
   // 通知 preload 当前 renderer 的 message 监听器已就绪，安全释放暂存的 ServicePort
   window.postMessage({ type: InternalChannels.RendererReadyForServicePort }, "*");
   sendStartupControl({ action: "snapshot" });
+  // snapshot 请求可能早于 main 侧 relay 绑定而丢失；启动早期定时重发，
+  // 直到收到启动状态或业务已初始化，杜绝 30 秒兜底超时。
+  const snapshotRetryTimer = window.setInterval(() => {
+    if (databaseStartupAdmission.state || appInitialized) {
+      clearInterval(snapshotRetryTimer);
+      return;
+    }
+    sendStartupControl({ action: "snapshot" });
+  }, 1500);
 }
 
 if (windowKind === "update-status") {
