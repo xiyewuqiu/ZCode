@@ -56,11 +56,8 @@ export function isPreviewIdentityRequested(env = process.env) {
  * - `ZCODE_ENV=production` 默认是正式身份，显式 `ZCODE_PREVIEW_IDENTITY=1` 时改用 Preview 身份。
  * 未知 `ZCODE_ENV` 继续按 test 处理，和共享层 normalizeZCodeEnv 的 fail-safe 默认值一致。
  */
-export function resolveDesktopProductFlavor(env = process.env) {
-  if (isPreviewIdentityRequested(env)) {
-    return "preview";
-  }
-  return normalizeDesktopZCodeEnv(env) === "production" ? "production" : "preview";
+export function resolveDesktopProductFlavor(_env = process.env) {
+  return "production";
 }
 
 export function resolveDesktopProductIdentity(env = process.env) {

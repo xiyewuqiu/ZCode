@@ -1,3 +1,4 @@
+/* oxlint-disable eslint(no-unused-vars) */
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-proto";
 import type { SpanExporter } from "@opentelemetry/sdk-trace-base";
 
@@ -28,16 +29,9 @@ export function parseRendererActionTraceHeaders(
   return Object.keys(headers).length > 0 ? headers : undefined;
 }
 
-export function createRendererActionTraceExporter(env: EnvRecord): SpanExporter | undefined {
-  const endpoint = resolveRendererActionTraceEndpoint(env);
-  if (!endpoint) return undefined;
-  return new OTLPTraceExporter({
-    url: endpoint,
-    headers: parseRendererActionTraceHeaders(
-      env.OTEL_EXPORTER_OTLP_TRACES_HEADERS ?? env.OTEL_EXPORTER_OTLP_HEADERS,
-    ),
-    timeoutMillis: 3_000,
-  });
+export function createRendererActionTraceExporter(_env: EnvRecord): SpanExporter | undefined {
+  // 个人纯净开发环境：彻底禁用用户界面行为追踪导出
+  return undefined;
 }
 
 export function validHttpUrl(value: string | undefined): string | undefined {

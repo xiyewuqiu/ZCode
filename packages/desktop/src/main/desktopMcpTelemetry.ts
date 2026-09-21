@@ -1,3 +1,4 @@
+/* oxlint-disable eslint(no-unused-vars) */
 import armsRum from "@arms/rum-electron";
 import type { ZCodeMcpTelemetryEvent } from "@zcode/shared";
 
@@ -14,34 +15,11 @@ export function configureDesktopMcpTelemetry(next: DesktopMcpTelemetryContext): 
 }
 
 export function reportMcpTelemetryToArms(
-  event: ZCodeMcpTelemetryEvent,
-  runtimeSurface: "local" | "remote",
+  _event: ZCodeMcpTelemetryEvent,
+  _runtimeSurface: "local" | "remote",
 ): void {
-  // 旧 CLI 的内存通知仍允许协议解析，但不能再生成已废弃的 ARMS 事件。
-  if (!context || event.kind === "memory") return;
-  const mapped = mapMcpTelemetryEvent(event);
-  try {
-    armsRum.sendCustom({
-      group: mapped.group,
-      name: mapped.name,
-      properties: stringifyProperties({
-        app_version: context.appVersion,
-        arms_env: context.armsEnv,
-        device_mid: context.deviceMid,
-        event_name: mapped.name,
-        metric_value: mapped.value,
-        runtime_surface: runtimeSurface,
-        platform: normalizePlatform(event.platform),
-        arch: event.arch,
-        occurred_at: event.occurredAt,
-        ...mapped.properties,
-      }),
-      type: "custom",
-      value: mapped.value,
-    });
-  } catch (error) {
-    console.warn("[mcp-telemetry] sendCustom failed:", mapped.name, error);
-  }
+  // 个人纯净开发环境：彻底禁用 MCP 事件的遥测上报
+  return;
 }
 
 function mapMcpTelemetryEvent(event: Exclude<ZCodeMcpTelemetryEvent, { kind: "memory" }>): {

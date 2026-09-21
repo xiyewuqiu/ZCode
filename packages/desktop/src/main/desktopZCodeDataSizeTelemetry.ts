@@ -1,3 +1,4 @@
+/* oxlint-disable eslint(no-unused-vars) */
 import armsRum from "@arms/rum-electron";
 import type { ArmsRumEnv, FinalArmsCustomEventPayload } from "@zcode/shared";
 
@@ -392,7 +393,7 @@ function createZCodeDataSizeTelemetryScheduler(
 
 let desktopScheduler: ReturnType<typeof createZCodeDataSizeTelemetryScheduler> | null = null;
 
-export function registerDesktopZCodeDataSizeTelemetry(options: {
+export function registerDesktopZCodeDataSizeTelemetry(_options: {
   context: Parameters<typeof buildZCodeDataSizeArmsPayload>[0]["context"];
   getSystemIdleTimeSeconds: () => number;
   isAppBackground: () => boolean;
@@ -401,41 +402,10 @@ export function registerDesktopZCodeDataSizeTelemetry(options: {
   rootPath: string;
   stateFile: string;
 }): void {
-  stopDesktopZCodeDataSizeTelemetry();
-  desktopScheduler = createZCodeDataSizeTelemetryScheduler({
-    deviceMid: options.context.deviceMid,
-    getSystemIdleTimeSeconds: options.getSystemIdleTimeSeconds,
-    isAppBackground: options.isAppBackground,
-    isZCodeBusy: options.isZCodeBusy,
-    logger: options.logger,
-    readState: () => readZCodeDataSizeTelemetryState(options.stateFile),
-    report: (result) => {
-      const payload = buildZCodeDataSizeArmsPayload({ context: options.context, result });
-      armsRum.sendCustom({
-        group: payload.group,
-        name: payload.name,
-        properties: payload.properties,
-        type: payload.type,
-        value: payload.value,
-      });
-    },
-    scan: ({ signal }) =>
-      scanZCodeDataDirectoryInWorker(
-        {
-          maxDurationMs: ZCODE_DATA_SIZE_SCAN_MAX_DURATION_MS,
-          maxFiles: ZCODE_DATA_SIZE_SCAN_MAX_FILES,
-          rootPath: options.rootPath,
-        },
-        signal,
-      ),
-    writeState: (state) => writeZCodeDataSizeTelemetryState(options.stateFile, state),
-  });
-  void desktopScheduler.start().catch((error) => {
-    options.logger.warn("[zcode-data-size] scheduler start failed", error);
-  });
+  // 个人纯净开发环境：彻底关闭后台扫描磁盘 20 万文件和遥测上报，零 IO / 零 CPU 占用
+  return;
 }
 
 export function stopDesktopZCodeDataSizeTelemetry(): void {
-  desktopScheduler?.stop();
-  desktopScheduler = null;
+  return;
 }

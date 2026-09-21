@@ -1,3 +1,4 @@
+/* oxlint-disable eslint(no-unused-vars) */
 import armsRum from "@arms/rum-electron";
 import {
   bytesToKb,
@@ -430,71 +431,16 @@ export function configureDesktopResourceTelemetry(context: ResourceGlobalContext
 }
 
 export function registerDesktopResourceTelemetry(
-  logger: ResourceLogger,
-  /**
-   * `reportIntervalMs` 只供单测注入窗口时钟；生产走 RESOURCE_REPORT_INTERVAL_MS。
-   * `readSelfClockMs` 只供单测注入可预期的自证开销时钟；生产走 performance.now。
-   */
-  options?: { reportIntervalMs?: number; readSelfClockMs?: () => number },
+  _logger: ResourceLogger,
+  _options?: { reportIntervalMs?: number; readSelfClockMs?: () => number },
 ): void {
-  stopDesktopResourceTelemetry();
-  agentMetricProbeDisabledAuditLogged = false;
-  memoryLogTick = 0;
-  memorySampleWriteGate = createMemorySampleWriteGate();
-  resetProcessResourceSampleSources(PROCESS_RESOURCE_SAMPLE_SOURCES);
-  processResourceSystemWindow.clear();
-  readTelemetrySelfClockMs = options?.readSelfClockMs ?? (() => performance.now());
-
-  const reportIntervalMs = options?.reportIntervalMs ?? RESOURCE_REPORT_INTERVAL_MS;
-
-  sampleTimer = setInterval(() => {
-    measureTelemetrySelfMs(() => {
-      try {
-        takeSample(logger);
-      } catch (error) {
-        logger.warn("[resource] sample failed:", error);
-      }
-    });
-  }, RESOURCE_SAMPLE_INTERVAL_MS);
-
-  reportTimer = setInterval(() => {
-    measureTelemetrySelfMs(() => {
-      try {
-        flushResourceReports(logger);
-      } catch (error) {
-        logger.warn("[resource] report failed:", error);
-      }
-    });
-  }, reportIntervalMs);
-
-  // 遥测定时器不得延长进程寿命。
-  sampleTimer.unref?.();
-  reportTimer.unref?.();
-
-  logger.info(
-    `[resource] sampling started interval=${RESOURCE_SAMPLE_INTERVAL_MS}ms report=${reportIntervalMs}ms`,
-  );
+  // 个人纯净开发环境：彻底关闭 10 秒唤醒一次的进程/系统资源采样与上报
+  return;
 }
 
-export function stopDesktopResourceTelemetry(options?: {
+export function stopDesktopResourceTelemetry(_options?: {
   /** 正常退出：排空残窗，sample_count 如实反映；不触发新采样。 */
   flushPendingWindows?: boolean;
 }): void {
-  recentToolExecCompletions.clear();
-  if (sampleTimer) {
-    clearInterval(sampleTimer);
-    sampleTimer = null;
-  }
-  if (reportTimer) {
-    clearInterval(reportTimer);
-    reportTimer = null;
-  }
-  if (options?.flushPendingWindows) {
-    // Bug 根因：改成 5 分钟聚合后，正常退出仍沿用直接 clear 的旧 stop，
-    // 导致已收到但未满窗口的样本静默丢失。这里只排空内存窗口，不触发新采样或磁盘扫描。
-    drainAllResourceWindows();
-  } else {
-    processResourceWindows.clear();
-    processResourceSystemWindow.clear();
-  }
+  return;
 }

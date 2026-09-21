@@ -494,8 +494,8 @@ export function createTelemetryCore(dependencies: TelemetryCoreDependencies = {}
 
   return {
     reportEvent(input: {
-      context: TelemetryRendererContext;
       elementName: string;
+      context: TelemetryRendererContext;
       eventRegion: string;
       eventType: string;
       eventText?: string;
@@ -504,6 +504,9 @@ export function createTelemetryCore(dependencies: TelemetryCoreDependencies = {}
       talkId?: string;
       messageId?: string;
     }): Promise<void> {
+      if (!ZCODE_TELEMETRY_ENABLED || !ZCODE_TELEMETRY_REPORT_ENDPOINT) {
+        return Promise.resolve();
+      }
       return trackReport(
         (async () => {
           const userId = input.userId ?? (await loadUserId());
@@ -536,6 +539,9 @@ export function createTelemetryCore(dependencies: TelemetryCoreDependencies = {}
     },
 
     reportAppLaunch(context: TelemetryRendererContext): Promise<void> {
+      if (!ZCODE_TELEMETRY_ENABLED || !ZCODE_TELEMETRY_REPORT_ENDPOINT) {
+        return Promise.resolve();
+      }
       return trackReport(
         (async () => {
           const eventId = randomUUID();
@@ -560,6 +566,9 @@ export function createTelemetryCore(dependencies: TelemetryCoreDependencies = {}
     },
 
     reportAppDailyActive(context: TelemetryRendererContext): Promise<void> {
+      if (!ZCODE_TELEMETRY_ENABLED || !ZCODE_TELEMETRY_REPORT_ENDPOINT) {
+        return Promise.resolve();
+      }
       return trackReport(
         (async () => {
           const timestamp = now();

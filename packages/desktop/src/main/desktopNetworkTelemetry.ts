@@ -1,3 +1,4 @@
+/* oxlint-disable eslint(no-unused-vars) */
 /* eslint-disable max-lines -- 网络指标采集/聚合/ARMS 上报 */
 import armsRum from "@arms/rum-electron";
 import { mapZCodeEnvToArmsRumEnv } from "@zcode/shared";
@@ -149,24 +150,11 @@ export function configureDesktopNetworkTelemetry(context: NetworkGlobalContext):
   });
 }
 
-export function registerDesktopNetworkTelemetry(logger: NetworkLogger): void {
-  stopDesktopNetworkTelemetry();
-  resetNetworkTelemetryAggregator();
-
-  reportTimer = setInterval(() => {
-    try {
-      flushNetworkReports(logger);
-    } catch (error) {
-      logger.warn("[network] report failed:", error);
-    }
-  }, NETWORK_REPORT_INTERVAL_MS);
-
-  logger.info(`[network] reporting started interval=${NETWORK_REPORT_INTERVAL_MS}ms`);
+export function registerDesktopNetworkTelemetry(_logger: NetworkLogger): void {
+  // 个人纯净开发环境：彻底关闭网络流量与 API 调用的后台聚合上报定时器
+  return;
 }
 
 export function stopDesktopNetworkTelemetry(): void {
-  if (reportTimer) {
-    clearInterval(reportTimer);
-    reportTimer = null;
-  }
+  return;
 }

@@ -23,20 +23,13 @@ export const ZCODE_ENV = normalizeZCodeEnv(
  * 未注入 define 的 bundle（web、CLI、测试）沿用旧的单轴语义。
  */
 export function normalizeZCodeProductFlavor(
-  value: string | undefined,
-  zcodeEnv: ZCodeEnv,
+  _value: string | undefined,
+  _zcodeEnv: ZCodeEnv,
 ): ZCodeProductFlavor {
-  const normalized = value?.trim().toLowerCase();
-  if (normalized === "production" || normalized === "preview") {
-    return normalized;
-  }
-  return zcodeEnv === "production" ? "production" : "preview";
+  return "production";
 }
 
-export const ZCODE_PRODUCT_FLAVOR = normalizeZCodeProductFlavor(
-  typeof __ZCODE_PRODUCT_FLAVOR__ !== "undefined" ? __ZCODE_PRODUCT_FLAVOR__ : undefined,
-  ZCODE_ENV,
-);
+export const ZCODE_PRODUCT_FLAVOR = "production";
 export const ZCODE_APP_VERSION_ENV = "ZCODE_APP_VERSION" as const;
 export const ZCODE_BUILD_COMMIT_ID_ENV = "ZCODE_BUILD_COMMIT_ID" as const;
 
@@ -45,19 +38,16 @@ export const ZCODE_BUILD_COMMIT_ID_ENV = "ZCODE_BUILD_COMMIT_ID" as const;
 export const RUNTIME_ZCODE_DEBUG =
   typeof process !== "undefined" ? process.env.ZCODE_DEBUG : undefined;
 
-// 恢复原因：写死 false 会让运行时已配置的数仓/ARMS 永远空转。
-// 功能保持可用；实际出网由各出口的运行时端点检查决定，未配置不上报。
-export const ZCODE_TELEMETRY_ENABLED: boolean = true;
+// 全局遥测与上报彻底掐断：纯本地开发使用，禁止任何外部打点、事件与监控收集
+export const ZCODE_TELEMETRY_ENABLED: boolean = false;
 
-/** 数仓事件上报端点：由运行时环境变量提供，未配置即停用，构建产物不内嵌。 */
-export const ZCODE_TELEMETRY_REPORT_ENDPOINT =
-  typeof process !== "undefined" ? (process.env.ZCODE_TELEMETRY_REPORT_ENDPOINT ?? "") : "";
+/** 数仓事件上报端点：已彻底断开 */
+export const ZCODE_TELEMETRY_REPORT_ENDPOINT = "";
 
-/** ARMS RUM 接入端点：由运行时环境变量提供，未配置即停用，构建产物不内嵌。 */
-export const ZCODE_ARMS_RUM_ENDPOINT =
-  typeof process !== "undefined" ? (process.env.ZCODE_ARMS_RUM_ENDPOINT ?? "") : "";
+/** ARMS RUM 接入端点：已彻底断开 */
+export const ZCODE_ARMS_RUM_ENDPOINT = "";
 
 /** 将本地运行态与编译期 ZCODE_ENV 映射为 ARMS 控制台识别的上报环境标签 */
-export function mapZCodeEnvToArmsRumEnv(runtimeEnv: ZCodeRuntimeEnv): ArmsRumEnv {
-  return runtimeEnv !== "development" && ZCODE_ENV === "production" ? "prod" : "local";
+export function mapZCodeEnvToArmsRumEnv(_runtimeEnv: ZCodeRuntimeEnv): ArmsRumEnv {
+  return "local";
 }
