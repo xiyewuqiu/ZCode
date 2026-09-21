@@ -19,7 +19,6 @@ export function useProviderAvailabilityLoginEntryGuard({
   modelSelectionError,
   refreshProviderState,
   readModelSelectionView,
-  setLoginEntryOpen,
 }: {
   enabled?: boolean;
   user: UserInfo | null;
@@ -29,7 +28,6 @@ export function useProviderAvailabilityLoginEntryGuard({
   modelSelectionError?: Error;
   refreshProviderState: () => Promise<void>;
   readModelSelectionView: () => Promise<ModelSelectionView>;
-  setLoginEntryOpen: (open: boolean) => void;
 }) {
   const [startupCheckCompleted, setStartupCheckCompleted] = useState(!enabled);
   const startupCheckCompletedRef = useRef(false);
@@ -56,18 +54,18 @@ export function useProviderAvailabilityLoginEntryGuard({
       const { hasUsableProvider, providerCount } = availability;
       const shouldOpenLoginEntry = !providerFamilyDomain || (!user && !hasUsableProvider);
 
-      // 未登录且没有可用模型配置时必须引导用户连接账号或填写 API Key。
-      // 启动检查、API Key 设置回流等入口统一走这里，避免各处复制判断后语义分叉。
-      logger.info("[Root] provider 可用性登录入口守卫完成检查", {
+      // 启动不再强制弹登录：未登录且没有可用模型配置时直接进入工作区，
+      // 用户可随时从设置页/侧边栏手动打开登录入口。
+      // 这里保留可用性计算与日志，只作启动诊断，不再把登录入口置为打开。
+      logger.info("[Root] provider 可用性启动检查完成", {
         reason: options.reason,
         source: availability.source,
         providerCount,
         hasUsableProvider,
         hasUser: Boolean(user),
         hasProviderFamilyDomain: Boolean(providerFamilyDomain),
-        shouldOpenLoginEntry,
+        wouldOpenLoginEntry: shouldOpenLoginEntry,
       });
-      setLoginEntryOpen(shouldOpenLoginEntry);
       return {
         hasUsableProvider,
         providerCount,
@@ -80,7 +78,6 @@ export function useProviderAvailabilityLoginEntryGuard({
       providerFamilyDomain,
       refreshProviderState,
       readModelSelectionView,
-      setLoginEntryOpen,
       user,
     ],
   );

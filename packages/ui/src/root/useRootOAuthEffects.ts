@@ -25,7 +25,6 @@ import {
 import { applyCachedOAuthSessionRestoreResult } from "@/root/oauthCachedSessionRestore.js";
 import { markZcodeJwtInvalidRestart } from "@/root/zcodeJwtInvalidRestartMarker.js";
 import { shouldApplyOAuthPollingFailure } from "@/root/oauthLoginAttemptGuard.js";
-import { useAccountConnectionLossNotification } from "@/root/useAccountConnectionLossNotification.js";
 
 export { refreshRestoredOAuthProviderFamilyAfterStartup } from "@/root/oauthProviderFamilySelectionRefresh.js";
 
@@ -92,7 +91,6 @@ async function handleOAuthCallbackSuccess(params: {
 }
 
 export function useRootOAuthEffects({
-  accountIntentKey,
   platform,
   services,
   refreshProviderState,
@@ -105,7 +103,6 @@ export function useRootOAuthEffects({
   markOAuthSuccess,
   onReauthenticationRequired,
 }: {
-  accountIntentKey: string;
   platform: IPlatformService;
   services: IServiceAccessor;
   refreshProviderState: () => Promise<void>;
@@ -118,7 +115,6 @@ export function useRootOAuthEffects({
   markOAuthSuccess: (provider?: OAuthProviderId) => void;
   onReauthenticationRequired: () => void;
 }) {
-  useAccountConnectionLossNotification(services, accountIntentKey, refreshAppSettings);
   const requestAlert = useAlertDialog();
   const { intl } = useZCodeIntl();
   const oauthLoginSucceededRef = useRef(false);
