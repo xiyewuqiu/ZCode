@@ -58,6 +58,8 @@ function buildWorkflowActorIdentityPrompt(actor: WorkflowActorContext): string {
     opening.join("\n"),
     ...(persona ? ["", persona] : []),
     "",
+    buildSecurityNotice(),
+    "",
     buildHarnessBlock(),
     "",
     buildWorkflowContract(),
