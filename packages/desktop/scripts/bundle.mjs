@@ -337,6 +337,26 @@ function parseArgs(argv) {
       continue;
     }
 
+    if (arg === "--win" || arg === "--windows") {
+      options.os = "win";
+      continue;
+    }
+
+    if (arg === "--mac" || arg === "--macos" || arg === "--darwin") {
+      options.os = "mac";
+      continue;
+    }
+
+    if (arg === "--linux") {
+      options.os = "linux";
+      continue;
+    }
+
+    if (arg === "--x64" || arg === "--arm64") {
+      options.arch = arg.slice(2);
+      continue;
+    }
+
     if (arg.startsWith("-")) {
       throw new Error(`不支持的参数: ${arg}`);
     }

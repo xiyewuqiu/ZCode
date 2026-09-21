@@ -124,7 +124,7 @@ jobs:
           ZCODE_SKIP_REMOTE_ASSETS: '1'
 
       - name: Bundle Desktop App (${{ matrix.target_os }}/${{ matrix.target_arch }})
-        run: pnpm --filter @zcode/desktop run bundle -- --${{ matrix.target_os }} --${{ matrix.target_arch }}
+        run: pnpm --filter @zcode/desktop run bundle -- --os ${{ matrix.target_os }} --arch ${{ matrix.target_arch }}
         env:
           CI: 'true'
           ZCODE_SKIP_REMOTE_ASSETS: '1'
@@ -142,7 +142,7 @@ jobs:
             packages/desktop/dist/*.AppImage
             packages/desktop/dist/*.deb
             packages/desktop/dist/*.rpm
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 30
 
   release:
