@@ -650,7 +650,7 @@ export default {
   protocols: [
     {
       name: desktopProductIdentity.productName,
-      schemes: ["xcode", "zcode"],
+      schemes: ["ycode", "xcode", "zcode"],
     },
   ],
   mac: {

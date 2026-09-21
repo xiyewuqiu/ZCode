@@ -134,7 +134,7 @@ jobs:
       - name: Upload Build Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: xcode-${{ matrix.os_name }}-${{ matrix.target_arch }}
+          name: ycode-${{ matrix.os_name }}-${{ matrix.target_arch }}
           path: |
             packages/desktop/dist/*.exe
             packages/desktop/dist/*.dmg

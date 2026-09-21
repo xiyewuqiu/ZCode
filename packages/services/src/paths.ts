@@ -39,9 +39,9 @@ export function getDataBaseDir(): string {
   return defaultDataBaseDir;
 }
 
-/** {dataBaseDir}/.xcode */
+/** {dataBaseDir}/.ycode */
 export function getZCodeDataRootDir(): string {
-  return join(getDataBaseDir(), ".xcode");
+  return join(getDataBaseDir(), ".ycode");
 }
 
 /** 非项目对话共享的真实工作目录；默认 ~/.zcode/workspace/default。 */
