@@ -11,6 +11,12 @@ export function resolveLogoutProviderFamilyDomain(params: {
   return null;
 }
 
+/**
+ * 写入历史 provider family 偏好。
+ *
+ * YCode 已移除内置官方供应商，family 不再指向任何内置 provider；
+ * 保留写入是为了兼容仍按该字段读取的旧配置，值本身不再驱动官方入口展示。
+ */
 export async function setProviderFamilyDomain(
   settingService: Pick<ISettingService, "get" | "update">,
   domain: ProviderFamilyDomain,

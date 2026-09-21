@@ -5,11 +5,29 @@ import type {
   UsageEntitlementSnapshot,
 } from "@zcode/shared";
 import { getModelProviderFamilySpec } from "@zcode/shared";
-import { hasActiveUsageEntitlementSnapshot } from "@/lib/codingPlanProvider.js";
 
 export type ModelProviderFamilyConnectionSelection = ProviderFamilyConnectionSelection;
 
-/** 把当前 Family 连接意图映射为对应的 Built-in Account Provider 身份。 */
+// 原 lib/codingPlanProvider.ts 随 Coding Plan 购买界面下线；该判定仍被
+// OAuth 连接切换逻辑使用，就地保留等价实现，避免跨模块依赖已删除的套餐模块。
+function hasActiveUsageEntitlementSnapshot(
+  snapshot: UsageEntitlementSnapshot | null,
+  providerId?: string,
+): boolean {
+  if (!snapshot) return false;
+  if (providerId && snapshot.provider?.id && snapshot.provider.id !== providerId) {
+    return false;
+  }
+  if (snapshot.unavailableReason === "no_plan") return false;
+  return Boolean(snapshot.subscription?.details.length);
+}
+
+/**
+ * 把历史 Family 连接意图映射为对应的 Built-in Account Provider 身份。
+ *
+ * YCode 已移除内置官方供应商：family spec 为空语义，这里会返回空字符串，
+ * 调用方（账号连接恢复建议等）必须按“没有可用内置 provider”处理，不再发起账号查询。
+ */
 export function resolveModelProviderFamilyConnectionProviderId(params: {
   providerFamilyDomain: ProviderFamilyDomain;
   selection: ProviderFamilyConnectionSelection;

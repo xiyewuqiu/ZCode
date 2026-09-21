@@ -6,15 +6,12 @@ import { useZCodeStoreWithDefault } from "@/store/StoreProvider.js";
 import { resolveTheme, type ResolvedTheme } from "@/useTheme.js";
 import alibabaModelStudioLogo from "@/assets/provider-icons/model-provider-alibaba-cloud.png";
 import anthropicLogo from "@/assets/provider-icons/model-provider-anthropic.png";
-import bigModelLogo from "@/assets/provider-icons/logo-bigmodel.svg";
 import deepSeekLogo from "@/assets/provider-icons/model-provider-deepseek.png";
 import miniMaxLogo from "@/assets/provider-icons/model-provider-minimax.png";
 import moonshotKimiLogo from "@/assets/provider-icons/model-provider-moonshot-kimi.png";
 import openAiLogo from "@/assets/provider-icons/model-provider-openai.png";
 import xAiLogo from "@/assets/provider-icons/model-provider-xai.png";
 import xiaomiMimoLogo from "@/assets/provider-icons/model-provider-xiaomi-mimo.png";
-import startPlanLogo from "@/assets/provider-icons/model-provider-start-plan.png";
-import zaiLogo from "@/assets/provider-icons/model-provider-zai-app.png";
 import openrouterLight from "@/assets/provider-icons/model-provider-openrouter-light.svg";
 import openrouterDark from "@/assets/provider-icons/model-provider-openrouter-dark.svg";
 import opencodeLight from "@/assets/provider-icons/model-provider-opencode-light.svg";
@@ -28,11 +25,8 @@ interface BuiltinProviderLogoAsset {
 }
 
 // 这里只负责把 Config 中的资源 key 解析为打包素材；禁止加入 Provider ID、名称或排序逻辑。
+// YCode 不再内置官方供应商（Z.ai / BigModel / Start Plan），相关素材 key 已移除。
 const BUILTIN_PROVIDER_LOGO_ASSETS: Readonly<Record<string, BuiltinProviderLogoAsset>> = {
-  // 用户指定 Dock 应用图标；同名旧 SVG 带灰色描边，不能当作同一素材复用。
-  zai: { light: zaiLogo },
-  bigmodel: { light: bigModelLogo },
-  "start-plan": { light: startPlanLogo },
   "moonshot-kimi": { light: moonshotKimiLogo },
   minimax: { light: miniMaxLogo },
   deepseek: { light: deepSeekLogo },

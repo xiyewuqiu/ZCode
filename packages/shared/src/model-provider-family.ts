@@ -1,11 +1,21 @@
 import { BIGMODEL_PROVIDER_ID, type OAuthProviderId, ZAI_PROVIDER_ID } from "./oauth.js";
-import { BUILTIN_MODEL_PROVIDER_IDS, type BuiltinModelProviderId } from "./model-provider-types.js";
-import { ZCODE_ENV } from "./env.js";
-import { buildBigModelCodingPlanTeamManageUrl } from "./zcodeEndpoint.js";
+import { BUILTIN_MODEL_PROVIDER_IDS } from "./model-provider-types.js";
 
+/**
+ * 历史内置供应商家族 ID。
+ *
+ * YCode 已移除内置官方供应商（Z.ai / BigModel），家族不再指向任何内置 provider；
+ * 这里保留类型与查询函数，仅用于兼容旧配置读取和历史调用方（会话统计、账号连接恢复等仍按 family 取值）。
+ */
 export type ModelProviderFamilyId = "zai" | "bigmodel";
 export type ProviderFamilyDomain = ModelProviderFamilyId;
 
+/**
+ * 家族定义。
+ *
+ * provider id 保持字面量联合类型（承重墙）：历史调用方依赖这些字面量做 Record 索引与类型收窄，
+ * 不能在移除官方供应商时放宽成 string。
+ */
 export interface ModelProviderFamilySpec {
   id: ModelProviderFamilyId;
   label: string;
@@ -23,149 +33,101 @@ export interface ModelProviderFamilySpec {
   teamCodingPlanManageUrl: string;
 }
 
-export const MODEL_PROVIDER_FAMILY_SPECS = [
-  {
-    id: "zai",
-    label: "Z.ai",
-    rootDomain: "z.ai",
-    oauthProviderId: ZAI_PROVIDER_ID,
-    startPlanProviderId: BUILTIN_MODEL_PROVIDER_IDS.zaiStartPlan,
-    individualCodingPlanProviderId: BUILTIN_MODEL_PROVIDER_IDS.zaiIndividualCodingPlan,
-    teamCodingPlanProviderId: BUILTIN_MODEL_PROVIDER_IDS.zaiTeamCodingPlan,
-    teamCodingPlanManageUrl: "https://z.ai/manage-apikey/subscription",
-  },
-  {
-    id: "bigmodel",
-    label: "BigModel",
-    rootDomain: "bigmodel.cn",
-    oauthProviderId: BIGMODEL_PROVIDER_ID,
-    startPlanProviderId: BUILTIN_MODEL_PROVIDER_IDS.bigmodelStartPlan,
-    individualCodingPlanProviderId: BUILTIN_MODEL_PROVIDER_IDS.bigmodelIndividualCodingPlan,
-    teamCodingPlanProviderId: BUILTIN_MODEL_PROVIDER_IDS.bigmodelTeamCodingPlan,
-    teamCodingPlanManageUrl: buildBigModelCodingPlanTeamManageUrl({ ZCODE_ENV }),
-  },
-] as const satisfies readonly ModelProviderFamilySpec[];
+/**
+ * 内置官方供应商家族列表。
+ *
+ * YCode 不再内置 Z.ai / BigModel，这里保持为空：任何依赖 family 的展示逻辑
+ * 都会自然得到空集合，不再产出官方供应商入口。
+ */
+export const MODEL_PROVIDER_FAMILY_SPECS: readonly ModelProviderFamilySpec[] = [];
 
-const MODEL_PROVIDER_FAMILY_SPEC_BY_ID = new Map<ModelProviderFamilyId, ModelProviderFamilySpec>(
-  MODEL_PROVIDER_FAMILY_SPECS.map((spec) => [spec.id, spec]),
-);
-
-const MODEL_PROVIDER_FAMILY_ID_BY_PROVIDER_ID = new Map<
-  BuiltinModelProviderId,
-  ModelProviderFamilyId
->(
-  MODEL_PROVIDER_FAMILY_SPECS.flatMap((spec) =>
-    [
-      spec.startPlanProviderId,
-      spec.individualCodingPlanProviderId,
-      spec.teamCodingPlanProviderId,
-    ].map((providerId) => [providerId, spec.id] as const),
-  ),
-);
+/**
+ * 空语义 family spec。
+ *
+ * 部分历史调用方（会话统计、模型分组、账号连接恢复等）仍会按 family 取 spec 后直接读取字段，
+ * 因此查询函数不能返回 undefined。占位对象不携带展示名与官方 URL，
+ * provider id 保持空字符串，不会让官方供应商重新出现在界面上。
+ */
+function createEmptyModelProviderFamilySpec(
+  familyId: ModelProviderFamilyId,
+): ModelProviderFamilySpec {
+  return {
+    id: familyId,
+    label: "",
+    rootDomain: "",
+    oauthProviderId: familyId === "zai" ? ZAI_PROVIDER_ID : BIGMODEL_PROVIDER_ID,
+    startPlanProviderId: "",
+    individualCodingPlanProviderId: "",
+    teamCodingPlanProviderId: "",
+    teamCodingPlanManageUrl: "",
+  } as unknown as ModelProviderFamilySpec;
+}
 
 export function getModelProviderFamilySpec(
   familyId: ModelProviderFamilyId,
 ): ModelProviderFamilySpec {
-  return MODEL_PROVIDER_FAMILY_SPEC_BY_ID.get(familyId)!;
+  return createEmptyModelProviderFamilySpec(familyId);
 }
 
 export function resolveModelProviderFamilyIdByProviderId(
-  providerId: string,
+  _providerId: string,
 ): ModelProviderFamilyId | null {
-  return MODEL_PROVIDER_FAMILY_ID_BY_PROVIDER_ID.get(providerId as BuiltinModelProviderId) ?? null;
+  return null;
 }
 
 export function resolveModelProviderFamilyIdByBaseURL(
-  baseURL: string | null | undefined,
+  _baseURL: string | null | undefined,
 ): ModelProviderFamilyId | null {
-  const trimmed = baseURL?.trim();
-  if (!trimmed) {
-    return null;
-  }
-  let hostname: string;
-  try {
-    hostname = new URL(trimmed).hostname.toLowerCase();
-  } catch {
-    return null;
-  }
-  for (const spec of MODEL_PROVIDER_FAMILY_SPECS) {
-    if (hostname === spec.rootDomain || hostname.endsWith(`.${spec.rootDomain}`)) {
-      return spec.id;
-    }
-  }
   return null;
 }
 
 export function resolveModelProviderFamilySpecByProviderId(
-  providerId: string,
+  _providerId: string,
 ): ModelProviderFamilySpec | null {
-  const familyId = resolveModelProviderFamilyIdByProviderId(providerId);
-  return familyId ? getModelProviderFamilySpec(familyId) : null;
-}
-
-export function resolveModelProviderFamilyLabelByProviderId(providerId: string): string | null {
-  return resolveModelProviderFamilySpecByProviderId(providerId)?.label ?? null;
-}
-
-export function normalizeProviderFamilyDomain(
-  value: string | null | undefined,
-): ProviderFamilyDomain | null {
-  return value === "zai" || value === "bigmodel" ? value : null;
-}
-
-export function resolveProviderFamilyDomainFromOAuthProvider(
-  provider: OAuthProviderId | string | null | undefined,
-): ProviderFamilyDomain | null {
-  if (provider === ZAI_PROVIDER_ID) {
-    return "zai";
-  }
-  if (provider === BIGMODEL_PROVIDER_ID) {
-    return "bigmodel";
-  }
   return null;
 }
 
-export function shouldShowModelProviderFamilyForDomain(params: {
+export function resolveModelProviderFamilyLabelByProviderId(_providerId: string): string | null {
+  return null;
+}
+
+export function normalizeProviderFamilyDomain(
+  _value: string | null | undefined,
+): ProviderFamilyDomain | null {
+  return null;
+}
+
+export function resolveProviderFamilyDomainFromOAuthProvider(
+  _provider: OAuthProviderId | string | null | undefined,
+): ProviderFamilyDomain | null {
+  return null;
+}
+
+export function shouldShowModelProviderFamilyForDomain(_params: {
   familyId: ModelProviderFamilyId;
   providerFamilyDomain: ProviderFamilyDomain | null | undefined;
 }): boolean {
-  const providerFamilyDomain = normalizeProviderFamilyDomain(params.providerFamilyDomain);
-  if (!providerFamilyDomain) {
-    return true;
-  }
-  return params.familyId === providerFamilyDomain;
+  // family 不再指向内置供应商，展示门禁按“不过滤”处理，避免误隐藏用户自建供应商。
+  return true;
 }
 
-export function shouldShowModelProviderFamilyForActiveOAuth(params: {
+export function shouldShowModelProviderFamilyForActiveOAuth(_params: {
   familyId: ModelProviderFamilyId;
   activeOAuthProvider: OAuthProviderId | null | undefined;
 }): boolean {
-  return shouldShowModelProviderFamilyForDomain({
-    familyId: params.familyId,
-    providerFamilyDomain: resolveProviderFamilyDomainFromOAuthProvider(params.activeOAuthProvider),
-  });
+  return true;
 }
 
-export function shouldShowBuiltinModelProviderForDomain(params: {
+export function shouldShowBuiltinModelProviderForDomain(_params: {
   providerId: string;
   providerFamilyDomain: ProviderFamilyDomain | null | undefined;
 }): boolean {
-  const familyId = resolveModelProviderFamilyIdByProviderId(params.providerId);
-  if (!familyId) {
-    return true;
-  }
-  return shouldShowModelProviderFamilyForDomain({
-    familyId,
-    providerFamilyDomain: params.providerFamilyDomain,
-  });
+  return true;
 }
 
-export function shouldShowBuiltinModelProviderForActiveOAuth(params: {
+export function shouldShowBuiltinModelProviderForActiveOAuth(_params: {
   providerId: string;
   activeOAuthProvider: OAuthProviderId | null | undefined;
 }): boolean {
-  return shouldShowBuiltinModelProviderForDomain({
-    providerId: params.providerId,
-    providerFamilyDomain: resolveProviderFamilyDomainFromOAuthProvider(params.activeOAuthProvider),
-  });
+  return true;
 }

@@ -1,6 +1,4 @@
 import type { OAuthProviderId } from "@zcode/shared";
-import { createBigModelProviderRuntimeConfig } from "./providers/bigmodelProviderConfig.js";
-import { createZaiProviderRuntimeConfig } from "./providers/zaiProviderConfig.js";
 
 /** Provider 运行时配置（仅 host process 可见） */
 export interface OAuthProviderRuntimeConfig {
@@ -25,10 +23,14 @@ export interface OAuthRuntimeConfig {
 /**
  * 从运行时环境变量生成 OAuth 配置。
  *
+ * YCode 不再内置官方 OAuth 供应商（Z.ai / BigModel），这里不再默认注册任何 provider；
+ * 用户侧模型供应商走自己配置的 API Key，不经过 OAuth 登录渠道。
+ *
  * 注意：这里只能在 host process 使用，避免把敏感配置暴露给 renderer。
  */
 export function createOAuthRuntimeConfig(env: NodeJS.ProcessEnv = process.env): OAuthRuntimeConfig {
+  void env;
   return {
-    providers: [createBigModelProviderRuntimeConfig(env), createZaiProviderRuntimeConfig(env)],
+    providers: [],
   };
 }
