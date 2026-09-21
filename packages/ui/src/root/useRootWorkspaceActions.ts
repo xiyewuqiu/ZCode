@@ -82,7 +82,6 @@ export function useRootWorkspaceActions({
   openDirectoryBrowser,
   refreshProviderState,
   updateAppSettings,
-  setOAuthError,
   setUser,
   onProviderFamilyDomainClearedAfterLogout,
   userId,
@@ -102,7 +101,6 @@ export function useRootWorkspaceActions({
   openDirectoryBrowser?: () => void;
   refreshProviderState: () => Promise<void>;
   updateAppSettings: (patch: Partial<AppSettings>) => Promise<void>;
-  setOAuthError: (error: string | null) => void;
   setUser: (user: UserInfo | null) => void;
   onProviderFamilyDomainClearedAfterLogout?: () => void;
   userId?: string;
@@ -327,7 +325,6 @@ export function useRootWorkspaceActions({
     const nextProviderFamilyDomain = resolveLogoutProviderFamilyDomain({
       currentDomain: settingsBeforeLogout.providerFamilyDomain,
     });
-    await services.oauthService.logout();
     await updateAppSettings({
       providerFamilyDomain: (nextProviderFamilyDomain ?? "") as AppSettings["providerFamilyDomain"],
       providerFamilyDomainUpdatedAt: Date.now(),
@@ -336,9 +333,8 @@ export function useRootWorkspaceActions({
     if (!nextProviderFamilyDomain) {
       onProviderFamilyDomainClearedAfterLogout?.();
     }
-    // ZAI/BigModel provider 已恢复为 App 登录镜像。
-    // 派生 Coding/Start key 由 OAuth logout 的 host hook 统一清理，Root 只负责刷新展示态。
-    setOAuthError(null);
+    // OAuth 登录链路已移除：本机不存在账号会话与派生的 Coding/Start key，
+    // 退出登录只需落定“未登录”展示态并让 Provider Registry 重新解析。
     setUser(null);
     // 退出登录后刷新 Account Source 与 Registry，避免继续展示退出前的 Provider 状态。
     await refreshProviderState();
@@ -349,10 +345,8 @@ export function useRootWorkspaceActions({
     refreshProviderState,
     onProviderFamilyDomainClearedAfterLogout,
     platform,
-    services.oauthService,
     services.modelSelectionService,
     services.settingService,
-    setOAuthError,
     setUser,
     updateAppSettings,
     userId,

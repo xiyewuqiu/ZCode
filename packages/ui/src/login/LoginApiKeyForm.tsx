@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { isApiKeyAccess } from "@zcode/provider";
-import { Loader2Icon, TriangleAlertIcon } from "lucide-react";
+import { Loader2Icon, LogInIcon, TriangleAlertIcon } from "lucide-react";
 import {
   TID_LOGIN_API_KEY_CANCEL_BUTTON,
   TID_LOGIN_API_KEY_CONTINUE_BUTTON,
@@ -26,7 +26,6 @@ import { useProviderSettingsView } from "@/hooks/useProviderSettingsView.js";
 import { useServices } from "@/hooks/useServices.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { logger } from "@/logger.js";
-import { renderOAuthProviderIcon } from "@/lib/oauthProviderIcon.js";
 import {
   buildLoginApiKeyDefaultModelPreferenceFromSelection,
   buildLoginApiKeySkipSettings,
@@ -208,7 +207,8 @@ export function LoginApiKeyForm({ onCancel, onSaved, onSkipped }: LoginApiKeyFor
                     className="rounded-md"
                     data-testid={testId(TID_LOGIN_API_KEY_PROVIDER_ITEM, template.templateId)}
                   >
-                    {renderOAuthProviderIcon(template.templateId, "size-4")}
+                    {/* provider 模板没有专属品牌图标，统一用登录图标占位。 */}
+                    <LogInIcon className="size-4 shrink-0" />
                     {resolveLoginApiKeyProviderLabel(
                       template.templateId,
                       template.templateNameMap,
