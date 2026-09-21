@@ -8,7 +8,7 @@ import { logger } from "@/logger.js";
  * 这里只负责在模型选择视图恢复后落地迁移标记，让后续启动不再重复检查。
  */
 export async function ensureProviderFamilyDomainMigration(
-  services: Pick<IServiceAccessor, "settingService" | "oauthService" | "modelSelectionService">,
+  services: Pick<IServiceAccessor, "settingService" | "modelSelectionService">,
 ): Promise<void> {
   const settings = await services.settingService.get();
   if (settings.providerFamilyDomain || settings.providerFamilyDomainMigrated) {

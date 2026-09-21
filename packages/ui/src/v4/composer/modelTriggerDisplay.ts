@@ -1,7 +1,4 @@
-import {
-  BUILTIN_MODEL_PROVIDER_IDS,
-  resolveModelProviderFamilyIdByProviderId,
-} from "@zcode/shared";
+import { BUILTIN_MODEL_PROVIDER_IDS } from "@zcode/shared";
 import type { IntlInstance } from "@/i18n/IntlProvider.js";
 import type { ModelSelectGroup } from "@/ModelConfigSelect.js";
 
@@ -33,22 +30,15 @@ export function formatModelChangeLabel(
       planLabelId = "settings.modelProvider.connectionMode.teamPlan";
       break;
     default:
-      return formatProviderModelLabel(providerId, providerName, modelName);
+      return formatProviderModelLabel(providerName, modelName);
   }
   return `${modelName}(${intl.formatMessage({ id: planLabelId })})`;
 }
 
 export function formatProviderModelLabel(
-  providerId: string | undefined,
   providerName: string | undefined,
   modelName: string,
 ): string {
-  // Z.ai / BigModel 的内置连接名属于产品固定入口，拼进模型文案会重复展示
-  // “Coding Plan”等连接信息；切换提示额外通过 formatModelChangeLabel 标明套餐类型。
-  if (providerId && resolveModelProviderFamilyIdByProviderId(providerId)) {
-    return modelName;
-  }
-
   const normalizedProviderName = providerName?.trim();
   return normalizedProviderName ? `${normalizedProviderName}/${modelName}` : modelName;
 }
@@ -57,13 +47,11 @@ export function resolveV4ModelTriggerLabel({
   modelGroups,
   normalizedValue,
   fallbackLabel,
-  providerId,
   providerName,
 }: {
   modelGroups: readonly ModelSelectGroup[];
   normalizedValue: string;
   fallbackLabel: string;
-  providerId: string | undefined;
   providerName?: string;
 }): string {
   const selectedGroup = modelGroups.find((group) =>
@@ -74,20 +62,18 @@ export function resolveV4ModelTriggerLabel({
     return fallbackLabel;
   }
 
-  return formatProviderModelLabel(providerId, providerName, selectedItem.name);
+  return formatProviderModelLabel(providerName, selectedItem.name);
 }
 
 export function resolveV4ModelTriggerDisplay({
   modelGroups,
   normalizedValue,
   fallbackLabel,
-  providerId,
   providerName,
 }: {
   modelGroups: readonly ModelSelectGroup[];
   normalizedValue: string;
   fallbackLabel: string;
-  providerId: string | undefined;
   providerName?: string;
 }): V4ModelTriggerDisplay {
   // 把 provider/model 预先拼成单一字符串后，响应式布局只能整段隐藏或依赖
@@ -96,7 +82,6 @@ export function resolveV4ModelTriggerDisplay({
     modelGroups,
     normalizedValue,
     fallbackLabel,
-    providerId,
     providerName,
   });
   const selectedGroup = modelGroups.find((group) =>
@@ -109,10 +94,7 @@ export function resolveV4ModelTriggerDisplay({
 
   const modelLabel = selectedItem.name;
   const normalizedProviderName = providerName?.trim();
-  if (
-    !normalizedProviderName ||
-    (providerId && resolveModelProviderFamilyIdByProviderId(providerId))
-  ) {
+  if (!normalizedProviderName) {
     return { fullLabel, modelLabel };
   }
 

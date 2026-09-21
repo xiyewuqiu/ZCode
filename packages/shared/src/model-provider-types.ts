@@ -1,4 +1,12 @@
-/* eslint-disable max-lines -- 模型供应商 schema、迁移和运行时投影 helper 需要共享同一套类型边界，暂时集中在单文件避免契约分散。 */
+/**
+ * Provider 身份的类型边界。
+ *
+ * `builtin:*` / `account:*` 与 `zai-api` / `bigmodel-api` 是**已发布数据的固定身份**，不再由任何
+ * 配置声明：ZCode Built-in Config 的 `providerRules` 为空，Personal Provider 走
+ * `standard-personal`，官方账号能力改为用户自建 Provider 的 `zhipu-account` Access。
+ * 因此下面这些 ID 只允许出现在读取/迁移/归一旧数据的路径上（单向升级表、旧会话 SQL 迁移、
+ * 旧遥测身份），不能用来判定或构造当前 Provider。
+ */
 export const BUILTIN_PROVIDER_TEMPLATE_IDS = {
   zai: "zai-api",
   bigmodel: "bigmodel-api",
@@ -28,18 +36,6 @@ export function isBuiltinModelProviderId(id: string): id is BuiltinModelProvider
   );
 }
 
-export function isZaiCodingPlanProviderId(id: string): boolean {
-  return (
-    id === BUILTIN_MODEL_PROVIDER_IDS.zaiIndividualCodingPlan ||
-    id === BUILTIN_MODEL_PROVIDER_IDS.zaiTeamCodingPlan ||
-    id === BUILTIN_MODEL_PROVIDER_IDS.zaiStartPlan
-  );
-}
-
-export function isBigModelStartPlanProviderId(id: string): boolean {
-  return id === BUILTIN_MODEL_PROVIDER_IDS.bigmodelStartPlan;
-}
-
 export function isStartPlanModelProviderId(id: string): boolean {
   return (
     id === BUILTIN_MODEL_PROVIDER_IDS.zaiStartPlan ||
@@ -48,24 +44,19 @@ export function isStartPlanModelProviderId(id: string): boolean {
 }
 
 /**
- * 个人版 Coding Plan（不含 Start Plan 与 Team Plan）。
- * Start Plan 用 disconnected 展示领取/付费卡，Team Plan 有独立文案，
- * "服务端明确无权益"只对个人版需要区分成"未开通"。
+ * 账号型 Provider 的 Family Domain。
+ *
+ * 描述的是**用户账号**属于哪个家族（登录态、账号连接选择、Family 可用性查询按它分派），
+ * 而不是某个内置 Provider：官方内置 Provider 下线不影响它，Z.ai / BigModel 账号登录与
+ * Coding Plan 仍是现行能力，只是承载它们的 Provider 由用户自己配置。
  */
-export function isIndividualCodingPlanModelProviderId(id: string): boolean {
-  return (
-    id === BUILTIN_MODEL_PROVIDER_IDS.zaiIndividualCodingPlan ||
-    id === BUILTIN_MODEL_PROVIDER_IDS.bigmodelIndividualCodingPlan
-  );
-}
+export type ProviderFamilyDomain = "zai" | "bigmodel";
 
-export function isCodingPlanModelProviderId(id: string): boolean {
-  return (
-    isZaiCodingPlanProviderId(id) ||
-    id === BUILTIN_MODEL_PROVIDER_IDS.bigmodelIndividualCodingPlan ||
-    id === BUILTIN_MODEL_PROVIDER_IDS.bigmodelTeamCodingPlan ||
-    id === BUILTIN_MODEL_PROVIDER_IDS.bigmodelStartPlan
-  );
+/** 把已持久化的设置值收窄成 Domain；空串（清除）与未知值都表示"未选择"。 */
+export function normalizeProviderFamilyDomain(
+  value: string | null | undefined,
+): ProviderFamilyDomain | null {
+  return value === "zai" || value === "bigmodel" ? value : null;
 }
 
 /** 一个正式 Model 的连通性测试结果。 */

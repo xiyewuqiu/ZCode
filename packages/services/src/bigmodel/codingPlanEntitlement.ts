@@ -29,7 +29,8 @@ const teamSchema = z.object({
 });
 type PersonalCodingPlanSubscription = z.infer<typeof personalSchema>;
 type TeamCodingPlanSubscription = z.infer<typeof teamSchema>;
-export type CodingPlanEntitlement<T> =
+/** 三态权益：只有服务端明确说"没有"才是 unavailable；畸形/未验证一律 unknown。 */
+type CodingPlanEntitlement<T> =
   | { kind: "available"; subscription: T }
   | { kind: "unavailable"; reason?: "expired" | "unassigned" }
   | { kind: "unknown" };
@@ -42,7 +43,7 @@ function isCodingPlanProduct(value: unknown): boolean {
   );
 }
 
-export function isActivePersonalCodingPlan(subscription: {
+function isActivePersonalCodingPlan(subscription: {
   productId?: string;
   productName?: string;
   status?: string;

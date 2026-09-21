@@ -267,7 +267,6 @@ function V4ComposerModelControlsImpl({
       modelGroups: modelSelectGroups,
       normalizedValue: normalizedModelValue,
       fallbackLabel,
-      providerId: effectiveConfig?.provider,
       providerName,
     });
   }, [

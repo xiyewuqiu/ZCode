@@ -1,34 +1,29 @@
 import {
   BIGMODEL_PROVIDER_ID,
-  BUILTIN_MODEL_PROVIDER_IDS,
   ZAI_PROVIDER_ID,
   collectTelemetryRendererContext,
-  isZaiCodingPlanProviderId,
   sanitizeTelemetryEventDetail,
-  type BuiltinModelProviderId,
   type IPlatformService,
 } from "@zcode/shared";
 import { logger } from "@/logger.js";
 
+/**
+ * 登录 provider id → 上报用的低基数标签。
+ *
+ * 只认 OAuth provider id（账号家族身份）。内置 `account:*` 套餐 Provider 已不再由任何配置或
+ * 注册表产出，因此不再参与映射；已发布旧事件的 `builtin:*` 身份归一由
+ * providerTelemetryIdentity.legacyTelemetryProviderId 负责。
+ */
 export function resolveProviderTelemetryLabel(providerId: string): string {
-  if (providerId === ZAI_PROVIDER_ID || isZaiCodingPlanProviderId(providerId)) {
+  if (providerId === ZAI_PROVIDER_ID) {
     return "z.ai";
   }
 
-  if (
-    providerId === BIGMODEL_PROVIDER_ID ||
-    providerId === BUILTIN_MODEL_PROVIDER_IDS.bigmodelIndividualCodingPlan ||
-    providerId === BUILTIN_MODEL_PROVIDER_IDS.bigmodelTeamCodingPlan ||
-    providerId === BUILTIN_MODEL_PROVIDER_IDS.bigmodelStartPlan
-  ) {
+  if (providerId === BIGMODEL_PROVIDER_ID) {
     return "bigmodel";
   }
 
   return providerId;
-}
-
-export function resolvePresetModelProviderTelemetryLabel(presetId: BuiltinModelProviderId): string {
-  return resolveProviderTelemetryLabel(presetId);
 }
 
 type ReportTelemetryPlatform = Pick<IPlatformService, "reportTelemetryEvent">;

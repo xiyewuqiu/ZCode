@@ -9,7 +9,8 @@ export interface BigModelTeamPlanBizContext {
   projectId: string;
 }
 
-export interface BigModelTeamPlanApiKeySummary {
+/** Team 项目级 API Key 的条目形状；只在本模块内消费，不作为跨模块类型契约导出。 */
+interface BigModelTeamPlanApiKeySummary {
   apiKey?: string | null;
   keyType?: number | null;
   name?: string | null;
@@ -24,32 +25,6 @@ interface BigModelBizEnvelope<T> {
   msg?: string;
   success?: boolean;
   data?: T | null;
-}
-
-export type BigModelTeamPlanApiKeyEnsureStatus = "existing" | "created" | "missing";
-
-export interface BigModelTeamPlanApiKeyEnsureResult {
-  apiKey: BigModelTeamPlanApiKeySummary | null;
-  diagnostics: BigModelTeamPlanApiKeyEnsureDiagnostics;
-  status: BigModelTeamPlanApiKeyEnsureStatus;
-}
-
-export interface BigModelTeamPlanApiKeyEnsureDiagnostics {
-  create?: BigModelBizEnvelopeDiagnostics & {
-    dataHasApiKey: boolean;
-    dataKeyType: number | null;
-    dataName: string | null;
-  };
-  list: BigModelBizEnvelopeDiagnostics & {
-    apiKeyCount: number;
-    usableApiKeyCount: number;
-  };
-}
-
-export interface BigModelBizEnvelopeDiagnostics {
-  code: number | null;
-  msg: string | null;
-  success: boolean | null;
 }
 
 export function createBigModelBizHeaders(
@@ -85,6 +60,12 @@ function isUsableBigModelTeamPlanApiKey(item: BigModelTeamPlanApiKeySummary): bo
   );
 }
 
+/**
+ * 取得（或补建）当前 Team 项目可用的 project API Key。
+ *
+ * 列表命中就复用；否则按 `keyType=2` 建一把。**只返回 API Key 本身**：调用方
+ * （accountProviderTeamPlanRequestKey）只需要 key，诊断细节没有消费方，不再沿路透传。
+ */
 export async function ensureBigModelTeamPlanProjectApiKey(params: {
   apiClient: ApiClient;
   authorization: string;
@@ -92,17 +73,6 @@ export async function ensureBigModelTeamPlanProjectApiKey(params: {
   teamContext: BigModelTeamPlanBizContext;
   timeoutMs: number;
 }): Promise<BigModelTeamPlanApiKeySummary | null> {
-  const result = await ensureBigModelTeamPlanProjectApiKeyWithStatus(params);
-  return result.apiKey;
-}
-
-export async function ensureBigModelTeamPlanProjectApiKeyWithStatus(params: {
-  apiClient: ApiClient;
-  authorization: string;
-  host: string;
-  teamContext: BigModelTeamPlanBizContext;
-  timeoutMs: number;
-}): Promise<BigModelTeamPlanApiKeyEnsureResult> {
   const listUrl = buildBigModelTeamPlanApiKeysUrl(params.host, params.teamContext);
   const listPayload = await readApiJson<BigModelBizEnvelope<BigModelTeamPlanApiKeySummary[]>>(
     params.apiClient,
@@ -114,14 +84,9 @@ export async function ensureBigModelTeamPlanProjectApiKeyWithStatus(params: {
     },
   );
   const apiKeys = isSuccessfulBigModelBizEnvelope(listPayload) ? (listPayload.data ?? []) : [];
-  const listDiagnostics = {
-    ...createBigModelBizEnvelopeDiagnostics(listPayload),
-    apiKeyCount: apiKeys.length,
-    usableApiKeyCount: apiKeys.filter(isUsableBigModelTeamPlanApiKey).length,
-  };
   const existingApiKey = apiKeys.find(isUsableBigModelTeamPlanApiKey) ?? null;
   if (existingApiKey) {
-    return { apiKey: existingApiKey, diagnostics: { list: listDiagnostics }, status: "existing" };
+    return existingApiKey;
   }
 
   // 一个账号可能有多个 Team Plan 项目，每个项目都需要自己的 keyType=2
@@ -139,22 +104,7 @@ export async function ensureBigModelTeamPlanProjectApiKeyWithStatus(params: {
   const createData = isSuccessfulBigModelBizEnvelope(createPayload)
     ? (createPayload.data ?? null)
     : null;
-  const createdApiKey =
-    createData && isUsableBigModelTeamPlanApiKey(createData) ? createData : null;
-  return {
-    apiKey: createdApiKey,
-    diagnostics: {
-      create: {
-        ...createBigModelBizEnvelopeDiagnostics(createPayload),
-        dataHasApiKey: Boolean(createPayload.data?.apiKey?.trim()),
-        dataKeyType:
-          typeof createPayload.data?.keyType === "number" ? createPayload.data.keyType : null,
-        dataName: createPayload.data?.name?.trim() || null,
-      },
-      list: listDiagnostics,
-    },
-    status: createdApiKey ? "created" : "missing",
-  };
+  return createData && isUsableBigModelTeamPlanApiKey(createData) ? createData : null;
 }
 
 export async function copyBigModelTeamPlanProjectApiKeySecret(params: {
@@ -200,14 +150,4 @@ function isSuccessfulBigModelBizEnvelope(envelope: BigModelBizEnvelope<unknown>)
     return envelope.code === 0 || envelope.code === 200;
   }
   return envelope.success === true || envelope.data !== undefined;
-}
-
-function createBigModelBizEnvelopeDiagnostics(
-  envelope: BigModelBizEnvelope<unknown>,
-): BigModelBizEnvelopeDiagnostics {
-  return {
-    code: typeof envelope.code === "number" ? envelope.code : null,
-    msg: envelope.msg?.trim() || null,
-    success: typeof envelope.success === "boolean" ? envelope.success : null,
-  };
 }
