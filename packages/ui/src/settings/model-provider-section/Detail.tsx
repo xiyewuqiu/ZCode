@@ -1,22 +1,28 @@
 import type { ModelConnectivityResult } from "@zcode/shared";
 import type { SavePersonalModelDraftInput } from "@zcode/provider";
 import type { ProviderSettingsView } from "@zcode/services";
+import { Loader2Icon } from "lucide-react";
 import {
   getProviderFormApiKeyManagementUrl,
   type ProviderSettingsFormProvider,
 } from "@/lib/providerSettingsFormTypes.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
+import { useProviderSettingsView } from "@/hooks/useProviderSettingsView.js";
 import type { ModelProviderNavItem } from "./constants.js";
 import { InlineEditableProviderCard } from "./InlineEditableProviderCard.js";
-import { ProviderDetailLoadingCard } from "./ProviderDetailLoadingCard.js";
-import { useProviderSettingsView } from "@/hooks/useProviderSettingsView.js";
 
-/**
- * 设置页供应商详情。
- *
- * YCode 已移除内置官方供应商（Z.ai / BigModel Coding Plan、Start Plan、Team Plan），
- * 详情页只渲染用户自己配置的供应商（含模板创建的通用供应商）。
- */
+/** 供应商详情：配置尚未返回时的加载占位，避免右侧面板空白。 */
+function ProviderDetailLoadingCard({ loadingLabel }: { loadingLabel: string }) {
+  return (
+    <div className="flex flex-col gap-2 rounded-xl border border-border bg-surface p-3">
+      <div className="flex items-center gap-2 text-ui-base text-foreground-subtle">
+        <Loader2Icon className="size-4 animate-spin" />
+        <span>{loadingLabel}</span>
+      </div>
+    </div>
+  );
+}
+
 export function ModelProviderSectionDetail({
   selectedNavItem,
   onSave,
@@ -27,7 +33,6 @@ export function ModelProviderSectionDetail({
   onDelete,
   onReorderProviderModels,
   onTestModel,
-  onOpenApiKeyUrl,
   providerSettingsView: providerSettingsViewOverride,
 }: {
   selectedNavItem: ModelProviderNavItem | null;
@@ -48,7 +53,6 @@ export function ModelProviderSectionDetail({
   onDelete: (provider: ProviderSettingsFormProvider) => Promise<void>;
   onReorderProviderModels?: (providerId: string, modelIds: string[]) => Promise<void>;
   onTestModel: (providerId: string, modelId: string) => Promise<ModelConnectivityResult>;
-  onOpenApiKeyUrl: (url: string) => void;
   providerSettingsView?: ProviderSettingsView | null;
 }) {
   const { intl } = useZCodeIntl();
@@ -57,46 +61,33 @@ export function ModelProviderSectionDetail({
   const rootProviderSettingsView =
     rootProviderSettingsRead.state.status === "ready" ? rootProviderSettingsRead.state.view : null;
   const providerSettingsView = providerSettingsViewOverride ?? rootProviderSettingsView;
-  // 账号分支曾漏传删除回调，出现只删 UI 不写盘。所有详情共用同一套模型操作装配。
-  const modelEditingProps = {
-    onAddPersonalModel,
-    onSavePersonalModelDraft,
-    onSetPersonalModelEnabled,
-    onDeletePersonalModel,
-    settingsRevision: providerSettingsView?.revision,
-  };
 
   if (!selectedNavItem) {
     return <ProviderDetailLoadingCard loadingLabel={loadingLabel} />;
   }
 
-  const customProvider = selectedNavItem.provider;
-  const customApiKeyUrl = customProvider.templateId
-    ? getProviderFormApiKeyManagementUrl(customProvider)
+  const provider = selectedNavItem.provider;
+  // 仅展示预设模板声明的 Key 入口，不根据地址猜测自定义 Provider 的 Key 控制台。
+  const apiKeyManagementUrl = provider.templateId
+    ? getProviderFormApiKeyManagementUrl(provider)
     : undefined;
   return (
-    // 仅展示预设模板声明的入口，不根据地址猜测自定义 Provider 的 Key 控制台。
     <InlineEditableProviderCard
-      provider={customProvider}
+      provider={provider}
       onSave={onSave}
-      {...modelEditingProps}
-      onDelete={() => onDelete(customProvider)}
+      onAddPersonalModel={onAddPersonalModel}
+      onSavePersonalModelDraft={onSavePersonalModelDraft}
+      onSetPersonalModelEnabled={onSetPersonalModelEnabled}
+      onDeletePersonalModel={onDeletePersonalModel}
+      settingsRevision={providerSettingsView?.revision}
+      onDelete={() => onDelete(provider)}
       onReorderModelIds={
         onReorderProviderModels
-          ? (modelIds) => onReorderProviderModels(customProvider.providerId, modelIds)
+          ? (modelIds) => onReorderProviderModels(provider.providerId, modelIds)
           : undefined
       }
       onTestModel={onTestModel}
-      presetApiKeyUrl={customApiKeyUrl}
-      readOnlyEndpoints={false}
-      nameEditable
-      onOpenPresetApiKey={
-        customApiKeyUrl
-          ? () => {
-              onOpenApiKeyUrl(customApiKeyUrl);
-            }
-          : undefined
-      }
+      apiKeyManagementUrl={apiKeyManagementUrl}
     />
   );
 }

@@ -9,10 +9,10 @@ import {
   type ProviderOrderView,
 } from "@/lib/modelProviderOrdering.js";
 import {
+  createCustomProviderNodeKey,
   type ModelProviderNavGroup,
   type ModelProviderNavItem,
 } from "@/settings/model-provider-section/constants.js";
-import { createCustomProviderNodeKey } from "@/settings/model-provider-section/utils.js";
 
 interface UseModelProviderNavigationOptions {
   modelProviders: ProviderSettingsFormProvider[];
@@ -22,12 +22,7 @@ interface UseModelProviderNavigationOptions {
   intl: ReturnType<typeof useZCodeIntl>["intl"];
 }
 
-/**
- * 设置页供应商导航。
- *
- * YCode 已移除内置官方供应商，导航只展示用户自己配置的供应商（standard-personal）。
- * 官方 Coding Plan / Start Plan / Team Plan 导航项不再生成。
- */
+/** 设置页供应商导航：只展示用户自己配置的供应商，顺序与聊天框模型菜单一致。 */
 export function useModelProviderNavigation({
   modelProviders,
   displayOrder,
@@ -50,10 +45,8 @@ export function useModelProviderNavigation({
         title: intl.formatMessage({ id: "settings.modelProvider.customTitle" }),
         items: customProviders.map((provider) => ({
           key: createCustomProviderNodeKey(provider.providerId),
-          type: "custom" as const,
           label: getProviderFormLabel(provider),
           provider,
-          statusActive: provider.executable === true,
         })),
       },
     ],

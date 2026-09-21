@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef } from "react";
 
 const MODEL_PROVIDER_TEXT_IDLE_TRIGGER_MS = 1_200;
 
@@ -12,13 +12,11 @@ export function useIdleTrigger<TResult>(
 ) {
   const actionRef = useRef(action);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [scheduled, setScheduled] = useState(false);
   actionRef.current = action;
 
   const cancel = useCallback(() => {
     if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = null;
-    setScheduled(false);
   }, []);
 
   const flush = useCallback(async (): Promise<TResult> => {
@@ -28,10 +26,8 @@ export function useIdleTrigger<TResult>(
 
   const schedule = useCallback(() => {
     if (timerRef.current) clearTimeout(timerRef.current);
-    setScheduled(true);
     timerRef.current = setTimeout(() => {
       timerRef.current = null;
-      setScheduled(false);
       // Idle 动作的失败由所属表单在下一次 blur/save 时显式呈现；定时器本身不能制造
       // unhandled rejection，否则一次解析失败会污染整个 Renderer 调试链路。
       try {
@@ -50,5 +46,5 @@ export function useIdleTrigger<TResult>(
     [],
   );
 
-  return { cancel, flush, schedule, scheduled } as const;
+  return { cancel, flush, schedule } as const;
 }

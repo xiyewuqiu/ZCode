@@ -25,7 +25,6 @@ interface BuiltinProviderLogoAsset {
 }
 
 // 这里只负责把 Config 中的资源 key 解析为打包素材；禁止加入 Provider ID、名称或排序逻辑。
-// YCode 不再内置官方供应商（Z.ai / BigModel / Start Plan），相关素材 key 已移除。
 const BUILTIN_PROVIDER_LOGO_ASSETS: Readonly<Record<string, BuiltinProviderLogoAsset>> = {
   "moonshot-kimi": { light: moonshotKimiLogo },
   minimax: { light: miniMaxLogo },
@@ -57,7 +56,8 @@ export function ProviderLogo({
   logo?: ProviderLogoRef | null;
   className?: string;
 }) {
-  const theme = useZCodeStoreWithDefault((state) => state.theme, "zai-dark");
+  // 提供 Store 之外的兜底：产品默认主题是深色，这里只需要已解析的亮/暗取值。
+  const theme = useZCodeStoreWithDefault((state) => state.theme, "dark");
   const src = resolveBuiltinProviderLogoAsset(logo, resolveTheme(theme));
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
   if (!src || failedSrc === src) {

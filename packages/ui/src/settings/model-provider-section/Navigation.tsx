@@ -16,17 +16,43 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Loader2Icon } from "lucide-react";
+import { CircleIcon, Loader2Icon } from "lucide-react";
 import { TID_MODEL_PROVIDER_NAV_ITEM, testId } from "@zcode/shared";
 import { useCallback, useMemo, type KeyboardEvent } from "react";
 import { ControlHintTooltip } from "@/ControlHintTooltip.js";
-import { ProviderStatusIndicator } from "./ProviderStatusIndicator.js";
+import { useZCodeIntl } from "@/i18n/IntlProvider.js";
+import type { ProviderSettingsFormProvider } from "@/lib/providerSettingsFormTypes.js";
 import type { ModelProviderNavGroup, ModelProviderNavItem } from "./constants.js";
+import { ProviderLogo } from "./ProviderLogo.js";
 import { useOptimisticReorder } from "./useOptimisticReorder.js";
-import { renderModelProviderNavIcon } from "./utils.js";
 
 // 侧栏会裁切水平溢出；排序只改变纵向位置，拖动时也必须保持 x=0。
 const restrictToVerticalAxis: Modifier = ({ transform }) => ({ ...transform, x: 0 });
+
+const PROVIDER_STATUS_PRESENTATION = {
+  disabled: { label: "settings.modelProvider.disabledStatus", color: "text-foreground-subtlest" },
+  unavailable: { label: "settings.modelProvider.unavailableStatus", color: "text-warning" },
+  ready: { label: "settings.modelProvider.readyStatus", color: "text-success" },
+} as const;
+
+/** 只做展示映射，不在 UI 再检查 Key、权益或模型成员。 */
+function ProviderStatusIndicator({
+  provider,
+}: {
+  provider?: Pick<ProviderSettingsFormProvider, "enabled" | "executable"> | null;
+}) {
+  const { intl } = useZCodeIntl();
+  const status =
+    provider?.enabled === false ? "disabled" : provider?.executable ? "ready" : "unavailable";
+  const { label, color } = PROVIDER_STATUS_PRESENTATION[status];
+  return (
+    <CircleIcon
+      data-provider-status={status}
+      aria-label={intl.formatMessage({ id: label })}
+      className={`size-2 shrink-0 fill-current max-md:absolute max-md:right-1 max-md:bottom-1 max-md:rounded-full max-md:ring-2 max-md:ring-card ${color}`}
+    />
+  );
+}
 
 function getSortableProviderId(
   item: ModelProviderNavItem,
@@ -79,7 +105,7 @@ function ModelProviderNavigationButton({
             : inactiveItemClassName
         }`}
       >
-        <span className="shrink-0 text-current">{renderModelProviderNavIcon(item)}</span>
+        <ProviderLogo logo={item.provider.config.logo} className="size-4" />
         <span className="flex min-w-0 flex-1 items-center gap-1.5 max-md:sr-only">
           <span className="min-w-0 truncate">{label}</span>
         </span>
@@ -154,7 +180,7 @@ function SortableModelProviderNavigationButton({
         } ${isDragging ? "z-20 opacity-70" : ""}`}
       >
         <span className="shrink-0 text-current" aria-hidden="true">
-          {renderModelProviderNavIcon(item)}
+          <ProviderLogo logo={item.provider.config.logo} className="size-4" />
         </span>
         <span className="flex min-w-0 flex-1 items-center gap-1.5 max-md:sr-only">
           <span className="min-w-0 truncate">{label}</span>

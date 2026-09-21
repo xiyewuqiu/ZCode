@@ -1,47 +1,24 @@
-import type { BuiltinModelProviderId, UsageEntitlementSnapshot } from "@zcode/shared";
-import {
-  getProviderFormLabel,
-  type ProviderSettingsFormProvider,
-} from "@/lib/providerSettingsFormTypes.js";
+import type { ProviderSettingsFormProvider } from "@/lib/providerSettingsFormTypes.js";
 
 /**
- * 历史官方 Coding Plan provider id 类型。
+ * 供应商导航。
  *
- * YCode 已移除内置官方供应商（Z.ai / BigModel Coding Plan），设置页不再生成对应入口；
- * 该类型只保留给仍按 provider id 查询权益的历史调用方使用。
+ * 设置页只展示用户自己配置的供应商（`standard-personal`），已移除内置托管供应商，
+ * 因此导航只有唯一分组，节点 key 也只由 providerId 派生。
  */
-export type CodingPlanProviderId = BuiltinModelProviderId;
-
-/** 权益查询状态：设置页不再消费，兼容仍读取套餐快照的调用方。 */
-export interface CodingPlanEntitlementState {
-  snapshot: UsageEntitlementSnapshot | null;
-  loading: boolean;
-  error: string | null;
+export function createCustomProviderNodeKey(providerId: string): string {
+  return `custom:${providerId}`;
 }
 
-/**
- * 供应商显示名。
- *
- * 官方供应商已移除固定显示名规则，统一使用用户配置的名称，缺省回退 providerId。
- */
-export function resolveModelProviderDisplayName(
-  provider: Pick<ProviderSettingsFormProvider, "providerId" | "providerName">,
-): string {
-  return getProviderFormLabel(provider);
-}
-
-export type ModelProviderNavItem = {
+export interface ModelProviderNavItem {
   key: string;
-  type: "custom";
   label: string;
   provider: ProviderSettingsFormProvider;
-  statusActive: boolean;
-};
-
-export type ModelProviderNavGroupId = "custom";
+}
 
 export interface ModelProviderNavGroup {
-  id: ModelProviderNavGroupId;
+  /** React key 与分组标题的稳定标识。 */
+  id: "custom";
   title: string;
   items: ModelProviderNavItem[];
 }

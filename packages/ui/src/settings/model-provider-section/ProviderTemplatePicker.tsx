@@ -34,8 +34,7 @@ export function ProviderTemplatePicker({
   const { intl, locale } = useZCodeIntl();
   const { dismissFeedback, showFeedback } = useProviderDetailFeedback();
   const customLabel = intl.formatMessage({ id: "settings.modelProvider.newProviderName" });
-  // YCode 不再内置官方供应商模板（Z.ai / BigModel），模板列表全部来自运行时配置。
-  // 官方模板已从内置配置移除，这里也不再为它们保留单独分组。
+  // 模板列表全部来自运行时配置；托管供应商模板移除后只剩唯一分组。
   const templateGroupId = "other";
   const createWithFeedback = async (create: () => Promise<void>) => {
     const feedbackKey = "provider-template-create";
@@ -77,10 +76,7 @@ export function ProviderTemplatePicker({
       </div>
 
       <div className="space-y-6">
-        <section
-          data-provider-template-group={templateGroupId}
-          className="space-y-3"
-        >
+        <section data-provider-template-group={templateGroupId} className="space-y-3">
           <h3 className="text-ui-base font-medium text-foreground-subtle">
             {intl.formatMessage({ id: `settings.modelProvider.templateGroup.${templateGroupId}` })}
           </h3>

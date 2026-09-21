@@ -1,11 +1,162 @@
-import { useEffect, useRef, useState, type DragEvent, type KeyboardEvent } from "react";
-import { PlusIcon, XIcon } from "lucide-react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type DragEvent,
+  type KeyboardEvent,
+  type ReactNode,
+} from "react";
+import { LockKeyholeIcon, PlusIcon, XIcon } from "lucide-react";
 import { Button } from "@/components/ui/button.js";
+import { Textarea } from "@/components/ui/textarea.js";
 import { cn } from "@/components/lib/utils.js";
+import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { TECHNICAL_INPUT_ATTRIBUTES } from "@/lib/technicalInputAttributes.js";
-import { modelEditorControlStyle } from "@/settings/model-provider-section/modelEditorControlStyle.js";
+import type { ModelConfigObject } from "@zcode/provider";
+import type { ProviderModelDraftValues, ProviderModelInputFormatDraft } from "./modelDraft.js";
+import {
+  ModelConfigHelp,
+  ModelOptionCheckbox,
+  ModelSettingsGroup,
+  modelEditorControlStyle,
+} from "./modelEditorControls.js";
 
-export function ProviderModelReasoningLevelEditor({
+function JsonSlotEditor({
+  label,
+  labelHelp,
+  value,
+  effectiveValue,
+  overridden = false,
+  onChange,
+}: {
+  label: string;
+  labelHelp?: ReactNode;
+  value: string;
+  effectiveValue?: string;
+  overridden?: boolean;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div className="space-y-1" data-model-json-slot="true">
+      <div className="mb-1 block text-ui-base text-foreground-subtle">
+        {label}
+        {labelHelp}
+      </div>
+      <Textarea
+        {...TECHNICAL_INPUT_ATTRIBUTES}
+        data-language="json"
+        // 共享 Textarea 默认按内容自适应高度，长 Effective JSON placeholder 会撑高整个弹窗。
+        // JSON 槽位保持固定高度，超出内容只在输入框内部滚动。
+        className={cn(
+          "field-sizing-fixed h-32 min-h-32 max-h-32 resize-none overflow-y-auto rounded-lg px-3 py-2 font-mono text-foreground placeholder:text-foreground-subtlest",
+          modelEditorControlStyle(overridden),
+        )}
+        data-personal-override={overridden}
+        value={value}
+        placeholder={effectiveValue}
+        onChange={(event) => onChange(event.target.value)}
+      />
+    </div>
+  );
+}
+
+// PDF 已经是正式的模型输入事实和可执行附件能力，旧列表漏掉它后用户无法修正该事实。
+// Audio 仍没有设置页附件入口，因此继续只在 Draft 中无损保留。
+const INPUT_MODALITY_OPTIONS = ["text", "image", "video", "pdf"] as const;
+
+const INPUT_MODALITY_FIELDS = {
+  image: "supportsImage",
+  video: "supportsVideo",
+  pdf: "supportsPdf",
+} as const satisfies Record<Exclude<(typeof INPUT_MODALITY_OPTIONS)[number], "text">, string>;
+
+type VisibleModelFormat = (typeof INPUT_MODALITY_OPTIONS)[number];
+
+function ModalityOption({
+  modality,
+  selected,
+  disabled = false,
+  overridden = false,
+  onToggle,
+}: {
+  modality: VisibleModelFormat;
+  selected: boolean;
+  disabled?: boolean;
+  overridden?: boolean;
+  onToggle?: () => void;
+}) {
+  const { intl } = useZCodeIntl();
+  return (
+    <Button
+      type="button"
+      variant="outline"
+      size="lg"
+      aria-pressed={selected}
+      disabled={disabled}
+      data-selected={selected}
+      data-personal-override={overridden}
+      data-model-input-modality={modality}
+      className={cn(
+        "gap-2 px-3 disabled:opacity-100",
+        modelEditorControlStyle(overridden, selected),
+      )}
+      onClick={onToggle}
+    >
+      <ModelOptionCheckbox selected={selected} />
+      <span>{intl.formatMessage({ id: `settings.modelProvider.modality.${modality}` })}</span>
+      {disabled ? (
+        <LockKeyholeIcon
+          className="size-3.5 shrink-0 text-foreground-subtle"
+          aria-hidden="true"
+          data-model-modality-lock="true"
+        />
+      ) : null}
+    </Button>
+  );
+}
+
+export function ProviderModelInputModalityOptions({
+  value,
+  onChange,
+  overrideFields,
+}: {
+  value: ProviderModelInputFormatDraft;
+  onChange: (value: ProviderModelInputFormatDraft) => void;
+  overrideFields?: ReadonlySet<string>;
+}) {
+  const selected = {
+    text: value.supportsText,
+    image: value.supportsImage,
+    video: value.supportsVideo,
+    pdf: value.supportsPdf,
+  };
+  return (
+    <div className="flex flex-wrap gap-2">
+      {INPUT_MODALITY_OPTIONS.map((modality) => {
+        const disabled = modality === "text";
+        const field = disabled ? "supportsText" : INPUT_MODALITY_FIELDS[modality];
+        const overridden = !disabled && (overrideFields?.has(`inputFormatValue.${field}`) ?? false);
+        return (
+          <div key={modality}>
+            <ModalityOption
+              modality={modality}
+              selected={disabled || selected[modality]}
+              disabled={disabled}
+              overridden={overridden}
+              onToggle={
+                disabled
+                  ? undefined
+                  : () => onChange({ ...value, supportsText: true, [field]: !value[field] })
+              }
+            />
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function ProviderModelReasoningLevelEditor({
   values,
   overridden,
   addLabel,
@@ -187,5 +338,53 @@ export function ProviderModelReasoningLevelEditor({
         </Button>
       )}
     </div>
+  );
+}
+
+export function ProviderModelReasoningSettings({
+  draft,
+  inheritedConfig,
+  overrideFields,
+  onDraftChange,
+}: {
+  draft: ProviderModelDraftValues;
+  inheritedConfig?: ModelConfigObject;
+  overrideFields?: ReadonlySet<string>;
+  onDraftChange: (patch: Partial<ProviderModelDraftValues>) => void;
+}) {
+  const { intl } = useZCodeIntl();
+
+  return (
+    <ModelSettingsGroup group="reasoning">
+      <div className="space-y-1">
+        <div className="block text-ui-base text-foreground-subtle">
+          {intl.formatMessage({ id: "settings.modelProvider.reasoningLevelsOrdered" })}
+          <ModelConfigHelp field="reasoningLevelsOrdered" />
+        </div>
+        <ProviderModelReasoningLevelEditor
+          values={draft.reasoningLevelValuesValue}
+          overridden={overrideFields?.has("reasoningLevelValuesValue") ?? false}
+          addLabel={intl.formatMessage({ id: "settings.modelProvider.reasoningLevelAdd" })}
+          deleteLabel={intl.formatMessage({
+            id: "settings.modelProvider.reasoningLevelDelete",
+          })}
+          onChange={(reasoningLevelValuesValue) => onDraftChange({ reasoningLevelValuesValue })}
+        />
+      </div>
+      <div data-model-reasoning-level-map-editor="true">
+        <JsonSlotEditor
+          label={intl.formatMessage({ id: "settings.modelProvider.reasoningLevelMapping" })}
+          labelHelp={<ModelConfigHelp field="reasoningLevelMapping" />}
+          value={draft.reasoningLevelMapValue}
+          effectiveValue={
+            draft.useRecommendedConfigValue === false
+              ? undefined
+              : (inheritedConfig?.optionSpecs?.reasoningLevel?.map ?? undefined)
+          }
+          overridden={overrideFields?.has("reasoningLevelMapValue") ?? false}
+          onChange={(reasoningLevelMapValue) => onDraftChange({ reasoningLevelMapValue })}
+        />
+      </div>
+    </ModelSettingsGroup>
   );
 }

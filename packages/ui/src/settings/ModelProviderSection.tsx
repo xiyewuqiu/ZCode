@@ -5,7 +5,6 @@ import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { Button } from "@/components/ui/button.js";
 import { useConfirmDialog } from "@/hooks/useConfirmDialog.js";
 import { useModelProviders } from "@/hooks/useModelProviders.js";
-import { usePlatform } from "@/hooks/usePlatform.js";
 import { logger } from "@/logger.js";
 import { sortModelProvidersForDisplay } from "@/lib/modelProviderOrdering.js";
 import {
@@ -13,22 +12,15 @@ import {
   consumePendingSettingsModelProviderTarget,
   type SettingsModelProviderTarget,
 } from "@/lib/settingsNavigation.js";
-import type { ModelProviderNavItem } from "./model-provider-section/constants.js";
+import {
+  createCustomProviderNodeKey,
+  type ModelProviderNavItem,
+} from "./model-provider-section/constants.js";
 import { ModelProviderSectionDetail } from "./model-provider-section/Detail.js";
 import { ModelProviderSectionLayout } from "./model-provider-section/SectionLayout.js";
 import { ProviderTemplatePicker } from "./model-provider-section/ProviderTemplatePicker.js";
 import { useModelProviderNavigation } from "./model-provider-section/useModelProviderNavigation.js";
-import { createCustomProviderNodeKey } from "./model-provider-section/utils.js";
-import {
-  confirmAndDeleteModelProvider,
-  refreshModelProviderSection,
-} from "./model-provider-section/modelProviderActions.js";
-
-export {
-  fuzzyMatch,
-  handleEndpointSuggestionPopoverOpenAutoFocus,
-  resolveEndpointSuggestionOpenRequest,
-} from "./model-provider-section/utils.js";
+import { confirmAndDeleteModelProvider } from "./model-provider-section/modelProviderActions.js";
 
 function resolveInitialSelectedNodeKey(
   target: SettingsModelProviderTarget | undefined,
@@ -41,8 +33,7 @@ function resolveInitialSelectedNodeKey(
  * 模型 Provider 设置只由 SettingsPage 注入 Local Host；这里不接收 workspaceIdentity，
  * 防止远程 workspace 误将 Provider Settings 的读写路由到远端 Environment。
  *
- * YCode 已移除内置官方供应商（Z.ai / BigModel Coding Plan 与 Start Plan），
- * 设置页只管理用户自己配置的供应商（含模板创建的通用供应商）。
+ * 产品已移除内置托管供应商：设置页只管理用户自己配置的供应商（含模板创建的供应商）。
  */
 export function ModelProviderSection({
   workspacePath = "",
@@ -59,7 +50,6 @@ export function ModelProviderSection({
 } = {}) {
   const { intl, locale } = useZCodeIntl();
   const confirmDialog = useConfirmDialog();
-  const platform = usePlatform();
   const {
     modelProviders,
     providerTemplates,
@@ -178,17 +168,6 @@ export function ModelProviderSection({
     [confirmDialog, deleteProvider, intl],
   );
 
-  const handleOpenApiKeyUrl = useCallback(
-    (url: string) => {
-      const normalizedUrl = url.trim();
-      if (!normalizedUrl) {
-        return;
-      }
-      platform.openExternal(normalizedUrl);
-    },
-    [platform],
-  );
-
   const handleSelectNavItem = useCallback(
     (item: ModelProviderNavItem) => {
       setSelectedNodeKey(item.key);
@@ -267,7 +246,7 @@ export function ModelProviderSection({
       loadingLabel={intl.formatMessage({ id: "common.loading" })}
       loading={providersLoading}
       onRefresh={() => {
-        void refreshModelProviderSection({ refresh });
+        void refresh();
       }}
       addProviderLabel={intl.formatMessage({ id: "settings.modelProvider.addProviderAction" })}
       onAddProvider={() => setTemplatePickerOpen(true)}
@@ -303,7 +282,6 @@ export function ModelProviderSection({
           // Provider 的 Effective 模型无法写入 Personal modelOrder。模型调序独立于成员来源。
           onReorderProviderModels={reorderProviderModels}
           onTestModel={handleTestModel}
-          onOpenApiKeyUrl={handleOpenApiKeyUrl}
         />
       )}
     </ModelProviderSectionLayout>

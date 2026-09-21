@@ -1,4 +1,4 @@
-/* oxlint-disable eslint(max-lines) -- Model Config 弹窗的 Draft、校验与稀疏 Overlay 必须共享同一字段映射，避免 UI 产生第二套规则。 */
+/* oxlint-disable eslint(max-lines) -- 草稿值、投影规则与稀疏 Overlay 提交共享同一字段映射，拆开会复制出第二套规则。 */
 import type { ProviderSettingsFormModel } from "@/lib/providerSettingsFormTypes.js";
 import type { ModelInputFormatData } from "@zcode/shared/model-config";
 import {
@@ -10,6 +10,7 @@ import {
 
 export type ProviderModelInputFormatDraft = ModelInputFormatData;
 
+/** 模型编辑弹窗的唯一草稿形态：字符串输入 + 字段来源标记，提交时才物化为稀疏 Overlay。 */
 export interface ProviderModelDraftValues {
   idValue: string;
   contextWindowValue: string;
@@ -30,16 +31,112 @@ export interface ProviderModelDraftValues {
 
 export type ProviderModelDraftCommitResult =
   | { status: "commit"; model: ProviderSettingsFormModel }
-  | {
-      status: "invalid";
-      field:
-        | "id"
-        | "contextWindow"
-        | "maxOutputTokens"
-        | "inputFormat"
-        | "reasoningLevelValues"
-        | "reasoningLevelMap";
+  | { status: "invalid"; field: ProviderModelDraftErrorField };
+
+export type ProviderModelDraftErrorField =
+  | "id"
+  | "contextWindow"
+  | "maxOutputTokens"
+  // 字段名与 `settings.modelProvider.modelMetadata.invalid.*` 文案一一对应。
+  | "inputModalities"
+  | "reasoningLevelValues"
+  | "reasoningLevelMap";
+
+/** 只投影未覆盖控件；Host 是推荐规则的唯一解析者，草稿不保存第二份可写 Effective Config。 */
+export function projectModelDraft(
+  draft: ProviderModelDraftValues,
+  model: ProviderSettingsFormModel,
+): ProviderModelDraftValues {
+  if (draft.useRecommendedConfigValue === false) return draft;
+  const defaults = createProviderModelDraftValues({
+    ...model,
+    personalConfig: {},
+    config: model.inheritedConfig ?? model.config,
+  });
+  const explicit = new Set(draft.overriddenFieldsValue ?? []);
+  const next = { ...draft, inputFormatValue: { ...draft.inputFormatValue } };
+  for (const field of CONFIG_VALUE_FIELDS) {
+    if (!explicit.has(field)) Object.assign(next, { [field]: defaults[field] });
+  }
+  for (const field of Object.keys(
+    next.inputFormatValue,
+  ) as (keyof typeof next.inputFormatValue)[]) {
+    if (!explicit.has(`inputFormatValue.${field}`))
+      next.inputFormatValue[field] = defaults.inputFormatValue[field];
+  }
+  return next;
+}
+
+export function updateModelDraft(
+  draft: ProviderModelDraftValues,
+  patch: Partial<ProviderModelDraftValues>,
+  model: ProviderSettingsFormModel,
+): ProviderModelDraftValues {
+  if (
+    patch.useRecommendedConfigValue !== undefined &&
+    patch.useRecommendedConfigValue !== (draft.useRecommendedConfigValue !== false)
+  ) {
+    if (patch.useRecommendedConfigValue) {
+      return restoreModelDraft(draft, model);
+    }
+    const projected = projectModelDraft(draft, model);
+    const inherited = model.inheritedConfig ?? model.config;
+    // 只补空的继承输入；错误的非空用户输入保留，让保存指出错误，不以切换模式吞掉编辑。
+    return {
+      ...projected,
+      contextWindowValue:
+        projected.contextWindowValue || String(inherited.properties?.contextWindow ?? ""),
+      maxOutputTokensValue:
+        projected.maxOutputTokensValue || String(inherited.optionSpecs?.maxOutputTokens?.max ?? ""),
+      reasoningLevelMapValue:
+        projected.reasoningLevelMapValue || inherited.optionSpecs?.reasoningLevel?.map || "",
+      useRecommendedConfigValue: false,
     };
+  }
+  const explicit = new Set(draft.overriddenFieldsValue ?? []);
+  for (const field of CONFIG_VALUE_FIELDS) if (field in patch) explicit.add(field);
+  if (patch.inputFormatValue) {
+    for (const field of Object.keys(
+      patch.inputFormatValue,
+    ) as (keyof typeof patch.inputFormatValue)[]) {
+      if (patch.inputFormatValue[field] !== draft.inputFormatValue[field])
+        explicit.add(`inputFormatValue.${field}`);
+    }
+  }
+  return { ...draft, ...patch, overriddenFieldsValue: [...explicit] };
+}
+
+/** 恢复是显式草稿动作，即使原本已开启智能配置也要清除可编辑覆盖。 */
+export function restoreModelDraft(
+  draft: ProviderModelDraftValues,
+  model: ProviderSettingsFormModel,
+): ProviderModelDraftValues {
+  return {
+    ...createProviderModelDraftValues({
+      ...model,
+      config: model.inheritedConfig ?? {},
+      personalConfig: clearManualModelConfig(model.personalConfig),
+      useRecommendedConfig: true,
+    }),
+    idValue: draft.idValue,
+    enabledValue: draft.enabledValue,
+    clearPersonalConfigValue: true,
+  };
+}
+
+export function modelDraftOverrides(draft: ProviderModelDraftValues): ReadonlySet<string> {
+  if (draft.useRecommendedConfigValue === false) return new Set();
+  const result = new Set(draft.overriddenFieldsValue ?? []);
+  for (const field of [
+    "contextWindowValue",
+    "maxOutputTokensValue",
+    "reasoningLevelMapValue",
+  ] as const) {
+    if (draft[field].trim()) result.add(field);
+    else result.delete(field);
+  }
+  return result;
+}
 
 export function createProviderModelDraftValues(
   model: ProviderSettingsFormModel,
@@ -80,31 +177,6 @@ export function createProviderModelDraftValues(
   };
 }
 
-function personalDraftFieldKeys(config: ModelConfigObject): string[] {
-  const result: string[] = [];
-  for (const key of [
-    "supportsJsonSchemaOutput",
-    "supportsNativeWebSearch",
-    "supportsMidConversationSystem",
-  ] as const) {
-    if (config.properties?.[key] != null) result.push(`${key}Value`);
-  }
-  if (config.optionSpecs?.reasoningLevel?.values != null) result.push("reasoningLevelValuesValue");
-  for (const [key, value] of Object.entries(config.properties?.inputFormat ?? {})) {
-    if (value != null) result.push(`inputFormatValue.${key}`);
-  }
-  return result;
-}
-
-function parsePositiveIntegerDraft(value: string): number | null {
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return null;
-  }
-  const parsed = Number(trimmed);
-  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
-}
-
 export function resolveProviderModelDraftCommit({
   currentModel,
   draft,
@@ -142,7 +214,7 @@ export function resolveProviderModelDraftCommit({
   }
 
   if (!draft.inputFormatValue.supportsText) {
-    return { status: "invalid", field: "inputFormat" };
+    return { status: "invalid", field: "inputModalities" };
   }
 
   const reasoningLevelValues = draft.reasoningLevelValuesValue.map((value) => value.trim());
@@ -322,6 +394,38 @@ export function resolveProviderModelDraftCommit({
       },
     },
   };
+}
+
+const CONFIG_VALUE_FIELDS = [
+  "supportsJsonSchemaOutputValue",
+  "supportsNativeWebSearchValue",
+  "supportsMidConversationSystemValue",
+  "reasoningLevelValuesValue",
+] as const;
+
+function personalDraftFieldKeys(config: ModelConfigObject): string[] {
+  const result: string[] = [];
+  for (const key of [
+    "supportsJsonSchemaOutput",
+    "supportsNativeWebSearch",
+    "supportsMidConversationSystem",
+  ] as const) {
+    if (config.properties?.[key] != null) result.push(`${key}Value`);
+  }
+  if (config.optionSpecs?.reasoningLevel?.values != null) result.push("reasoningLevelValuesValue");
+  for (const [key, value] of Object.entries(config.properties?.inputFormat ?? {})) {
+    if (value != null) result.push(`inputFormatValue.${key}`);
+  }
+  return result;
+}
+
+function parsePositiveIntegerDraft(value: string): number | null {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+  const parsed = Number(trimmed);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
 }
 
 function preserveEnabledPersonalConfig(config: ModelConfigObject): ModelConfigObject {

@@ -108,12 +108,10 @@ function SortableProviderModelRow({
 
 export function SortableProviderModelList({
   modelIds,
-  sortableModelIds,
   onReorder,
   renderModel,
 }: {
   modelIds: readonly string[];
-  sortableModelIds?: readonly string[];
   onReorder?: (modelIds: string[]) => void;
   renderModel: (modelId: string, index: number) => ReactNode;
 }) {
@@ -121,12 +119,10 @@ export function SortableProviderModelList({
     useSensor(ModelRowPointerSensor, { activationConstraint: { distance: 6 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
-  const sortableIds = sortableModelIds ?? modelIds;
-  const sortableSet = new Set(sortableIds);
   const content = modelIds.map((modelId, index) => {
     const row = renderModel(modelId, index);
     const isLast = index === modelIds.length - 1;
-    return onReorder && sortableSet.has(modelId) ? (
+    return onReorder ? (
       <SortableProviderModelRow key={modelId} modelId={modelId} isLast={isLast}>
         {row}
       </SortableProviderModelRow>
@@ -153,7 +149,7 @@ export function SortableProviderModelList({
         );
       }}
     >
-      <SortableContext items={[...sortableIds]} strategy={verticalListSortingStrategy}>
+      <SortableContext items={[...modelIds]} strategy={verticalListSortingStrategy}>
         {content}
       </SortableContext>
     </DndContext>

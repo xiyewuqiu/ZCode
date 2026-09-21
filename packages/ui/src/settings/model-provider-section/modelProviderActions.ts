@@ -3,6 +3,7 @@ import type { ProviderSettingsFormProvider } from "@/lib/providerSettingsFormTyp
 import { getProviderFormLabel } from "@/lib/providerSettingsFormTypes.js";
 import type { IntlInstance } from "@/i18n/IntlProvider.js";
 import { logger } from "@/logger.js";
+
 export async function confirmAndDeleteModelProvider({
   provider,
   confirmDialog,
@@ -14,19 +15,16 @@ export async function confirmAndDeleteModelProvider({
   intl: IntlInstance;
   deleteProvider: (providerId: string) => Promise<void>;
 }) {
-  if (provider.config.group === "zai-family" || provider.config.group === "bigmodel-family") {
-    return;
-  }
-
-  logger.info("[ModelProviderSection] 请求删除自定义模型供应商", {
+  const providerName = getProviderFormLabel(provider);
+  logger.info("[ModelProviderSection] 请求删除模型供应商", {
     providerId: provider.providerId,
-    providerName: getProviderFormLabel(provider),
+    providerName,
   });
 
   const confirmed = await confirmDialog({
     title: intl.formatMessage(
       { id: "settings.modelProvider.deleteConfirmTitle" },
-      { name: getProviderFormLabel(provider) },
+      { name: providerName },
     ),
     description: intl.formatMessage({
       id: "settings.modelProvider.deleteConfirmDescription",
@@ -37,9 +35,9 @@ export async function confirmAndDeleteModelProvider({
     cancelLabel: intl.formatMessage({ id: "common.cancel" }),
   });
   if (!confirmed) {
-    logger.info("[ModelProviderSection] 用户取消删除自定义模型供应商", {
+    logger.info("[ModelProviderSection] 用户取消删除模型供应商", {
       providerId: provider.providerId,
-      providerName: getProviderFormLabel(provider),
+      providerName,
     });
     return;
   }
@@ -49,12 +47,4 @@ export async function confirmAndDeleteModelProvider({
   } catch (error) {
     logger.error("[ModelProviderSection] 删除模型供应商失败", error);
   }
-}
-
-export async function refreshModelProviderSection({
-  refresh,
-}: {
-  refresh: () => Promise<void>;
-}) {
-  await refresh();
 }

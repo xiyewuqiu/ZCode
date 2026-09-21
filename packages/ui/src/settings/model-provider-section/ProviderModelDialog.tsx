@@ -10,46 +10,40 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog.js";
 import { Input } from "@/components/ui/input.js";
+import { cn } from "@/components/lib/utils.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
-import type { ModelConfigObject } from "@zcode/provider";
-import type {
-  ProviderModelDraftValues,
-  ProviderModelDraftCommitResult,
-} from "@/settings/model-provider-section/ProviderModelMetadata.js";
-import { ProviderModelInputModalityOptions } from "@/settings/model-provider-section/ProviderModelModalityOptions.js";
-import { BooleanModelOption } from "@/settings/model-provider-section/ProviderModelMetadataFields.js";
-import {
-  ModelSettingsGroup,
-  ProviderModelReasoningSettings,
-} from "@/settings/model-provider-section/ProviderModelSettingsGroups.js";
 import { isImeComposingKeyEvent } from "@/lib/imeComposition.js";
 import { TECHNICAL_INPUT_ATTRIBUTES } from "@/lib/technicalInputAttributes.js";
+import type { ModelConfigObject } from "@zcode/provider";
+import type { ProviderModelDraftErrorField, ProviderModelDraftValues } from "./modelDraft.js";
 import {
-  ProviderModelMetadataDialogActions,
-  ModelSmartConfigSwitch,
-  ModelConfigDraftFeedback,
-  ModelConfigRestoreButton,
-} from "@/settings/model-provider-section/ProviderModelMetadataDialogActions.js";
-import { modelEditorControlStyle } from "@/settings/model-provider-section/modelEditorControlStyle.js";
-import { cn } from "@/components/lib/utils.js";
-import {
+  BooleanModelOption,
   ModelConfigHelp,
   ModelConfigInputLabel,
-} from "@/settings/model-provider-section/ModelConfigHelp.js";
-
-import { ModelEditorAdvanced } from "@/settings/model-provider-section/ModelEditorAdvanced.js";
+  ModelSettingsGroup,
+  modelEditorControlStyle,
+} from "./modelEditorControls.js";
+import {
+  ProviderModelInputModalityOptions,
+  ProviderModelReasoningSettings,
+} from "./ModelAdvancedControls.js";
+import {
+  ModelConfigDraftFeedback,
+  ModelConfigRestoreButton,
+  ModelEditorAdvanced,
+  ModelSmartConfigSwitch,
+} from "./ProviderModelDialogParts.js";
 
 function selectFocusedInputText(event: Pick<FocusEvent<HTMLInputElement>, "currentTarget">) {
   event.currentTarget.select();
 }
 
-export function ProviderModelMetadataDialog({
+export function ProviderModelDialog({
   mode = "edit",
   open,
   draft,
   draftErrorMessage,
   draftErrorField,
-  personalConfig,
   overrideFields,
   inheritedConfig,
   onOpenChange,
@@ -66,8 +60,7 @@ export function ProviderModelMetadataDialog({
   open: boolean;
   draft: ProviderModelDraftValues;
   draftErrorMessage: string | null;
-  draftErrorField?: Extract<ProviderModelDraftCommitResult, { status: "invalid" }>["field"] | null;
-  personalConfig?: ModelConfigObject;
+  draftErrorField?: ProviderModelDraftErrorField | null;
   overrideFields?: ReadonlySet<string>;
   inheritedConfig?: ModelConfigObject;
   onOpenChange: (open: boolean) => void;
@@ -89,9 +82,8 @@ export function ProviderModelMetadataDialog({
   const contextWindowInputId = useId();
   const maxOutputInputId = useId();
   const smart = draft.useRecommendedConfigValue !== false;
-  const activeOverrides = smart ? overrideFields : new Set<string>();
-  const overridden = (field: string, legacy = false) =>
-    smart && (activeOverrides ? activeOverrides.has(field) : legacy);
+  const activeOverrides = smart ? overrideFields : undefined;
+  const overridden = (field: string) => smart && (activeOverrides?.has(field) ?? false);
   const editModelLabel = intl.formatMessage({
     id: "settings.modelProvider.editModel",
   });
@@ -125,6 +117,9 @@ export function ProviderModelMetadataDialog({
     compositionActiveRef.current = false;
   };
   const maxOutputTokensInputDisabled = mode === "add" && !draft.idValue.trim();
+  const restoreButton = onRestore ? (
+    <ModelConfigRestoreButton disabled={saving} onRestore={onRestore} />
+  ) : null;
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       {mode === "edit" ? (
@@ -215,16 +210,8 @@ export function ProviderModelMetadataDialog({
                   pattern="[0-9]*"
                   size="lg"
                   value={draft.contextWindowValue}
-                  data-personal-override={overridden(
-                    "contextWindowValue",
-                    personalConfig?.properties?.contextWindow !== undefined,
-                  )}
-                  className={modelEditorControlStyle(
-                    overridden(
-                      "contextWindowValue",
-                      personalConfig?.properties?.contextWindow !== undefined,
-                    ),
-                  )}
+                  data-personal-override={overridden("contextWindowValue")}
+                  className={modelEditorControlStyle(overridden("contextWindowValue"))}
                   placeholder={
                     draft.useRecommendedConfigValue === false ||
                     inheritedConfig?.properties?.contextWindow === undefined
@@ -269,16 +256,8 @@ export function ProviderModelMetadataDialog({
                   pattern="[0-9]*"
                   size="lg"
                   value={draft.maxOutputTokensValue}
-                  data-personal-override={overridden(
-                    "maxOutputTokensValue",
-                    personalConfig?.optionSpecs?.maxOutputTokens?.max !== undefined,
-                  )}
-                  className={modelEditorControlStyle(
-                    overridden(
-                      "maxOutputTokensValue",
-                      personalConfig?.optionSpecs?.maxOutputTokens?.max !== undefined,
-                    ),
-                  )}
+                  data-personal-override={overridden("maxOutputTokensValue")}
+                  className={modelEditorControlStyle(overridden("maxOutputTokensValue"))}
                   placeholder={
                     draft.useRecommendedConfigValue === false ||
                     inheritedConfig?.optionSpecs?.maxOutputTokens?.max === undefined
@@ -314,7 +293,6 @@ export function ProviderModelMetadataDialog({
                   <ProviderModelInputModalityOptions
                     value={draft.inputFormatValue}
                     onChange={(inputFormatValue) => onDraftChange({ inputFormatValue })}
-                    personalValue={personalConfig?.properties?.inputFormat}
                     overrideFields={activeOverrides}
                   />
                 </div>
@@ -344,10 +322,7 @@ export function ProviderModelMetadataDialog({
                         label={intl.formatMessage({ id: `settings.modelProvider.${property}` })}
                         selected={draft[field] ?? false}
                         onToggle={() => onDraftChange({ [field]: !(draft[field] ?? false) })}
-                        overridden={overridden(
-                          field,
-                          personalConfig?.properties?.[property] !== undefined,
-                        )}
+                        overridden={overridden(field)}
                       />
                     );
                   })}
@@ -356,7 +331,6 @@ export function ProviderModelMetadataDialog({
             </ModelSettingsGroup>
             <ProviderModelReasoningSettings
               draft={draft}
-              personalConfig={personalConfig}
               overrideFields={activeOverrides}
               inheritedConfig={inheritedConfig}
               onDraftChange={onDraftChange}
@@ -364,14 +338,33 @@ export function ProviderModelMetadataDialog({
           </ModelEditorAdvanced>
         </div>
         <ModelConfigDraftFeedback error={draftErrorMessage} matched={modelDefaultsLoaded} />
-        <ProviderModelMetadataDialogActions
-          leadingAction={<ModelConfigRestoreButton disabled={saving} onRestore={onRestore} />}
-          saveLabel={intl.formatMessage({ id: "common.save" })}
-          cancelLabel={intl.formatMessage({ id: "common.cancel" })}
-          saving={saving}
-          onSave={() => void commit()}
-          onCancel={() => onOpenChange(false)}
-        />
+        <div
+          data-model-settings-footer="true"
+          className="flex items-center justify-between gap-2 pt-1"
+        >
+          {restoreButton}
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              size="lg"
+              disabled={saving}
+              onClick={() => onOpenChange(false)}
+            >
+              {intl.formatMessage({ id: "common.cancel" })}
+            </Button>
+            <Button
+              type="button"
+              variant="default"
+              size="lg"
+              disabled={saving}
+              onClick={() => void commit()}
+            >
+              {saving ? <Loader2Icon className="size-3.5 animate-spin" aria-hidden="true" /> : null}
+              {intl.formatMessage({ id: "common.save" })}
+            </Button>
+          </div>
+        </div>
       </DialogContent>
     </Dialog>
   );

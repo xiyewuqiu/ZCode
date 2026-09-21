@@ -1,6 +1,5 @@
 import {
   isZCodeAgentProvider,
-  resolveModelProviderFamilySpecByProviderId,
   zcodeProviderAccountAccessSchema,
   type ZCodeProviderAccountAccess,
   type ZCodeProvider,
@@ -73,8 +72,8 @@ function getRegistryAccountProviderGroupPresentation(
   access: ZCodeProviderAccountAccess,
   labels: ModelProviderGroupLabelOptions,
 ): Pick<ModelSelectGroup, "label" | "labelBadge"> {
-  const familySpec = resolveModelProviderFamilySpecByProviderId(providerId);
-  const label = familySpec?.label ?? providerId;
+  // 连接名就是用户自己的 Provider ID：官方内置连接已下线，不再有家族显示名可覆盖它。
+  const label = providerId;
   if (access.mode === "start-plan") {
     return { label: "Start Plan", labelBadge: labels.startPlanBadgeLabel ?? "Free" };
   }
