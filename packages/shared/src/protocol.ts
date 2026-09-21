@@ -1,6 +1,6 @@
 import type { RemoteAssetInstallMode } from "./remoteAssetInstallMode.js";
 import type { RemoteResourcePackageSelection } from "./remoteResourcePackages.js";
-import type { ProviderFamilyDomain } from "./model-provider-family.js";
+import type { ProviderFamilyDomain } from "./model-provider-types.js";
 import type { ProviderFamilyConnectionSelectionSettings } from "./provider-family-connection-selection.js";
 import type { ZCodeProvider } from "./zcode-task-types-core.js";
 import type { WorkspacePurpose } from "./workspacePurpose.js";

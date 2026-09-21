@@ -8,7 +8,7 @@ import { formatProviderModelLabel } from "@/v4/composer/modelTriggerDisplay.js";
  * providerId 是一个 UUID，原样贴到屏幕上，用户第一眼看到的就是一串十六进制。
  *
  * 所以三个面（确认窗、运行卡、详情侧板）共用这一个纯函数：拼名规则直接复用模型菜单那一条
- * （`formatProviderModelLabel`：内置家族只显示模型名，自定义 provider 才显示「名字/模型」），
+ * （`formatProviderModelLabel`：查得到 provider 名才显示「名字/模型」），
  * 思考强度复用思考控件的词表。规范串本身只住在 tooltip 里。
  *
  * 纯函数 + 注入的 formatMessage / providerName：与 timeline-summary 同一条纪律，本文件不碰 store。
@@ -69,7 +69,7 @@ export function describeWorkflowSubagentModel(
   const resolvedName = deps.providerName?.(parsed.providerId)?.trim();
   const providerName =
     resolvedName === undefined || resolvedName === parsed.providerId ? undefined : resolvedName;
-  const name = formatProviderModelLabel(parsed.providerId, providerName, parsed.modelId);
+  const name = formatProviderModelLabel(providerName, parsed.modelId);
 
   const rawLevel = parsed.options?.reasoningLevel;
   if (rawLevel === undefined) {

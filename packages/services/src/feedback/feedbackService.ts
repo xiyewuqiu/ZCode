@@ -12,7 +12,6 @@ import { Emitter } from "@zcode/rpc";
 import { arch, platform, release, type as osType } from "node:os";
 
 import type { ICredentialService } from "../credential/credential.js";
-import type { IOAuthService } from "../oauth/oauth.js";
 import type { FeedbackUploadProgress, IFeedbackService } from "./feedback.js";
 import { FeedbackHttpClient, FeedbackUploadCanceledError } from "./feedbackHttpClient.js";
 import { cleanupLogArchive, prepareCompactLogArchive } from "./compactLogArchive.js";
@@ -23,7 +22,6 @@ const ZCODE_JWT_TOKEN_KEY = "zcodejwttoken";
 
 export interface CreateFeedbackServiceOptions {
   credentialService: ICredentialService;
-  oauthService: IOAuthService;
   apiClient: ApiClient;
   getDeviceMid?: () => string | undefined;
   apiBaseUrl?: string;

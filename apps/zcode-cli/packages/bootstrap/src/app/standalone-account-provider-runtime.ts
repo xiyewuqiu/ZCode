@@ -64,21 +64,6 @@ async function readStandaloneCodingPlanCatalog(
   }
 }
 
-export async function resolveStandaloneCodingPlanProvider(
-  family: ProviderFamilyDomain,
-  env: Readonly<Record<string, string | undefined>>,
-): Promise<StandaloneCodingPlanProvider> {
-  const matches = (await readStandaloneCodingPlanProviders(env)).filter(
-    (provider) => provider.family === family,
-  );
-  if (matches.length !== 1) {
-    throw new Error(
-      `ZCode Built-in Config 必须为 ${family} 声明唯一 Individual Coding Plan Provider`,
-    );
-  }
-  return matches[0]!;
-}
-
 export function standaloneAccountIdentityCredentialKey(providerId: string): string {
   const normalized = providerId.trim();
   if (!normalized) throw new Error("Standalone Account Provider ID 不能为空");

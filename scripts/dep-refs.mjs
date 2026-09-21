@@ -273,8 +273,8 @@ function printHelp() {
   -h, --help              查看帮助
 
 示例:
-  pnpm dep:refs packages/services/src/oauth/oauthService.ts:createOAuthService
-  pnpm dep:refs --list-exports packages/services/src/oauth/oauthService.ts
+  pnpm dep:refs packages/services/src/credential/credentialService.ts:createCredentialService
+  pnpm dep:refs --list-exports packages/services/src/credential/credentialService.ts
 
 推荐用法:
   1. 先跑 pnpm knip 拿到 unused exports 列表（瞬秒）

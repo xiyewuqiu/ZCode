@@ -17,7 +17,6 @@
  */
 import {
   OFFICIAL_MCP_AUTH_HEADER_NAMES,
-  getModelProviderFamilySpec,
   zcodeProviderAccountAccessSchema,
   type OfficialMcpAuthFailureReason,
   type ZCodeAccountAccess,
@@ -34,12 +33,14 @@ const ACTIVE_OAUTH_PROVIDER_KEY = "oauth:active_provider";
 /**
  * MaaS 登录 JWT 的凭证键（`oauth:<provider>:access_token`，见 oauth/repo/oauthCredentialRepo.ts）。
  *
+ * family 字面量与 OAuth provider id 同值（"zai" / "bigmodel"），与
+ * accountProviderTeamPlanRequestKey 的 Team runtime key 用的是同一个键。
+ *
  * 必须按 provider family 精确选择、**禁止跨 family 回退**：拿 ZAI 的业务 JWT 去打 BigModel 的
  * Coding Plan 只会得到一次注定失败的请求，而且失败原因会指向"没有套餐"这种误导结论。
- * 这几行与 bigmodelUsageQuotaProvider 的 reset 通道逻辑等价但独立（见文件头说明）。
  */
 function maasJwtCredentialKey(providerFamily: "zai" | "bigmodel"): string {
-  return `oauth:${getModelProviderFamilySpec(providerFamily).oauthProviderId}:access_token`;
+  return `oauth:${providerFamily}:access_token`;
 }
 
 /**

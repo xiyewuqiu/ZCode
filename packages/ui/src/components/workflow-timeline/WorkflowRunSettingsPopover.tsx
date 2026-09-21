@@ -187,7 +187,6 @@ function WorkflowRunSettingsForm({
     host.sessionModel === undefined
       ? format("chat.toolCall.workflow.run.settings.model.sessionFallback")
       : formatProviderModelLabel(
-          host.sessionModel.providerId,
           providerName(host.sessionModel.providerId),
           host.sessionModel.modelId,
         );

@@ -1,4 +1,4 @@
-import type { ProviderFamilyDomain } from "./model-provider-family.js";
+import type { ProviderFamilyDomain } from "./model-provider-types.js";
 import type {
   PlanIdentitySnapshot,
   PlanIdentityStatus,

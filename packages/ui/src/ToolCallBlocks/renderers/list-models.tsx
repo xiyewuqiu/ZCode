@@ -1,9 +1,5 @@
 import { Cpu } from "lucide-react";
 import { useCallback, useMemo } from "react";
-import {
-  getModelProviderFamilySpec,
-  resolveModelProviderFamilyIdByProviderId,
-} from "@zcode/shared";
 import { thoughtLevelLabelId } from "@/chat-input-toolbar/thoughtLevelOptions.js";
 import { useWorkflowSubagentModelProviderName } from "@/hooks/useWorkflowSubagentModelProviderName.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
@@ -149,9 +145,9 @@ function readListModelsResult(
 
 /**
  * 组名 = provider 的**名字**，与模型菜单同一条规则（subagent-model-label.ts 的同款纪律）：
- * 内置家族取家族名；否则取载荷里的 providerLabel；否则取会话模型清单里的名字；都没有就用
- * 「模型供应商」这个词本身。**永远不回 providerId**——团队套餐的它是一个 UUID，摆上屏幕
- * 等于让用户先跳过 36 个字符才看见模型名。
+ * 取载荷里的 providerLabel；否则取会话模型清单里的名字；都没有就用「模型供应商」这个词本身。
+ * **永远不回 providerId**——团队套餐的它是一个 UUID，摆上屏幕等于让用户先跳过 36 个字符才
+ * 看见模型名。
  */
 function listModelsGroupName(
   providerId: string,
@@ -159,10 +155,6 @@ function listModelsGroupName(
   providerName: ProviderNameLookup,
   formatMessage: FormatMessage,
 ): string {
-  const familyId = resolveModelProviderFamilyIdByProviderId(providerId);
-  if (familyId !== null) {
-    return getModelProviderFamilySpec(familyId).label;
-  }
   const label = providerLabel?.trim();
   if (label !== undefined && label.length > 0 && label !== providerId) {
     return label;

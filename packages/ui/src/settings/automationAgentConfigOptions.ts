@@ -113,13 +113,11 @@ export function resolveAutomationModelTriggerLabel(params: {
       ?.providerName ?? undefined;
 
   // Automations 曾自行截断 provider/model 协议值，只显示最后一级模型名，
-  // 导致同一模型在会话侧和定时任务侧身份文案不一致。这里直接复用会话侧规则，
-  // 同时保留内置 family 与失效值的统一裁剪语义。
+  // 导致同一模型在会话侧和定时任务侧身份文案不一致。这里直接复用会话侧规则。
   return resolveV4ModelTriggerLabel({
     modelGroups: params.modelGroups,
     normalizedValue: selectedItem.value,
     fallbackLabel: params.fallbackLabel,
-    providerId,
     providerName,
   });
 }

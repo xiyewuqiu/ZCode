@@ -16,7 +16,6 @@ import { useTabPersistence } from "@/hooks/useTabPersistence.js";
 const DirectoryBrowser = lazy(() =>
   import("@/DirectoryBrowser.js").then((m) => ({ default: m.DirectoryBrowser })),
 );
-import { useTokenRefresh } from "@/hooks/useTokenRefresh.js";
 import { useWorkspaceServices } from "@/hooks/useWorkspaceServices.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 // 重型页面/弹窗全部懒加载，只把首屏真正需要的模块留在主 bundle 里：
@@ -59,7 +58,7 @@ import { useRemoteWorkspaceTabLifecycle } from "@/root/useRemoteWorkspaceTabLife
 import { useRootProviderStateRefresh } from "@/root/useRootProviderStateRefresh.js";
 import { useModelSelectionServiceView } from "@/hooks/useModelSelectionView.js";
 import { useRootProviderSettingsSnapshot } from "@/root/useRootProviderSettingsSnapshot.js";
-import { useRootOAuthEffects } from "@/root/useRootOAuthEffects.js";
+import { useRootSessionEffects } from "@/root/useRootSessionEffects.js";
 import { consumeZcodeJwtInvalidRestartMarker } from "@/root/zcodeJwtInvalidRestartMarker.js";
 import { useDesktopNativeThemeSync } from "@/root/useDesktopNativeThemeSync.js";
 import { useRootPlatformEffects } from "@/root/useRootPlatformEffects.js";
@@ -199,10 +198,6 @@ function RootInner({
   const isRestoringOAuthSession = useZCodeStore((state) => state.isRestoringOAuthSession);
   const setUser = useZCodeStore((state) => state.setUser);
   const setIsRestoringOAuthSession = useZCodeStore((state) => state.setIsRestoringOAuthSession);
-  const setOAuthError = useZCodeStore((state) => state.setOAuthError);
-  const oauthPollingActive = useZCodeStore((state) => state.oauthPollingActive);
-  const setOAuthPollingActive = useZCodeStore((state) => state.setOAuthPollingActive);
-  const markOAuthSuccess = useZCodeStore((state) => state.markOAuthSuccess);
   const {
     settings: appSettings,
     refresh: refreshAppSettings,
@@ -214,7 +209,6 @@ function RootInner({
     );
   const [providerFamilyDomainMigrationComplete, setProviderFamilyDomainMigrationComplete] =
     useState(false);
-  const loginEntryRequest = useZCodeStore((state) => state.loginEntryRequest);
   const rootModelSelectionRead = useModelSelectionServiceView(services.modelSelectionService);
   const rootModelSelectionView =
     rootModelSelectionRead.state.status === "ready" ? rootModelSelectionRead.state.view : null;
@@ -486,7 +480,6 @@ function RootInner({
     openDirectoryBrowser: handleOpenDirectoryBrowser,
     refreshProviderState,
     updateAppSettings,
-    setOAuthError,
     setUser,
     onProviderFamilyDomainClearedAfterLogout: () => {
       setWelcomeScreenOpenReason("logout-provider-required");
@@ -574,9 +567,6 @@ function RootInner({
     );
   }, [hasCompletedFullRestore, isDesktop, windowWorkspaceTabs]);
 
-  const { tryRefresh, clearCredentials } = useTokenRefresh();
-  void tryRefresh;
-  void clearCredentials;
   // 启动阻塞是桌面窗口保护期，手机 Web 远控在进入 Root 前已有配对/加载页。
   // Web 端继续使用该 gate 会在 workspace tab 注入前渲染空 RootShell，露出浏览器白底。
   const isStartupRenderBlocked = shouldShowRootStartupLoading({
@@ -665,17 +655,12 @@ function RootInner({
     });
   }, [platform]);
 
-  useRootOAuthEffects({
+  useRootSessionEffects({
     platform,
     services,
     refreshProviderState,
-    refreshAppSettings,
     setUser,
     setIsRestoringOAuthSession,
-    setOAuthError,
-    oauthPollingActive,
-    setOAuthPollingActive,
-    markOAuthSuccess,
     onReauthenticationRequired: handleReauthenticationRequired,
   });
 
@@ -822,22 +807,13 @@ function RootInner({
     );
   }, [isSettingsTabActive, workspaceShellPath]);
 
-  useEffect(() => {
-    if (!loginEntryRequest) {
-      return;
-    }
-    // 登录入口已从模态弹窗收敛为 WelcomeScreen。
-    // provider 连接请求仍要先退出首次启动引导语义，避免连接完成后误创建默认 workspace。
-    setWelcomeScreenOpenReason("provider-request");
-  }, [loginEntryRequest]);
-
   const handleOpenLoginEntry = () => {
     setWelcomeScreenOpenReason("manual-login");
   };
   const handleWelcomeScreenComplete = useCallback(
     async (_reason: LoginCompleteReason) => {
       // 启动不再强制弹登录（startup-provider-required 已移除）：WelcomeScreen
-      // 只由 manual-login / provider-request / logout-provider-required / session-expired 打开，
+      // 只由 manual-login / logout-provider-required / session-expired 打开，
       // 完成后一律关闭并回到原 workspace 上下文；默认 workspace 由启动兜底 effect 负责创建，
       // 登录流程不需要再承担“登录后建 workspace”的职责。
       await refreshAppSettings();
