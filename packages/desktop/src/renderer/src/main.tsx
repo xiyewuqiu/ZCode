@@ -266,7 +266,7 @@ function handleServicePortMessage(event: MessageEvent): void {
     if (!databaseStartupAdmission.acceptState(next)) return;
     if (firstStartupStateTimer) clearTimeout(firstStartupStateTimer);
     enterAppIfPrepared();
-    if (!appInitialized) {
+    if (!appInitialized && next.phase === "failed") {
       renderDatabaseStartup();
     }
     return;

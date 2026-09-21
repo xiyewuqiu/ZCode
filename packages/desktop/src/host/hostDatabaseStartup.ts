@@ -24,7 +24,6 @@ export function createHostDatabaseStartup(options: {
       const preparedPaths = new Set<string>();
       try {
         // 1. 任务索引极速同进程就绪（< 3ms），彻底消除多线程 Worker 启动与跨进程通信开销
-        report("preparing_host_storage", "checking");
         const tasksPath = getTasksIndexDatabasePath();
         await prepareHostStorage(
           tasksPath,
@@ -35,7 +34,6 @@ export function createHostDatabaseStartup(options: {
         markTasksStoragePrepared(tasksPath);
 
         // 2. 核心服务立即初始化，不再在关键路径上串行阻塞等待 CLI 进程握手
-        report("starting_services");
         await options.initializeServices();
 
         // 3. 后台静默预热工作区会话存储（非阻塞，不拖累窗口秒开）

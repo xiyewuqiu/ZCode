@@ -23,9 +23,13 @@ export class DatabaseStartupAdmission {
   }
 
   takeReadyPort(): MessagePort | undefined {
-    if (this.state?.phase !== "ready" || this.pending?.startupId !== this.state.startupId) return;
-    const port = this.pending.port;
-    this.pending = undefined;
-    return port;
+    if (this.state?.phase === "failed") return undefined;
+    if (this.state && this.pending && this.pending.startupId !== this.state.startupId) return undefined;
+    const port = this.pending?.port;
+    if (port) {
+      this.pending = undefined;
+      return port;
+    }
+    return undefined;
   }
 }
