@@ -689,42 +689,6 @@ function resolveDesktopContextPromptEnabledForHost(): boolean {
   void rollout.refresh();
   return rollout.getSnapshot().enabled;
 }
-
-// 首个 Host 创建前的有界灰度裁决门。Host/Agent 的 presentation surface 在进程启动时
-// 冻结（services/node.ts 顶层 const + CLI --surface），而灰度请求是旁路、不阻塞 Host。若首个
-// Host fork 早于请求 resolve，成功结果（enabled:true）对已冻结的 Host/Agent 无可达生效路径。
-// 这里给"成功结果"一条有界的生效路径：首 Host fork 前 await 一次裁决（≤2s），失败/超时仍按当前
-// 快照继续（desktopContextPrompt fail-open）。first-only 永久
-// latch——后续 Host fork await 已 resolve 的 promise（近乎 0ms），且各 resolve*ForHost()
-// 同步读取已被刷新的 live 快照。
-const DESKTOP_FIRST_HOST_SPAWN_DECISION_TIMEOUT_MS = 2_000;
-let firstHostSpawnDecisionPromise: Promise<void> | null = null;
-function awaitFirstHostSpawnDecision(): Promise<void> {
-  if (firstHostSpawnDecisionPromise) {
-    return firstHostSpawnDecisionPromise;
-  }
-  firstHostSpawnDecisionPromise = (async () => {
-    const rollout = desktopContextPromptRollout;
-    if (!rollout) {
-      return;
-    }
-    try {
-      const decision = await rollout.awaitFirstDecision(
-        DESKTOP_FIRST_HOST_SPAWN_DECISION_TIMEOUT_MS,
-      );
-      logger.info("[desktop-context-prompt] first host spawn decision resolved", {
-        enabled: decision.enabled,
-        configVersion: decision.configVersion,
-      });
-    } catch (error) {
-      // awaitFirstDecision 永不 reject（refresh 内部已 catch + timeout 回退快照），此处仅兜底。
-      logger.warn("[desktop-context-prompt] first host spawn decision failed, fail-open", {
-        error,
-      });
-    }
-  })();
-  return firstHostSpawnDecisionPromise;
-}
 const appTelemetryCore = createTelemetryCore({
   loadUserId: createTelemetryUserIdLoader(appTelemetryCredentialService),
   loadAuthorization: createTelemetryAuthorizationLoader(appTelemetryCredentialService),
@@ -1695,8 +1659,7 @@ function createWindowInstance(startupBootstrap: StartupWindowBootstrap = {}) {
       }),
     windowHostProcessMap,
     onHostProcessReady: (windowKey) => cuaPipFocusRouter.refreshWindow(windowKey),
-    awaitFirstHostSpawnDecision,
-    spawnHostProcess: (win, label, initMessage) =>
+    spawnHostProcess: (win, label, initMessage, spawnOptions) =>
       spawnHostProcess(
         win,
         label,
@@ -1745,6 +1708,7 @@ function createWindowInstance(startupBootstrap: StartupWindowBootstrap = {}) {
             },
           },
         },
+        spawnOptions,
       ),
     disposeHostProcess: (child, label, forceKillDelayMs) =>
       disposeHostProcess(
@@ -1922,14 +1886,8 @@ app.whenReady().then(async () => {
     homeDir: app.getPath("home"),
     logger,
   });
-  await installWindowsOpenFolderContextMenu({
-    platform: process.platform,
-    executablePath: process.execPath,
-    argv: process.argv,
-    isDefaultApp: Boolean(process.defaultApp),
-    locale: currentApplicationLocale,
-    logger,
-  });
+  // Windows Explorer 右键菜单是注册表持久项，安装/更新是低频一次性副作用。
+  // 从关键路径移除，放到窗口创建后的延后阶段执行（见下方 deferredStartup）。
   try {
     await applyDesktopChromiumNetworkPolicies(session, bootstrapSettings ?? {}, logger);
   } catch (error) {
@@ -2123,87 +2081,45 @@ app.whenReady().then(async () => {
     listSSHConfigAliases,
   });
 
-  // 等待 ARMS 完成 init（含渲染进程注入监听），避免首窗 dom-ready 早于 SDK 注册导致无上报
-  await armsInitPromise;
+  // ---- 窗口创建优先：非关键启动工作全部延后，绝不让遥测/网络/注册表阻塞首窗 ----
+  // 旧的启动链路在主窗口创建前串行 await 了 ARMS SDK 网络初始化、远端强更检查
+  // （最坏 10s 超时）和 Windows 注册表写入，用户的开屏时间被监控与更新逻辑占用。
+  // 现在主窗口先行创建，以下工作异步并行执行；各自内部仍保持原先后置依赖顺序。
 
-  // ARMS init 完成后首次写入 user.name（落 device_mid）
-  void armsUserIdentitySync.refresh();
-
-  // 未配置 ARMS 端点时不初始化上报 context，避免把空转误当成已启用。
-  if (ZCODE_TELEMETRY_ENABLED && ZCODE_ARMS_RUM_ENDPOINT) {
-    configureDesktopStabilityTelemetry({
-      deviceMid,
-      platform: process.platform,
-      appVersion: ZCODE_VERSION,
-      armsEnv: mapZCodeEnvToArmsRumEnv(desktopRuntimeEnv),
-    });
-    configureDesktopResourceTelemetry({
-      deviceMid,
-      platform: process.platform,
-      appVersion: ZCODE_VERSION,
-      armsEnv: mapZCodeEnvToArmsRumEnv(desktopRuntimeEnv),
-    });
-    configureDesktopNetworkTelemetry({
-      deviceMid,
-      platform: process.platform,
-      appVersion: ZCODE_VERSION,
-      armsEnv: mapZCodeEnvToArmsRumEnv(desktopRuntimeEnv),
-    });
-  }
-  configureDesktopMcpTelemetry({
-    deviceMid,
-    appVersion: ZCODE_VERSION,
-    armsEnv: mapZCodeEnvToArmsRumEnv(desktopRuntimeEnv),
-  });
-  registerDesktopStabilityMonitors(logger, crashCapturePaths);
-  registerDesktopResourceTelemetry(logger);
-  // 主窗口 renderer 的 60 秒 heap 样本入口；随 App 生命周期常驻，只注册一次。
-  registerRendererHeapSampleIpc();
-  const defaultDataBaseDir = process.env.HOME?.trim() || homedir();
-  registerDesktopZCodeDataSizeTelemetry({
-    context: {
-      appVersion: ZCODE_VERSION,
-      armsEnv: mapZCodeEnvToArmsRumEnv(desktopRuntimeEnv),
-      dataRootKind:
-        resolve(getDataBaseDir()) === resolve(defaultDataBaseDir) ? "default" : "custom",
-      deviceMid,
-      platform: process.platform,
-    },
-    getSystemIdleTimeSeconds: () => powerMonitor.getSystemIdleTime(),
-    isAppBackground: () => resolveResourceUsageScene() === "background",
-    isZCodeBusy: () => getRunningAgentSessionCount() > 0,
-    logger,
-    rootPath: getZCodeDataRootDir(),
-    stateFile: join(app.getPath("userData"), "zcode-data-size-telemetry.json"),
-  });
-  registerDesktopNetworkTelemetry(logger);
-
-  // 本地未打包 dev 构建（app.isPackaged === false）必须跳过远端强制升级 gate。
-  // 原因：force-update gate 只看 ZCODE_ENV === "production"，但 dev 构建（如 dev:desktop:cua
-  // 连真实后端测 computer use）虽指向 production 后端，版本号却滞后于线上 release（feature
-  // 分支不 bump 版本），会被 release minimalVersion 误判为"需强制升级"而启动秒退。force-update
-  // 是面向打包发布客户端的安全门，对未打包 dev 运行时无意义。打包版 app.isPackaged === true，
-  // gate 照常生效，对真实用户零影响。
+  // 强制升级 gate 改为与主窗口创建并行：远端检查命中后销毁刚创建的旧版窗口，
+  // 由 maybeBlockStartupForForceUpdate 自行展示升级弹窗并退出/走自动升级。
   const skipForceUpdateForLocalDevRuntime = !app.isPackaged;
-  const forceUpdateGuardResult =
-    ZCODE_PRODUCT_FLAVOR === "production" && !skipForceUpdateForLocalDevRuntime
-      ? await maybeBlockStartupForForceUpdate({
-          locale: currentApplicationLocale,
-          logger,
-          endpointOrigin: await resolveCurrentZCodeEndpointOrigin(),
-          onBlocked: () => {
-            forceUpdateMainWindowCreationBlocked = true;
-          },
-        })
-      : { blocked: false };
-  if (ZCODE_PRODUCT_FLAVOR !== "production") {
-    logger.info("[force-update] Preview 跳过远端强制升级检查");
-  } else if (skipForceUpdateForLocalDevRuntime) {
-    logger.info("[force-update] 本地 dev 构建（未打包）跳过远端强制升级检查");
-  }
-  if (forceUpdateGuardResult.blocked) {
-    return;
-  }
+  void (async () => {
+    if (ZCODE_PRODUCT_FLAVOR !== "production") {
+      logger.info("[force-update] Preview 跳过远端强制升级检查");
+      return;
+    }
+    if (skipForceUpdateForLocalDevRuntime) {
+      logger.info("[force-update] 本地 dev 构建（未打包）跳过远端强制升级检查");
+      return;
+    }
+    try {
+      const result = await maybeBlockStartupForForceUpdate({
+        locale: currentApplicationLocale,
+        logger,
+        endpointOrigin: await resolveCurrentZCodeEndpointOrigin(),
+        onBlocked: () => {
+          forceUpdateMainWindowCreationBlocked = true;
+        },
+      });
+      if (result.blocked) {
+        // 强更命中时主窗口已并行创建，必须销毁，避免旧版 UI 露出；
+        // 更新状态窗口（getMainApplicationWindows 已排除）不在此列。
+        for (const win of getMainApplicationWindows()) {
+          if (!win.isDestroyed()) {
+            win.destroy();
+          }
+        }
+      }
+    } catch (error) {
+      logger.error("[force-update] 启动强更检查异常，继续启动:", error);
+    }
+  })();
 
   logger.info("[startup] 创建主窗口");
   await primaryWindowCoordinator.ensurePrimaryWindow("app-ready");
@@ -2212,6 +2128,82 @@ app.whenReady().then(async () => {
   if (primaryWindow) {
     scheduleReportPerfAppStartAfterMainViewReady(primaryWindow.webContents, logger);
   }
+
+  // 延后初始化：注册表右键菜单、ARMS SDK（含网络握手）、遥测采集注册。
+  // 这些工作都不影响首窗渲染；其中 armsInitPromise 在 Main import 时已开始，
+  // 这里只是把「等待它完成」从开窗前挪到开窗后。
+  void (async () => {
+    try {
+      await installWindowsOpenFolderContextMenu({
+        platform: process.platform,
+        executablePath: process.execPath,
+        argv: process.argv,
+        isDefaultApp: Boolean(process.defaultApp),
+        locale: currentApplicationLocale,
+        logger,
+      });
+    } catch (error) {
+      logger.warn("[startup] Windows Explorer 右键菜单安装失败:", error);
+    }
+
+    // 等待 ARMS 完成 init（含渲染进程注入监听）。不再阻塞首窗：
+    // 早于 SDK 注册的窗口事件属于可接受的遥测缺口，换取首屏即时响应。
+    await armsInitPromise;
+
+    // ARMS init 完成后首次写入 user.name（落 device_mid）
+    void armsUserIdentitySync.refresh();
+
+    // 未配置 ARMS 端点时不初始化上报 context，避免把空转误当成已启用。
+    if (ZCODE_TELEMETRY_ENABLED && ZCODE_ARMS_RUM_ENDPOINT) {
+      configureDesktopStabilityTelemetry({
+        deviceMid,
+        platform: process.platform,
+        appVersion: ZCODE_VERSION,
+        armsEnv: mapZCodeEnvToArmsRumEnv(desktopRuntimeEnv),
+      });
+      configureDesktopResourceTelemetry({
+        deviceMid,
+        platform: process.platform,
+        appVersion: ZCODE_VERSION,
+        armsEnv: mapZCodeEnvToArmsRumEnv(desktopRuntimeEnv),
+      });
+      configureDesktopNetworkTelemetry({
+        deviceMid,
+        platform: process.platform,
+        appVersion: ZCODE_VERSION,
+        armsEnv: mapZCodeEnvToArmsRumEnv(desktopRuntimeEnv),
+      });
+    }
+    configureDesktopMcpTelemetry({
+      deviceMid,
+      appVersion: ZCODE_VERSION,
+      armsEnv: mapZCodeEnvToArmsRumEnv(desktopRuntimeEnv),
+    });
+    registerDesktopStabilityMonitors(logger, crashCapturePaths);
+    registerDesktopResourceTelemetry(logger);
+    // 主窗口 renderer 的 60 秒 heap 样本入口；随 App 生命周期常驻，只注册一次。
+    registerRendererHeapSampleIpc();
+    const defaultDataBaseDir = process.env.HOME?.trim() || homedir();
+    registerDesktopZCodeDataSizeTelemetry({
+      context: {
+        appVersion: ZCODE_VERSION,
+        armsEnv: mapZCodeEnvToArmsRumEnv(desktopRuntimeEnv),
+        dataRootKind:
+          resolve(getDataBaseDir()) === resolve(defaultDataBaseDir) ? "default" : "custom",
+        deviceMid,
+        platform: process.platform,
+      },
+      getSystemIdleTimeSeconds: () => powerMonitor.getSystemIdleTime(),
+      isAppBackground: () => resolveResourceUsageScene() === "background",
+      isZCodeBusy: () => getRunningAgentSessionCount() > 0,
+      logger,
+      rootPath: getZCodeDataRootDir(),
+      stateFile: join(app.getPath("userData"), "zcode-data-size-telemetry.json"),
+    });
+    registerDesktopNetworkTelemetry(logger);
+  })().catch((error) => {
+    logger.error("[startup] deferred startup initialization failed:", error);
+  });
 
   // 启动后检测 CPU 架构是否匹配（如 Apple 芯片误装 x64 版本经 Rosetta 转译运行），
   // 命中后异步弹框提示安装原生架构版本，不阻塞主界面。

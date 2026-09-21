@@ -12,15 +12,24 @@ import { Button } from "@/components/ui/button.js";
 import { PlatformProvider } from "@/hooks/usePlatform.js";
 import { ServiceProvider } from "@/hooks/useServices.js";
 import { useDynamicWorkflowAvailabilityLoader } from "@/hooks/useDynamicWorkflowAvailability.js";
-import { DirectoryBrowser } from "@/DirectoryBrowser.js";
 import { useTabPersistence } from "@/hooks/useTabPersistence.js";
+const DirectoryBrowser = lazy(() =>
+  import("@/DirectoryBrowser.js").then((m) => ({ default: m.DirectoryBrowser })),
+);
 import { useTokenRefresh } from "@/hooks/useTokenRefresh.js";
 import { useWorkspaceServices } from "@/hooks/useWorkspaceServices.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
-import { SSHDialog } from "@/SSHDialog.js";
-import { SettingsPage } from "@/SettingsPage.js";
+// 重型页面/弹窗全部懒加载，只把首屏真正需要的模块留在主 bundle 里：
+// SettingsPage（复杂设置页）、SSHDialog（远程 SSH 面板）、WelcomeScreen（登录屏）、
+// DirectoryBrowser（目录浏览器）与 OnboardingDialog 都是低频入口，静态引入会让首屏
+// JS 体积虚胖。lazy chunk 在各自首次挂载时才加载，不阻塞首帧渲染。
+const SSHDialog = lazy(() => import("@/SSHDialog.js").then((m) => ({ default: m.SSHDialog })));
+const SettingsPage = lazy(() => import("@/SettingsPage.js").then((m) => ({ default: m.SettingsPage })));
+const WelcomeScreen = lazy(() =>
+  import("@/WelcomeScreen.js").then((m) => ({ default: m.WelcomeScreen })),
+);
+import type { LoginCompleteReason } from "@/WelcomeScreen.js";
 import { CodingPlanUpgradeDialogProvider } from "@/settings/CodingPlanUpgradeDialogProvider.js";
-import { WelcomeScreen, type LoginCompleteReason } from "@/WelcomeScreen.js";
 import { setDefaultFileDisplayBasePath } from "@/lib/fileDisplay.js";
 import { readRendererLaunchTimings, shouldReportLaunchToInput } from "@/lib/launchToInputReport.js";
 import { reportUiLaunchToInput } from "@/lib/uiPerfArmsTelemetry.js";
@@ -43,7 +52,9 @@ import { RootShell } from "@/root/RootShell.js";
 import { RootWorkspaceContent } from "@/root/RootWorkspaceContent.js";
 import { resolveRootWorkspaceShellTarget } from "@/root/rootWorkspaceShellTarget.js";
 import { OccupationOnboarding } from "@/onboarding/OccupationOnboarding.js";
-import { OnboardingDialog } from "@/onboarding/OnboardingDialog.js";
+const OnboardingDialog = lazy(() =>
+  import("@/onboarding/OnboardingDialog.js").then((m) => ({ default: m.OnboardingDialog })),
+);
 import { useRemoteWorkspaceHistory } from "@/root/useRemoteWorkspaceHistory.js";
 import { useRemoteWorkspaceTabLifecycle } from "@/root/useRemoteWorkspaceTabLifecycle.js";
 import { useRootProviderStateRefresh } from "@/root/useRootProviderStateRefresh.js";
@@ -888,21 +899,23 @@ function RootInner({
   }, []);
 
   const remoteConnectionDialog = allowRemoteWorkspace ? (
-    <SSHDialog
-      onConnect={handleConnectRemote}
-      onSelectProject={handleSelectRemoteProject}
-      onCancelSession={handleCancelRemoteProject}
-      localWorkspacePath={localWorkspacePathForRemoteConnection}
-      isWindowsDesktop={isWindowsDesktop}
-      remoteWorkspaceSessions={remoteWorkspaceSessions}
-      open={remoteConnectionDialogOpen}
-      onOpenChange={handleRemoteConnectionDialogOpenChange}
-      onFlowActiveChange={setRemoteConnectionInProgress}
-      onFlowRequestIdChange={setRemoteConnectionRequestId}
-      preferredKind={remoteConnectionOpenPreference?.preferredKind}
-      preferredWslDistro={remoteConnectionOpenPreference?.preferredWslDistro}
-      hideTriggerWhenClosed
-    />
+    <Suspense fallback={null}>
+      <SSHDialog
+        onConnect={handleConnectRemote}
+        onSelectProject={handleSelectRemoteProject}
+        onCancelSession={handleCancelRemoteProject}
+        localWorkspacePath={localWorkspacePathForRemoteConnection}
+        isWindowsDesktop={isWindowsDesktop}
+        remoteWorkspaceSessions={remoteWorkspaceSessions}
+        open={remoteConnectionDialogOpen}
+        onOpenChange={handleRemoteConnectionDialogOpenChange}
+        onFlowActiveChange={setRemoteConnectionInProgress}
+        onFlowRequestIdChange={setRemoteConnectionRequestId}
+        preferredKind={remoteConnectionOpenPreference?.preferredKind}
+        preferredWslDistro={remoteConnectionOpenPreference?.preferredWslDistro}
+        hideTriggerWhenClosed
+      />
+    </Suspense>
   ) : null;
   const directoryBrowserDialog = directoryBrowserOpen ? (
     <ScopedErrorBoundary
@@ -910,14 +923,16 @@ function RootInner({
       resetKeys={["directory-browser"]}
       variant="silent"
     >
-      <DirectoryBrowser
-        services={services}
-        onCancel={() => setDirectoryBrowserOpen(false)}
-        onSelect={(path) => {
-          setDirectoryBrowserOpen(false);
-          void handleSelectProject(path);
-        }}
-      />
+      <Suspense fallback={null}>
+        <DirectoryBrowser
+          services={services}
+          onCancel={() => setDirectoryBrowserOpen(false)}
+          onSelect={(path) => {
+            setDirectoryBrowserOpen(false);
+            void handleSelectProject(path);
+          }}
+        />
+      </Suspense>
     </ScopedErrorBoundary>
   ) : null;
 
@@ -964,7 +979,9 @@ function RootInner({
         {rootModelSelectionErrorNode}
         {remoteConnectionDialog}
         {directoryBrowserDialog}
-        <WelcomeScreen onComplete={handleWelcomeScreenComplete} />
+        <Suspense fallback={null}>
+          <WelcomeScreen onComplete={handleWelcomeScreenComplete} />
+        </Suspense>
       </RootShell>
     );
   }
@@ -1006,7 +1023,9 @@ function RootInner({
               variant="panel"
               className="h-full"
             >
-              <SettingsPage {...settingsLayerProps} />
+              <Suspense fallback={null}>
+                <SettingsPage {...settingsLayerProps} />
+              </Suspense>
             </ScopedErrorBoundary>
           ) : null
         ) : (
@@ -1056,11 +1075,13 @@ function RootInner({
           resetKeys={[workspaceShellIdentity?.trim() || workspaceShellPath]}
           variant="silent"
         >
-          <OnboardingDialog
-            workspacePath={workspaceShellPath || undefined}
-            workspaceIdentity={workspaceShellIdentity}
-            isDesktop={isDesktop}
-          />
+          <Suspense fallback={null}>
+            <OnboardingDialog
+              workspacePath={workspaceShellPath || undefined}
+              workspaceIdentity={workspaceShellIdentity}
+              isDesktop={isDesktop}
+            />
+          </Suspense>
         </ScopedErrorBoundary>
       </OccupationOnboarding>
     </RootShell>

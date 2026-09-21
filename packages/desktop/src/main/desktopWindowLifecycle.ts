@@ -1,11 +1,15 @@
 import { getDatabaseStartupPortPayload } from "./databaseStartupRelay.js";
 import { randomUUID } from "node:crypto";
 import { app, BrowserWindow, Menu, MessageChannelMain } from "electron";
-import type { UtilityProcess as ElectronUtilityProcess } from "electron";
+import type { MessagePortMain, UtilityProcess as ElectronUtilityProcess } from "electron";
 import { HostMessageTypes, InternalChannels, PlatformChannels, type Locale } from "@zcode/shared";
 import { scheduleArmsBrowserPerfLoadNudge } from "./armsBrowserPerfLoadNudge.js";
 import { createBrowserWindow } from "./desktopWindowChrome.js";
-import type { HostInitMessage, WindowBootstrapOptions } from "./desktopHostProcess.js";
+import type {
+  HostInitMessage,
+  SpawnHostProcessOptions,
+  WindowBootstrapOptions,
+} from "./desktopHostProcess.js";
 import type { StartupWorkspaceWarmupTarget } from "./startupWorkspace.js";
 import { handleDarwinWindowCloseRequest } from "./desktopDarwinCloseBehavior.js";
 import {
@@ -32,6 +36,7 @@ export function createWindow(options: {
     win: BrowserWindow,
     label: string,
     initMessage: HostInitMessage,
+    spawnOptions?: SpawnHostProcessOptions,
   ) => ElectronUtilityProcess;
   disposeHostProcess: (
     child: ElectronUtilityProcess,
@@ -57,14 +62,6 @@ export function createWindow(options: {
   runtimeProcessEnvFallbackPatch: Record<string, string>;
   /** 仅供启动门禁和测试注入；超过该时间必须 fail-open 创建 Local Host。 */
   runtimeProcessEnvWaitTimeoutMs?: number;
-  /**
-   * 首个 Local Host 创建前的有界灰度裁决门。
-   *
-   * 缺省（undefined）时完全不触发 await，dom-ready handler 同步执行——保证既有调用方
-   * 与测试零回归。仅 desktop main 注入：在 spawnLocalHost 之前等待一次 rollout 裁决，
-   * 避免冷启动快照 { enabled:false } 被烤进首 Host env 后无法被异步成功结果覆盖。
-   */
-  awaitFirstHostSpawnDecision?: () => Promise<void>;
   /** Local Host map insertion completed; presentation facts can now be replayed safely. */
   onHostProcessReady?: (windowKey: number) => void;
   resolveBrowserViewOwner?: Parameters<typeof createBrowserWindow>[0]["resolveBrowserViewOwner"];
@@ -116,15 +113,121 @@ export function createWindow(options: {
   }
 
   const wcId = win.webContents.id;
-  const browserWindowId = win.id;
   // 资源遥测据此把主窗口 renderer 归 renderer_main；辅助窗口与 DevTools 归 chromium_other。
   registerMainApplicationWindow(wcId);
   let domReadyGeneration = 0;
-  let cancelRuntimeProcessEnvWait: (() => void) | null = null;
   scheduleArmsBrowserPerfLoadNudge(win.webContents);
+
+  // ---- 首窗 Host 提前预热 ----
+  // 旧实现等 renderer dom-ready 后才 fork Host：Host 的 Node 启动、SQLite 初始化与
+  // 服务装配全部排在 renderer 加载之后，串行叠加在首屏耗时上。
+  // 这里在窗口创建后立即 fork Host（runtime env 采集在 Main import 时已启动，此时通常已
+  // settled），让 Host 启动与 renderer 解析/React 初始化并行。服务端口先持有，等到
+  // dom-ready 再投递——renderer 此时才注册了 message 监听，早投的消息会被丢弃。
+  let hostSpawned = false;
+  let hostSpawnFailed = false;
+  let heldServicePort: MessagePortMain | null = null;
+  let servicePortDelivered = false;
+  let hostSpawnCompletion: Promise<void> | null = null;
+
+  const spawnLocalHost = (runtimeProcessEnvPatch: Record<string, string>) => {
+    if (hostSpawned || hostSpawnFailed || win.isDestroyed()) return;
+    const primaryWarmupTarget = options.agentWarmupTargets?.[0];
+    try {
+      const child = options.spawnHostProcess(
+        win,
+        label,
+        {
+          type: HostMessageTypes.InitLocal,
+          deviceMid: options.deviceMid,
+          workspacePath: primaryWarmupTarget?.workspacePath,
+          workspaceIdentity: primaryWarmupTarget?.workspaceIdentity,
+          ...(options.agentWarmupTargets && options.agentWarmupTargets.length > 0
+            ? { agentWarmupTargets: [...options.agentWarmupTargets] }
+            : {}),
+          runtimeProcessEnvPatch,
+          // fallback 随 local Host 常驻，覆盖非 active 历史目录被删除后失效 cwd 反复 spawn 的场景。
+          agentSpawnFallbackCwd: options.agentSpawnFallbackCwd,
+        },
+        {
+          // 预热期不投递端口（renderer 未加载会丢消息），由 dom-ready 统一投递。
+          onPortReady: (port) => {
+            heldServicePort = port;
+          },
+        },
+      );
+      options.windowHostProcessMap.set(wcId, child);
+      hostSpawned = true;
+      options.onHostProcessReady?.(wcId);
+    } catch (error) {
+      hostSpawnFailed = true;
+      options.logger.warn(
+        `[createWindow] early host spawn failed (${label}), falling back to dom-ready spawn:`,
+        error,
+      );
+    }
+  };
+
+  const deliverHeldServicePort = (): boolean => {
+    if (servicePortDelivered || !hostSpawned) {
+      return false;
+    }
+    servicePortDelivered = true;
+    const port = heldServicePort;
+    heldServicePort = null;
+    const child = options.windowHostProcessMap.get(wcId);
+    const startupPayload = child ? getDatabaseStartupPortPayload(child) : undefined;
+    if (port && startupPayload && !win.isDestroyed() && !win.webContents.isDestroyed()) {
+      win.webContents.postMessage(InternalChannels.ServicePort, startupPayload, [port]);
+    } else if (port) {
+      port.close();
+    }
+    options.syncAutoUpdaterStateToWindow(win);
+    options.syncReadyUpdateToWindow(win);
+    options.syncPostUpdateReleaseNotesToWindow(win);
+    options.reattachRemoteWorkspaceSessionsForWindow(win, `${label}:renderer-ready`);
+    return true;
+  };
+
+  const beginHostSpawn = (): void => {
+    if (hostSpawnCompletion || options.windowHostProcessMap.has(wcId) || win.isDestroyed()) {
+      return;
+    }
+    hostSpawnCompletion = (async () => {
+      if (!options.runtimeProcessEnvPatchPromise) {
+        spawnLocalHost(options.runtimeProcessEnvFallbackPatch);
+        return;
+      }
+      let timeout: ReturnType<typeof setTimeout> | null = null;
+      const waitTimeoutMs =
+        options.runtimeProcessEnvWaitTimeoutMs ?? DEFAULT_RUNTIME_PROCESS_ENV_WAIT_TIMEOUT_MS;
+      const patch = await Promise.race([
+        options.runtimeProcessEnvPatchPromise,
+        new Promise<never>((_resolve, reject) => {
+          timeout = setTimeout(() => {
+            options.logger.warn(
+              `[createWindow] runtime env prewarm exceeded ${waitTimeoutMs}ms (${label}), using shell-free fallback`,
+            );
+            reject(new Error("runtime-env-prewarm-timeout"));
+          }, waitTimeoutMs);
+        }),
+      ]).catch((error) => {
+        // 旧 rejection 分支曾传 undefined，导致 Host 再跑一次 login shell；这里始终用预计算 fallback。
+        if (!(error instanceof Error && error.message === "runtime-env-prewarm-timeout")) {
+          options.logger.warn(
+            `[createWindow] runtime env prewarm failed (${label}), using shell-free fallback:`,
+            error,
+          );
+        }
+        return options.runtimeProcessEnvFallbackPatch;
+      });
+      clearTimeout(timeout ?? undefined);
+      spawnLocalHost(patch);
+    })();
+  };
+  beginHostSpawn();
+
   win.webContents.on("dom-ready", async () => {
-    cancelRuntimeProcessEnvWait?.();
-    cancelRuntimeProcessEnvWait = null;
     const currentDomReadyGeneration = ++domReadyGeneration;
     options.logger.info(`[createWindow] dom-ready fired (${label})`);
 
@@ -134,135 +237,73 @@ export function createWindow(options: {
     }
 
     const oldChild = options.windowHostProcessMap.get(wcId);
-    // renderer 刷新（reload）
-    // 曾经无条件杀掉旧 host 进程再重建——host 连带 CLI agent 一起死，运行中的会话直接消失，
-    // 这正是「会话身份易失」病根。host/CLI 的生命周期属于窗口而非
-    // renderer 加载周期：reload 只需给存活的 host 补挂一条新 RPC MessagePort
-    // （复用 web 远控的 AttachServicePort 通道），renderer 重新订阅即可恢复投影。
-    // 旧端口的 ChannelServer 会随 renderer 上下文销毁触发 close 自行回收。
-    if (oldChild && oldChild.pid !== undefined) {
-      try {
-        const startupPayload = getDatabaseStartupPortPayload(oldChild);
-        if (!startupPayload) throw new Error("Previous Host startup binding is unavailable");
-        const { port1, port2 } = new MessageChannelMain();
-        oldChild.postMessage(
-          {
-            type: HostMessageTypes.AttachServicePort,
-            requestId: randomUUID(),
-            attachmentId: randomUUID(),
-            clientMode: "desktop-continuous",
-            scope: { kind: "local" },
-          },
-          [port2],
-        );
-        win.webContents.postMessage(InternalChannels.ServicePort, startupPayload, [port1]);
-        options.logger.info(
-          `[createWindow] renderer reloaded, reattached to existing host (${label}), pid=${oldChild.pid}`,
-        );
-        options.syncAutoUpdaterStateToWindow(win);
-        options.syncReadyUpdateToWindow(win);
-        options.syncPostUpdateReleaseNotesToWindow(win);
-        options.reattachRemoteWorkspaceSessionsForWindow(win, `${label}:renderer-reload`);
-        return;
-      } catch (error) {
-        options.logger.warn(
-          `[createWindow] reattach to existing host failed (${label}), falling back to respawn:`,
-          error,
-        );
-      }
-    }
     if (oldChild) {
+      // 首窗早启 Host 已就绪：直接投递预热期持有的端口，无需再走 reattach 换新通道。
+      if (hostSpawned && !servicePortDelivered) {
+        deliverHeldServicePort();
+        return;
+      }
+      // renderer 刷新（reload）
+      // 曾经无条件杀掉旧 host 进程再重建——host 连带 CLI agent 一起死，运行中的会话直接消失，
+      // 这正是「会话身份易失」病根。host/CLI 的生命周期属于窗口而非
+      // renderer 加载周期：reload 只需给存活的 host 补挂一条新 RPC MessagePort
+      // （复用 web 远控的 AttachServicePort 通道），renderer 重新订阅即可恢复投影。
+      // 旧端口的 ChannelServer 会随 renderer 上下文销毁触发 close 自行回收。
+      if (oldChild.pid !== undefined) {
+        try {
+          const startupPayload = getDatabaseStartupPortPayload(oldChild);
+          if (!startupPayload) throw new Error("Previous Host startup binding is unavailable");
+          const { port1, port2 } = new MessageChannelMain();
+          oldChild.postMessage(
+            {
+              type: HostMessageTypes.AttachServicePort,
+              requestId: randomUUID(),
+              attachmentId: randomUUID(),
+              clientMode: "desktop-continuous",
+              scope: { kind: "local" },
+            },
+            [port2],
+          );
+          win.webContents.postMessage(InternalChannels.ServicePort, startupPayload, [port1]);
+          options.logger.info(
+            `[createWindow] renderer reloaded, reattached to existing host (${label}), pid=${oldChild.pid}`,
+          );
+          options.syncAutoUpdaterStateToWindow(win);
+          options.syncReadyUpdateToWindow(win);
+          options.syncPostUpdateReleaseNotesToWindow(win);
+          options.reattachRemoteWorkspaceSessionsForWindow(win, `${label}:renderer-reload`);
+          return;
+        } catch (error) {
+          options.logger.warn(
+            `[createWindow] reattach to existing host failed (${label}), falling back to respawn:`,
+            error,
+          );
+        }
+      }
       options.logger.info(
         `[createWindow] killing previous host process for (${label}), pid=${oldChild.pid ?? "unknown"}`,
       );
       options.disposeHostProcess(oldChild, `${label}:reload`, 150);
     }
 
-    // 首个 Local Host 创建前的有界灰度裁决门。用 `if` 守卫而非 `await cb?.()`——
-    // cb 缺省时不触发任何 await，async handler 同步跑完，保证既有调用方与测试零回归。
-    // 仅在需要 spawn 新 Host 的路径上等待（reattach 早退路径已在上方 return，不触发）。
-    if (options.awaitFirstHostSpawnDecision) {
-      await options.awaitFirstHostSpawnDecision();
-    }
-
-    const spawnLocalHost = (runtimeProcessEnvPatch: Record<string, string>) => {
+    if (hostSpawnCompletion) {
+      // 早启链路已启动但 env patch 未决（慢 shell）：等待其完成后再投递端口。
+      await hostSpawnCompletion;
       if (currentDomReadyGeneration !== domReadyGeneration || win.isDestroyed()) {
         return;
       }
-      const primaryWarmupTarget = options.agentWarmupTargets?.[0];
-      const child = options.spawnHostProcess(win, label, {
-        type: HostMessageTypes.InitLocal,
-        deviceMid: options.deviceMid,
-        workspacePath: primaryWarmupTarget?.workspacePath,
-        workspaceIdentity: primaryWarmupTarget?.workspaceIdentity,
-        ...(options.agentWarmupTargets && options.agentWarmupTargets.length > 0
-          ? { agentWarmupTargets: [...options.agentWarmupTargets] }
-          : {}),
-        runtimeProcessEnvPatch,
-        // 同一窗口会后台索引所有已恢复 workspace，不只索引启动时的 active workspace。
-        // fallback 必须跟随 local Host 生命周期常驻，否则非 active 历史目录被删除后会用失效 cwd 反复 spawn。
-        agentSpawnFallbackCwd: options.agentSpawnFallbackCwd,
-      });
-      options.windowHostProcessMap.set(wcId, child);
-      options.onHostProcessReady?.(wcId);
-      options.syncAutoUpdaterStateToWindow(win);
-      options.syncReadyUpdateToWindow(win);
-      options.syncPostUpdateReleaseNotesToWindow(win);
-      options.reattachRemoteWorkspaceSessionsForWindow(win, `${label}:renderer-ready`);
-    };
-
-    if (!options.runtimeProcessEnvPatchPromise) {
-      spawnLocalHost(options.runtimeProcessEnvFallbackPatch);
-      return;
+      if (deliverHeldServicePort()) {
+        return;
+      }
     }
-    let settled = false;
-    const waitTimeoutMs =
-      options.runtimeProcessEnvWaitTimeoutMs ?? DEFAULT_RUNTIME_PROCESS_ENV_WAIT_TIMEOUT_MS;
-    let timeout: ReturnType<typeof setTimeout> | null = null;
-    const cancelWait = () => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      if (timeout) {
-        clearTimeout(timeout);
-      }
-    };
-    const completeWait = (runtimeProcessEnvPatch: Record<string, string>) => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      if (timeout) {
-        clearTimeout(timeout);
-      }
-      if (cancelRuntimeProcessEnvWait === cancelWait) {
-        cancelRuntimeProcessEnvWait = null;
-      }
-      spawnLocalHost(runtimeProcessEnvPatch);
-    };
-    cancelRuntimeProcessEnvWait = cancelWait;
-    timeout = setTimeout(() => {
-      options.logger.warn(
-        `[createWindow] runtime env prewarm exceeded ${waitTimeoutMs}ms after dom-ready (${label}), using shell-free fallback`,
-      );
-      completeWait(options.runtimeProcessEnvFallbackPatch);
-    }, waitTimeoutMs);
-    void options.runtimeProcessEnvPatchPromise.then(completeWait, (error) => {
-      options.logger.warn(
-        `[createWindow] runtime env prewarm failed (${label}), using shell-free fallback:`,
-        error,
-      );
-      // 旧 rejection 分支传 undefined，Host 随后又同步执行同一个 login shell，
-      // 可能把 Main 的白屏转移成 Host 卡死。Main 路径始终传入预计算 fallback patch。
-      completeWait(options.runtimeProcessEnvFallbackPatch);
-    });
+    // 兜底重建：早启失败或 reattach 失败后重置预热状态，重新 spawn 并立即投递端口。
+    hostSpawnFailed = hostSpawned = servicePortDelivered = false;
+    spawnLocalHost(options.runtimeProcessEnvFallbackPatch);
+    deliverHeldServicePort();
   });
 
   win.on("closed", () => {
     unregisterMainApplicationWindow(wcId);
-    cancelRuntimeProcessEnvWait?.();
-    cancelRuntimeProcessEnvWait = null;
     options.logger.info(`[createWindow] window closed, killing host process (${label})`);
     const child = options.windowHostProcessMap.get(wcId);
     if (child) {

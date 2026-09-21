@@ -137,27 +137,21 @@
       </div>
     </div>
     <script type="module">
-      const startupLogoShell = document.querySelector(".startup-logo-shell");
       const startupLoading = document.getElementById("loading");
       const isUpdateStatusWindow =
         new URLSearchParams(window.location.search).get("windowKind") === "update-status";
-      const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
       let finished = false;
-      let animationDone = false;
       let reactReady = false;
 
       // 主入口不能依赖动画结束后的动态 import；一旦导入路径在 Electron/Vite 下失败，
       // 页面会永久停在 HTML loading。这里让主入口静态加载，只把启动壳作为动画遮罩延迟移除。
       const tryFinishStartupAnimation = () => {
-        if (finished || !animationDone || !reactReady) return;
+        if (finished || !reactReady) return;
         finished = true;
         document.body.classList.add("zcode-startup-ready");
-        window.setTimeout(() => startupLoading?.remove(), 500);
-      };
-
-      const markAnimationDone = () => {
-        animationDone = true;
-        tryFinishStartupAnimation();
+        // 只等 160ms 淡出过渡结束即移除遮罩；不再追加 500ms 人工延迟，
+        // 也不等 logo 动画播完——React 就绪就是退场信号。
+        window.setTimeout(() => startupLoading?.remove(), 200);
       };
 
       const markReactReady = () => {
@@ -173,16 +167,7 @@
         startupLoading?.remove();
       } else {
         window.addEventListener("zcode-react-startup-ready", markReactReady, { once: true });
-      }
-
-      if (isUpdateStatusWindow || reduceMotion || !startupLogoShell) {
-        markAnimationDone();
-      } else {
-        startupLogoShell.addEventListener("animationend", markAnimationDone, { once: true });
-        window.setTimeout(markAnimationDone, 1000);
-      }
-
-      if (!isUpdateStatusWindow) {
+        // 兜底：React 未按时 commit（如渲染进程异常）时仍撤掉遮罩，避免永久遮挡。
         window.setTimeout(markReactReady, 3000);
       }
     </script>
