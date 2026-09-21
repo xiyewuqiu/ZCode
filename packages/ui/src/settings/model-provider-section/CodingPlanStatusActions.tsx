@@ -70,7 +70,6 @@ export function CodingPlanUpgradeAction({
 }) {
   const { intl } = useZCodeIntl();
 
-  // 开源版不享受额度活动权益，升级入口只展示操作，不附带优惠徽标或规则说明。
   return (
     <CodingPlanEntryButton
       bypassGate={upgradePlansVisible}
