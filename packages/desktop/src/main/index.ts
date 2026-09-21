@@ -175,7 +175,7 @@ import {
   handleOpenWorkspacePath,
   registerDeepLinkProtocol,
   resolveExternalWorkspaceOpenDialogCopy,
-} from "./desktopOAuthDeepLink.js";
+} from "./desktopDeepLinkRouter.js";
 import { handleSecondInstanceWorkspaceRequest } from "./desktopSecondInstanceDeepLink.js";
 import { installFinderOpenFolderWorkflow } from "./desktopFinderOpenFolderWorkflow.js";
 import { installWindowsOpenFolderContextMenu } from "./desktopWindowsOpenFolderContextMenu.js";
@@ -529,7 +529,6 @@ async function runBrowserCommandOnView(params: {
 let currentDesktopZoomLevel = 0;
 let currentDesktopWindowSize: DesktopWindowSize | undefined;
 const preloadPath = join(import.meta.dirname, "../preload/index.cjs");
-const settingsFile = join(homedir(), ".ycode", "v2", "setting.json");
 let activeAppShutdownPolicy = resolveAppShutdownPolicy("normal", process.platform);
 let activeAppShutdownKind: AppShutdownKind | null = null;
 const WINDOWS_AGENT_FORCE_KILL_TIMEOUT_MS = 2_000;
@@ -862,12 +861,17 @@ const primaryWindowCoordinator = createPrimaryWindowCoordinator({
       }
     }
 
-    return resolveStartupWindowBootstrap({
-      settingsFile,
-      // dataBaseDir 可能在 bootstrap 设置阶段被覆盖，必须在真正解析启动工作区时再取值。
-      conversationWorkspaceDir: getConversationWorkspaceDir(),
-      logger,
-    });
+    // 启动工作区解析复用 mainSettingService.get()（带 TTL 缓存，bootstrap 阶段已预热命中），
+    // 避免冷启动对 setting.json 的重复读盘 + 重复 zod parse；同时与 bootstrap 读取同源
+    // （尊重 ZCODE_DESKTOP_HOME_DIR 覆盖，旧的 join(homedir(), ...) 独立读在 dev/E2E 下会读错目录）。
+    return mainSettingService.get().then((startupSettings) =>
+      resolveStartupWindowBootstrap({
+        settings: startupSettings,
+        // dataBaseDir 可能在 bootstrap 设置阶段被覆盖，必须在真正解析启动工作区时再取值。
+        conversationWorkspaceDir: getConversationWorkspaceDir(),
+        logger,
+      }),
+    );
   },
   createWindow: (startupBootstrap) => {
     createWindowInstance(startupBootstrap);
@@ -1886,38 +1890,46 @@ app.whenReady().then(async () => {
     homeDir: app.getPath("home"),
     logger,
   });
-  // Windows Explorer 右键菜单是注册表持久项，安装/更新是低频一次性副作用。
-  // 从关键路径移除，放到窗口创建后的延后阶段执行（见下方 deferredStartup）。
-  try {
-    await applyDesktopChromiumNetworkPolicies(session, bootstrapSettings ?? {}, logger);
-  } catch (error) {
-    logger.warn("[desktop-network] Chromium network policy bootstrap failed:", error);
-  }
-
-  await hydratePendingPostUpdateReleaseNotes(mainSettingService);
-  logWindowsBundledRuntimeIntegrityDiagnostic();
-
-  // 启动自动更新检查（后台执行，不阻塞主界面）
-  // Preview 身份无论连接哪个后端都不自动更新：stable feed 上只分发正式 ZCode 安装包，
-  // 不向 Preview 渠道提供更新。
-  void initAutoUpdater({
-    enabled: ZCODE_PRODUCT_FLAVOR === "production",
-    onBeforeQuitAndInstall: async () => {
-      notifyStabilityLifecycle("update_install");
-      await prepareAppQuit("auto-update quitAndInstall", "update-install");
-      if (process.platform === "win32") {
-        await prepareWindowsProcessesForUpdateInstall();
-      }
+  // Chromium 网络策略只涉及 session 异步 IPC，与首窗渲染零依赖；settings 已在上方
+  // bootstrap 阶段读取完毕，无需等待。从开窗关键路径旁路化：与窗口创建并行应用，
+  // 无自定义配置时 desktopNetworkPolicy 内部还有快速路径。
+  void applyDesktopChromiumNetworkPolicies(session, bootstrapSettings ?? {}, logger).catch(
+    (error) => {
+      logger.warn("[desktop-network] Chromium network policy bootstrap failed:", error);
     },
-    settingService: mainSettingService,
-    locale: currentApplicationLocale,
-    deviceMid,
-    resolveEndpointOrigin: resolveCurrentZCodeEndpointOrigin,
-    updateFeedSource: resolveUpdateFeedSourceFromStartupConfig({
-      argv: process.argv,
-      env: process.env,
-    }),
-  });
+  );
+
+  // 更新说明弹窗与首窗渲染零依赖，但 hydrate 必须先于 initAutoUpdater：它会按 pending
+  // release notes 恢复 ready 状态，若晚于更新检查启动会被新检查覆盖。串入同一异步链，
+  // 两者都不阻塞首窗创建。
+  void (async () => {
+    try {
+      await hydratePendingPostUpdateReleaseNotes(mainSettingService);
+    } catch (error) {
+      logger.warn("[auto-update] hydrate pending post-update release notes failed:", error);
+    }
+    // 启动自动更新检查（后台执行，不阻塞主界面）
+    // Preview 身份无论连接哪个后端都不自动更新：stable feed 上只分发正式 ZCode 安装包，
+    // 不向 Preview 渠道提供更新。
+    void initAutoUpdater({
+      enabled: ZCODE_PRODUCT_FLAVOR === "production",
+      onBeforeQuitAndInstall: async () => {
+        notifyStabilityLifecycle("update_install");
+        await prepareAppQuit("auto-update quitAndInstall", "update-install");
+        if (process.platform === "win32") {
+          await prepareWindowsProcessesForUpdateInstall();
+        }
+      },
+      settingService: mainSettingService,
+      locale: currentApplicationLocale,
+      deviceMid,
+      resolveEndpointOrigin: resolveCurrentZCodeEndpointOrigin,
+      updateFeedSource: resolveUpdateFeedSourceFromStartupConfig({
+        argv: process.argv,
+        env: process.env,
+      }),
+    });
+  })();
 
   if (process.platform === "darwin" || process.platform === "win32") {
     app.clearRecentDocuments();
@@ -2056,9 +2068,6 @@ app.whenReady().then(async () => {
   registerRemoteIpcHandlers({
     logger,
     appTelemetryRuntime,
-    onOAuthCallbackHandledSideEffect: () => {
-      void armsUserIdentitySync.refresh();
-    },
     appTelemetryCore,
     reportRemoteUsageEvent: reportRemoteUsageEventForRenderer,
     armsCustomContext: {
@@ -2133,6 +2142,10 @@ app.whenReady().then(async () => {
   // 这些工作都不影响首窗渲染；其中 armsInitPromise 在 Main import 时已开始，
   // 这里只是把「等待它完成」从开窗前挪到开窗后。
   void (async () => {
+    // win32 打包态的同步 fs 探测（bundled runtime 完整性）只服务诊断日志，
+    // 与首窗渲染零依赖；放进延后块避免占用开窗前的主线程。
+    logWindowsBundledRuntimeIntegrityDiagnostic();
+
     try {
       await installWindowsOpenFolderContextMenu({
         platform: process.platform,

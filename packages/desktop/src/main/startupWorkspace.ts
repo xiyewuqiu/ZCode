@@ -1,35 +1,14 @@
 import { constants } from "node:fs";
-import { access, mkdir, readFile, stat } from "node:fs/promises";
+import { access, mkdir, stat } from "node:fs/promises";
 import {
-  appSettingsSchema,
-  formatZodError,
   resolveStartupLocalWorkspaceSessionIndex,
+  type AppSettings,
   type WorkspacePurpose,
 } from "@zcode/shared";
 
 interface StartupWorkspaceLogger {
   info?: (...args: unknown[]) => void;
   warn?: (...args: unknown[]) => void;
-}
-
-async function readStartupSettings(settingsFile: string, logger?: StartupWorkspaceLogger) {
-  try {
-    const raw = await readFile(settingsFile, "utf-8");
-    const parsed = JSON.parse(raw);
-    const result = appSettingsSchema.safeParse(parsed);
-
-    if (!result.success) {
-      logger?.warn?.(
-        "[startup-workspace] invalid settings file, falling back to default workspace:",
-        formatZodError(result.error),
-      );
-      return appSettingsSchema.parse({});
-    }
-
-    return result.data;
-  } catch {
-    return appSettingsSchema.parse({});
-  }
 }
 
 export interface StartupWorkspaceWarmupTarget {
@@ -61,7 +40,7 @@ async function isAvailableWorkspaceDirectory(workspacePath: string): Promise<boo
 }
 
 function resolvePersistedActiveSession(
-  sessions: NonNullable<ReturnType<typeof appSettingsSchema.parse>["lastWorkspaceSession"]>,
+  sessions: NonNullable<AppSettings["lastWorkspaceSession"]>,
   lastActiveTabIndex: number | undefined,
 ) {
   if (sessions.length === 0) {
@@ -72,7 +51,7 @@ function resolvePersistedActiveSession(
 }
 
 function resolveStartupAgentWarmupTargets(
-  settings: Pick<ReturnType<typeof appSettingsSchema.parse>, "recentProjects">,
+  settings: Pick<AppSettings, "recentProjects">,
   activeTarget: StartupWorkspaceWarmupTarget,
 ): StartupWorkspaceWarmupTarget[] {
   const candidates: StartupWorkspaceWarmupTarget[] = [
@@ -108,15 +87,17 @@ export function createOpenWorkspaceStartupBootstrap(workspacePath: string): Star
 }
 
 export async function resolveStartupWindowBootstrap({
-  settingsFile,
+  settings,
   conversationWorkspaceDir,
   logger,
 }: {
-  settingsFile: string;
+  // 由调用方（main 的 mainSettingService.get()）提供，带 TTL 缓存：
+  // 启动 bootstrap 阶段已读过一次 setting.json，这里直接复用，避免重复读盘与 zod parse；
+  // 读取失败/坏文件的兜底（默认值）也由 settingService 统一处理。
+  settings: AppSettings;
   conversationWorkspaceDir: string;
   logger?: StartupWorkspaceLogger;
 }): Promise<StartupWindowBootstrap> {
-  const settings = await readStartupSettings(settingsFile, logger);
   const sessions = settings.lastWorkspaceSession ?? [];
 
   if (sessions.length > 0) {

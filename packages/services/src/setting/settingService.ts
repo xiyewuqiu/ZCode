@@ -31,6 +31,9 @@ const MAX_RECENT_PROJECTS = 10;
 const DEFAULT_PROJECT_NAME = "ZCodeProject";
 const SETTINGS_PARSE_RETRY_DELAY_MS = 300;
 const SETTINGS_PARSE_RETRY_COUNT = 3;
+// get() 读缓存 TTL。多进程写 setting.json（Main/Host 各持服务实例）无法感知彼此写入，
+// 短 TTL 兜底跨进程失效；本进程写路径入队即失效（见 createSettingServiceWithMigrations 内注释）。
+const SETTINGS_CACHE_TTL_MS = 1_500;
 
 const log = (...args: unknown[]) =>
   console.log(formatLogPrefix("settingService", process.pid), ...args);
@@ -243,6 +246,22 @@ export function createSettingServiceWithMigrations(): {
   let commitQueue = Promise.resolve();
   let writeQueueGeneration = 0;
 
+  // get() 结果缓存：命中后跳过 readFile + JSON.parse + 全量 zod safeParse。
+  // 失效策略：本进程写路径都经 enqueueSettingsWrite，入队时同步失效缓存并递增 epoch，
+  // 保证「读不越过已入队写入」的既有语义；Host 等其他进程的写入靠短 TTL 兜底失效；
+  // get() 异步读盘期间若有写入入队（epoch 变化），结果只返回不回填，避免旧快照污染 TTL 窗口。
+  let cachedSettings: AppSettings | null = null;
+  let cachedAtMs = 0;
+  let cacheEpoch = 0;
+  // epoch 未变化（读盘期间无新写入入队）时回填缓存；返回值恒为本次读取结果。
+  const noteCacheFreshIfCurrent = (epochAtReadStart: number, settings: AppSettings): AppSettings => {
+    if (epochAtReadStart === cacheEpoch) {
+      cachedSettings = settings;
+      cachedAtMs = Date.now();
+    }
+    return settings;
+  };
+
   const runSettingsCommit = async (commit: () => Promise<void>) => {
     const queued = commitQueue.then(commit, commit);
     commitQueue = queued.catch(() => {});
@@ -252,6 +271,11 @@ export function createSettingServiceWithMigrations(): {
   const enqueueSettingsWrite = async (
     runUpdate: (shouldCommit: () => boolean, enterCommitPhase: () => void) => Promise<void>,
   ) => {
+    // 入队即失效 get() 缓存并递增 epoch：即使本次写入最终因 stale generation 被跳过，
+    // 多读一次盘也优于让 get() 命中与磁盘意图不一致的旧快照。cachedSettings 置 null 即使命中判断必败，
+    // cachedAtMs 无需复位（回填时总会重新赋值）。
+    cacheEpoch += 1;
+    cachedSettings = null;
     const runCurrentUpdate = () => {
       const currentGeneration = ++writeQueueGeneration;
       const shouldCommit = () => currentGeneration === writeQueueGeneration;
@@ -277,9 +301,15 @@ export function createSettingServiceWithMigrations(): {
       // 设置切换后可能立即创建或冷恢复 Session；读取若越过已入队写入，
       // runtime 会固定旧开关值。先等待现有写队列，保证启动偏好读取到已提交的选择。
       await updateQueue;
+      // 缓存命中：TTL 内高频 get()（如窗口聚焦 rebuildMenu 每次调 2 次）零读盘；写路径入队已同步失效。
+      if (cachedSettings && Date.now() - cachedAtMs < SETTINGS_CACHE_TTL_MS) {
+        return cachedSettings;
+      }
+      const epochAtReadStart = cacheEpoch;
       const result = await readSettingsWithMeta();
       if (!result.needsMigrationPersist) {
-        return result.settings;
+        // 读盘期间有写入入队时只返回不回填，避免写前旧快照在 TTL 窗口内污染后续命中。
+        return noteCacheFreshIfCurrent(epochAtReadStart, result.settings);
       }
 
       await enqueueSettingsWrite(async (shouldCommit, enterCommitPhase) => {
@@ -293,7 +323,8 @@ export function createSettingServiceWithMigrations(): {
         await writeSettings(latest.settings, shouldCommit, runSettingsCommit, enterCommitPhase);
       });
 
-      return readSettings();
+      // 迁移写入经 enqueueSettingsWrite 已失效缓存；重读回填同样校验 epoch（实参先于 await 求值）。
+      return noteCacheFreshIfCurrent(cacheEpoch, await readSettings());
     },
 
     async update(patch: Partial<AppSettings>, expectedAccountSettings): Promise<void> {

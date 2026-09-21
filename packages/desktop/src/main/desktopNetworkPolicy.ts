@@ -53,6 +53,26 @@ export async function applyDesktopChromiumNetworkPolicies(
   settings: DesktopNetworkPolicySettings,
   logger: DesktopNetworkPolicyLogger,
 ): Promise<void> {
+  const hasCustomProxy = Boolean(settings.httpProxy?.trim());
+  const hasCustomCaCert = Boolean(settings.httpProxyCaCertPath?.trim());
+  const allowInsecure = settings.embeddedBrowserAllowInsecureCertificates === true;
+
+  if (!hasCustomProxy && !hasCustomCaCert && !allowInsecure) {
+    // 启动快速路径：无任何自定义网络策略时，跳过 embedded-browser partition 的
+    // setProxy / closeAllConnections / 证书校验安装（Chromium 默认即 system 代理 + 默认校验）。
+    // 但 defaultSession 仍需显式固定为 direct：把 ZCode 自身后端出口与系统代理隔离
+    // 是显式产品边界，不能用 Chromium 默认（跟随系统代理）代替。
+    try {
+      await sessionProvider.defaultSession.setProxy({ mode: "direct" });
+      logger.info(
+        "[desktop-network] fast path: no custom proxy/CA settings; renderer=direct, embedded-browser=system-default",
+      );
+    } catch (error) {
+      logger.warn("[desktop-network] default session direct proxy apply failed:", error);
+    }
+    return;
+  }
+
   const targets = [
     {
       name: "default-session",
