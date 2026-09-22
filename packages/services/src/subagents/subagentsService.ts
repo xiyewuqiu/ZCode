@@ -73,6 +73,11 @@ interface InstalledPluginRecord {
 
 interface SubagentsServiceOptions extends SubagentStorageOptions {
   isDesktopRuntime?: boolean;
+  /**
+   * 当前注册表里真实存在的 providerId 集合。list 时用它级联清理指向已删除/重建
+   * 供应商的失效模型覆盖，保证派遣请求不再携带悬空引用（provider-not-found）。
+   */
+  resolveValidProviderIds?: () => Promise<ReadonlySet<string>> | ReadonlySet<string>;
 }
 
 interface PluginAgentDiscovery {
@@ -584,6 +589,29 @@ export function createSubagentsService(options?: SubagentsServiceOptions): ISuba
           });
       }
       const state = await readAgentStateFile(storageOptions);
+      // 级联一致性：供应商被删除或重建后，指向旧 providerId 的模型覆盖自动失效。
+      // 这里在校验后直接清除并写回，失效引用不再经派遣请求向外传播。
+      if (
+        options?.resolveValidProviderIds &&
+        Object.keys(state.builtInModelSelectionOverrides).length > 0
+      ) {
+        const validProviderIds = await options.resolveValidProviderIds();
+        const keptEntries = Object.entries(state.builtInModelSelectionOverrides).filter(
+          ([, selection]) => validProviderIds.has(selection.providerId),
+        );
+        if (keptEntries.length < Object.keys(state.builtInModelSelectionOverrides).length) {
+          const staleAgents = Object.keys(state.builtInModelSelectionOverrides).filter(
+            (agentName) =>
+              !keptEntries.some(([keptName]) => keptName === agentName),
+          );
+          state.builtInModelSelectionOverrides =
+            Object.fromEntries(keptEntries) as BuiltInSubagentModelSelectionOverrides;
+          await writeAgentStateFile(state, storageOptions);
+          subagentLogger.warn(undefined, "已清理指向不存在供应商的子代理模型覆盖", {
+            staleAgents,
+          });
+        }
+      }
       const builtInAgents = createBuiltInAgents(state.builtInModelSelectionOverrides);
       const fileAgents = await discoverFileAgents({
         diagnostics,

@@ -102,6 +102,7 @@ export function createDefaultSubagentPort(
         parentSelection: this.getSessionModelSelection(),
         overrideSelection: options?.modelOverride?.selection,
         resolveSelection: deps.resolveEffectiveModelSelection,
+        logger: this.logger,
       });
       const modelOverride = options?.modelOverride;
       const inheritedModel = !modelOverride && !hasConcreteModel ? options?.model : undefined;

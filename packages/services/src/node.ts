@@ -1613,6 +1613,11 @@ export function createLocalServices(options: {
   const pluginSyncService = createPluginSyncService();
   const subagentsService = createSubagentsService({
     isDesktopRuntime: true,
+    // providerRuntime 在本作用域稍后装配；list 是运行期调用，届时必然就绪。
+    resolveValidProviderIds: async () => {
+      const view = await providerRuntime.modelSelection.getView();
+      return new Set(view.providers.map((provider) => provider.providerId));
+    },
   });
   const commandsService = createCommandsService({ isDesktopRuntime: true });
   const hooksService = createHooksService({
