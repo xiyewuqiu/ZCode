@@ -1,0 +1,3 @@
+# ZCode: 上游本目录的 .gitignore 为空（target 由 cua 单仓库根忽略）。
+# vendored 进本仓库后必须自己忽略 Cargo 构建产物。
+/target/

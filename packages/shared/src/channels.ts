@@ -84,6 +84,8 @@ export const ServiceChannels = {
   Credential: "credential",
   /** Computer Use Helper macOS 权限服务 */
   CuaPermission: "cua-permission",
+  /** 电脑控制（cua-driver）驱动状态探测；只有随包提供该驱动的 host（desktop）才注册此频道 */
+  ComputerControlDriver: "computer-control-driver",
   /** producer-owned PiP session presentation client */
   CuaPipSession: "cua-pip-session",
   /** 跨窗口广播 */

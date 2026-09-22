@@ -480,6 +480,11 @@ import {
   type WindowsCuaRuntime,
 } from "#src/cua-permission-broker/windowsCuaDevRuntime.js";
 import { createCanonicalCuaHelperInstaller } from "./cua-permission-broker/cuaHelperInstaller.js";
+import {
+  IComputerControlDriverStatusService,
+  type ComputerControlDriverStatusProbe,
+} from "./computer-control/computerControlDriverStatus.js";
+import { resolveComputerControlAgentSpawnEnv } from "./computer-control/computerControlAgentEnv.js";
 import { WindowsCuaHelperHost } from "#src/cua-permission-broker/windowsCuaDevHelperHost.js";
 import { DEV_HELPER_APP_NAME, HELPER_APP_NAME } from "@zcode/zcode-cua/broker/helperConstants";
 import { resolveBrokerSocketPath } from "@zcode/zcode-cua/broker/socketPath";
@@ -1351,6 +1356,17 @@ export function createLocalServices(options: {
   };
   /** Windows desktop-local Host 的 CUA turn 状态投影；其它 authority 会在装配层拒绝。 */
   cuaOperationStateReporter?: CuaOperationStateReporter;
+  /**
+   * 电脑控制驱动（cua-driver）状态探测；desktop local host 注入（需要文件系统与子进程权限）。
+   * 未注入时不注册该服务频道，renderer 调用会 reject，由 UI 按「未知」兜底。
+   */
+  computerControlDriverStatusProbe?: ComputerControlDriverStatusProbe;
+  /**
+   * 电脑控制驱动（cua-driver）二进制路径解析；desktop local host 注入（复用状态探测同一套解析）
+   * 返回 undefined 表示本机没有随包驱动。只在 spawn agent 时读取，用于把驱动作为内置 MCP server
+   * 下发给 agent（见 shared/mcp.ts 的契约）。
+   */
+  resolveComputerControlDriverBinaryPath?: () => string | undefined;
 }): ServiceCollection {
   const isDesktopAttachedRemote = options?.serviceAuthorityMode === "desktop-attached-remote";
   // host / remote server 以前直接沿用当前进程环境启动后续服务。
@@ -2098,6 +2114,10 @@ export function createLocalServices(options: {
       const [settings] = await Promise.all([settingService.get(), providerRuntime.start()]);
       // 内置 Subagent 的旧覆盖必须在 CLI 独立读取之前导入，不能等待设置页操作。
       await subagentsService.prepareRuntimeState();
+      const computerControlEnv = resolveComputerControlAgentSpawnEnv({
+        computerControl: settings.computerControl,
+        driverBinaryPath: options?.resolveComputerControlDriverBinaryPath?.(),
+      });
       const agentNetwork =
         isDesktopAttachedRemote && options?.remoteAgentNetwork
           ? options.remoteAgentNetwork
@@ -2177,6 +2197,10 @@ export function createLocalServices(options: {
           noProxy: agentNetwork.noProxy,
           caCertPath: settings.httpProxyCaCertPath,
         }),
+        // 电脑控制：开关在 host 读设置，驱动路径由 desktop host 解析；agent 只拿到
+        // 「驱动路径 + 权限模式」，由 CLI bootstrap 组装成内置 MCP server（见 shared/mcp.ts）。
+        // 与代理 env 同一语义：按 spawn 时读取，改动后下次启动 agent 生效。
+        ...computerControlEnv,
         // 把 host 解析出的权威 origin（含 settings 覆盖）下发给 agent，否则 agent 侧只按
         // env 推导，test env + 自定义端点时两侧信任判定的输入分叉、官方 MCP 整体 fail closed。
         ...buildAgentEndpointOriginEnv(await resolveCurrentZCodeEndpointOrigin()),
@@ -2506,6 +2530,15 @@ export function createLocalServices(options: {
       }),
     )
     .register(IPromptAttachmentTransferService, createLocalPromptAttachmentTransferService());
+
+  // 电脑控制驱动状态探测：探测函数由 desktop local host 注入（读随包文件 + 起子进程读版本），
+  // 因此只有能提供驱动的宿主才注册这个频道。未注入时不注册，renderer 侧调用会 reject，
+  // 由设置页按「未知」兜底——不能把「本环境没有驱动」伪装成「驱动缺失」。
+  if (options.computerControlDriverStatusProbe) {
+    services.register(IComputerControlDriverStatusService, {
+      getComputerControlDriverStatus: options.computerControlDriverStatusProbe,
+    });
+  }
 
   // 即使初始配置关闭也必须登记 lifecycle disposer：terminal fence 需要早于任意延迟 setting/acquire
   // 恢复，不能把"当前还没有 Helper"误当成"不需要生命周期所有者"。dispose 时串行 stop host。

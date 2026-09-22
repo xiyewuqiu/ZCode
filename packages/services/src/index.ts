@@ -251,6 +251,14 @@ export {
   type CuaPermissionStatusUnavailable,
   isCuaPermissionStatusAvailable,
 } from "./cua-permission-broker/cuaPermissionService.js";
+// 电脑控制驱动状态探测：descriptor 只在 host 侧注册（desktop 有驱动时），
+// 类型与 channelName 需要被 client/renderer 引入，所以从 browser-safe 根入口导出。
+export {
+  IComputerControlDriverStatusService,
+  type ComputerControlDriverState,
+  type ComputerControlDriverStatus,
+  type ComputerControlDriverStatusProbe,
+} from "./computer-control/computerControlDriverStatus.js";
 export {
   ICuaPipSessionService,
   type CuaPipSessionService,

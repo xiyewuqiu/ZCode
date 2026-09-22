@@ -1,0 +1,17 @@
+[package]
+name = "msvc_spectre_libs"
+version = "0.1.3"
+edition = "2021"
+description = "Local stub: upstream build script requires Spectre-mitigated MSVC libs that are optional for this build."
+license = "MIT OR Apache-2.0"
+publish = false
+
+[features]
+# Upstream turns this on (via regorus' `std` feature) to make a missing
+# Spectre-mitigated CRT a hard error. Keeping the feature name lets the
+# dependency graph resolve unchanged.
+error = []
+
+[lib]
+name = "msvc_spectre_libs"
+path = "src/lib.rs"

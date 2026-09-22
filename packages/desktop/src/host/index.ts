@@ -28,6 +28,10 @@ import { registerHostServiceResourceTelemetry } from "./hostServiceResourceTelem
 import { resolveResourceTelemetryEnvironmentKey } from "./hostResourceTelemetryEnvironment.js";
 import { reportHostSessionCreate } from "./hostSessionCreateTelemetry.js";
 import { createBrowserControlMainBridge } from "./browserControlMainBridge.js";
+import {
+  readComputerControlDriverStatus,
+  resolveComputerControlDriverBinaryPath,
+} from "./computerControlDriverStatus.js";
 import { materializeBrowserRecordingArtifact } from "./browserRecordingArtifactMaterializer.js";
 import {
   ServiceCollection,
@@ -2846,6 +2850,12 @@ parentPort.on("message", async (e: Electron.MessageEvent) => {
               // CUA 顶部提示属于物理 Windows 桌面投影；非 Windows 和远端 authority 都不得上报。
               cuaOperationStateReporter:
                 process.platform === "win32" ? cuaOperationStateReporter : undefined,
+              // 电脑控制驱动（cua-driver）随包分发，只有 desktop local host 能探测它的状态；
+              // 探测实现读 resources/tools（打包态）或 bundled-tools（开发态）并跑 --version。
+              computerControlDriverStatusProbe: readComputerControlDriverStatus,
+              // 同一个解析器再喂给 spawn env：设置页开启电脑控制后，agent 子进程据此把驱动
+              // 组装成内置 MCP server。远端 workspace host 不注入（远控不得操作本机桌面）。
+              resolveComputerControlDriverBinaryPath,
             });
             activeServices = initializedServices;
             activeHostApiNetworkTransport = hostApiNetworkTransport;

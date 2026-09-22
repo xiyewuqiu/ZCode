@@ -1,4 +1,5 @@
 import { IOffPeakTaskService } from "./session/offPeakTask.js";
+import type { ComputerControlDriverStatusProbe } from "./computer-control/computerControlDriverStatus.js";
 import type { IFileService } from "./file/file.js";
 import type { IMediaPreviewService } from "./media-preview/mediaPreview.js";
 import type { IGitService } from "./git/git.js";
@@ -58,6 +59,11 @@ export interface IServiceAccessor {
   readonly zcodeSessionService: IZCodeSessionService;
   // CUA 是 opt-in 内测特性：local macOS host 提供，远端 等 host 没有。可选避免连锁必填。
   readonly cuaPermissionService?: ICuaPermissionService;
+  /**
+   * 电脑控制（cua-driver）驱动状态探测：只有随包分发驱动的 host（desktop local host）注册该频道。
+   * Web / 远端环境 / 旧 host 不提供；调用方必须按可选能力处理（缺失或 reject 都按「未知」兜底）。
+   */
+  readonly getComputerControlDriverStatus?: ComputerControlDriverStatusProbe;
   readonly conversationShareService: IConversationShareService;
   readonly fileWatcherService: IFileWatcherService;
   /** 当前 Environment 的 Provider 配置与设置视图。 */

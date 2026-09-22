@@ -14,6 +14,8 @@ import {
   IZCodeAgentService,
   IZCodeSessionService,
   ICuaPermissionService,
+  IComputerControlDriverStatusService,
+  type ComputerControlDriverStatus,
   IConversationShareService,
   IFileWatcherService,
   IModelSelectionService,
@@ -64,6 +66,9 @@ export class RemoteServiceAccess implements IServiceAccessor {
   // cuaPermissionService 在 IServiceAccessor 上是可选（远端 host 不提供），但桌面 renderer
   // 经 RPC 一定能拿到（main host 始终注册此 descriptor；非 macOS / 未启用时方法返回 available:false）。
   readonly cuaPermissionService: ICuaPermissionService;
+  // 电脑控制驱动状态探测：只有随包提供 cua-driver 的 host（desktop local host）注册该频道。
+  // 这里始终挂上代理，未注册频道的 host 调用会 reject，由设置页按「未知」兜底。
+  readonly getComputerControlDriverStatus: () => Promise<ComputerControlDriverStatus>;
   readonly conversationShareService: IConversationShareService;
   readonly fileWatcherService: IFileWatcherService;
   readonly providerSettingsService: IProviderSettingsService;
@@ -137,6 +142,14 @@ export class RemoteServiceAccess implements IServiceAccessor {
     this.cuaPermissionService = ProxyChannel.toService<ICuaPermissionService>(
       channelClient.getChannel(ICuaPermissionService.channelName),
     );
+    // 驱动状态是 accessor 根上的可选能力方法（UI 直接调 services.getComputerControlDriverStatus?.()），
+    // 所以这里把频道方法提升成根方法，并绑定一次即可（ProxyChannel 的方法不带 this）。
+    const computerControlDriverStatusService =
+      ProxyChannel.toService<IComputerControlDriverStatusService>(
+        channelClient.getChannel(IComputerControlDriverStatusService.channelName),
+      );
+    this.getComputerControlDriverStatus = () =>
+      computerControlDriverStatusService.getComputerControlDriverStatus();
     this.conversationShareService = ProxyChannel.toService<IConversationShareService>(
       channelClient.getChannel(IConversationShareService.channelName),
     );

@@ -637,6 +637,17 @@ export default {
       to: "tools/ripgrep",
       filter: ["**/*"],
     },
+    {
+      // 电脑控制（cua-driver）驱动：vendored Rust 二进制由 `pnpm build:cua-driver` 落到
+      // bundled-tools/<platformKey>/cua-driver（.gitignore，不入库），这里按同一平台 key
+      // 映射成安装包内的 resources/tools/cua-driver。Host 侧驱动状态探测按
+      // resources/tools/cua-driver/cua-driver.exe 解析（见 src/host/computerControlDriverStatus.ts）。
+      // 该目录缺失时 electron-builder 只会 warn「file source doesn't exist」，
+      // 表现为设置页驱动状态「未安装」，所以发布前必须先跑构建脚本。
+      from: `bundled-tools/${targetPlatform.key}/cua-driver`,
+      to: "tools/cua-driver",
+      filter: ["**/*", "!**/*.map"],
+    },
     ...nativeSearchReleasePlan.extraResourceToolIds.map((toolId) => ({
       from: `bundled-tools/${targetPlatform.key}/${toolId}`,
       to: `tools/${toolId}`,

@@ -69,3 +69,5 @@ packages/desktop/.e2e-artifacts/
 packages/desktop/.e2e-cache/
 packages/desktop/.e2e-network-capture/
 .zcode-runtime/
+# vendored cua-driver 的 Cargo 构建产物（源码入库，target/ 不入库）。
+third-party/cua-driver/target/
