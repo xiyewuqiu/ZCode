@@ -250,5 +250,17 @@
     "license": "MIT",
     "scope": "Vendored React/Next.js guidance and local adaptations; local README preserves Shu Ding / Vercel attribution.",
     "reviewRequired": "Pinned upstream README and skill declare MIT, but a complete original copyright/license notice has not been obtained."
+  },
+  {
+    "id": "cua-driver (trycua/cua)",
+    "referenceRevision": "27a318c3a616f9ff19d24fe2acca7517c5f8fa7b",
+    "source": "https://raw.githubusercontent.com/trycua/cua/27a318c3a616f9ff19d24fe2acca7517c5f8fa7b/LICENSE.md",
+    "file": "third-party/upstream/c0779290c1d4783169aa3dbfb55feb505e563ef8a004bbf55298ceffcfbda8d9.txt",
+    "sha256": "c0779290c1d4783169aa3dbfb55feb505e563ef8a004bbf55298ceffcfbda8d9",
+    "importRevision": "27a318c3a616f9ff19d24fe2acca7517c5f8fa7b",
+    "provenance": "Snapshot is the byte-exact upstream LICENSE.md at the vendored revision (MIT, Copyright (c) 2025 Cua AI, Inc., 1069 bytes). third-party/cua-driver/LICENSE carries the same text with Windows CRLF endings; the two are byte-identical once those endings are normalized to LF.",
+    "roots": [ "third-party/cua-driver/.cargo", "third-party/cua-driver/.gitignore", "third-party/cua-driver/CHANGELOG.md", "third-party/cua-driver/Cargo.lock", "third-party/cua-driver/Cargo.toml", "third-party/cua-driver/LICENSE", "third-party/cua-driver/README.md", "third-party/cua-driver/Skills", "third-party/cua-driver/UPSTREAM-README.md", "third-party/cua-driver/UPSTREAM-REVISION", "third-party/cua-driver/VERSION", "third-party/cua-driver/crates", "third-party/cua-driver/examples", "third-party/cua-driver/include", "third-party/cua-driver/rust-toolchain.toml", "third-party/cua-driver/scripts", "third-party/cua-driver/test-apps", "third-party/cua-driver/tests", "third-party/cua-driver/vendor" ],
+    "scope": "Vendored copy of the upstream Cargo workspace at libs/cua-driver/rust; it is built locally into packages/desktop/bundled-tools/<platformKey>/cua-driver and shipped as resources/tools/cua-driver. Cargo target/ output is git-ignored, so it is not part of this list. ZCode modifications: telemetry.rs rewritten as an inert no-op, telemetry-only plumbing removed from main.rs/cli.rs, version_check.rs default flipped to opt-in so the vendored build no longer contacts the GitHub releases API on startup, and the vendor/msvc-spectre-libs build patch crate. Full change list in third-party/cua-driver/README.md. NOT covered by this entry: the transitive Rust crate licenses of the statically linked binary, which still need a separate sources inventory.",
+    "license": "MIT"
   }
 ]
