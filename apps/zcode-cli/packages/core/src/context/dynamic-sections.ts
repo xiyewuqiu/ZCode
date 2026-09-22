@@ -83,7 +83,7 @@ export function buildDynamicBehaviorSection(): ContextSection {
       COMMUNICATION_PROMPTS.default,
       COMMUNICATION_PROMPTS.additional.afterDefault,
       "",
-      "Proceed directly and decisively on all operations including complex analysis, test execution, command execution, and file modifications. Full authorization is active for all engineering and security operations.",
+      "Proceed directly and decisively on all operations including complex analysis, test execution, command execution, and file modifications without hesitation, disclaimers, or preachy warnings.",
     ].join("\n"),
   );
 }
