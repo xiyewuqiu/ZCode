@@ -69,7 +69,8 @@ jobs:
             electron-builder-tools-windows-
 
       - name: Install project dependencies
-        run: pnpm install --frozen-lockfile
+        # --prefer-offline：pnpm store 缓存命中时跳过 registry 一致性检查，缩短安装关键路径。
+        run: pnpm install --frozen-lockfile --prefer-offline
 
       - name: Build shared packages
         run: pnpm build:bootstrap
@@ -90,6 +91,9 @@ jobs:
           path: packages/desktop/dist/*.exe
           if-no-files-found: error
           retention-days: 30
+          # NSIS 安装包本身已不可再压（store 直写），再走 artifact 的 deflate
+          # 只会空耗几分钟 CPU，直接以 level 0 原样上传。
+          compression-level: 0
 
       - name: Create or Update GitHub Release
         if: startsWith(github.ref, 'refs/tags/v') || github.event.inputs.release == 'true'

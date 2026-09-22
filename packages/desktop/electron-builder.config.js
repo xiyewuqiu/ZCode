@@ -689,6 +689,9 @@ export default {
   win: {
     target: ["nsis"],
     artifactName: buildDesktopArtifactName("win"),
+    // NSIS 默认 LZMA 压缩 149MB 产物要数分钟；安装包本身已是 ES 模块与资源的高熵
+    // 组合，压缩率有限。CI 场景优先打包速度，改用 store 直写安装器。
+    compression: "store",
   },
   linux: {
     target: ["AppImage", "deb", "rpm", "pacman"],
@@ -746,6 +749,8 @@ export default {
   nsis: {
     oneClick: false,
     allowToChangeInstallationDirectory: true,
+    // CI 只上传安装包本体，不发布差分更新；store 压缩模式下 blockmap 生成纯属空转。
+    differentialPackage: false,
     // Windows 安装流程使用独立安装图标，和应用运行时图标解耦。
     installerIcon: "build/icon_installer.ico",
     uninstallerIcon: "build/icon_installer.ico",
