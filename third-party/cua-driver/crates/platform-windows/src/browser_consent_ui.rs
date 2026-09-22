@@ -336,6 +336,8 @@ where
     }
 }
 
+// 泛型辅助：上游重构后仅 exact_allow_button 特化版在调用链上，保留实现保真。
+#[allow(dead_code)]
 fn exact_allow_button_with<F>(
     nodes: &[UiaNode],
     properties: F,

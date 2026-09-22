@@ -10030,6 +10030,8 @@ impl Tool for DebugWindowInfoTool {
 
 // ── registry builder ──────────────────────────────────────────────────────────
 
+// 库 API：供 SDK / embedding 消费方使用，当前 --bin 构建不直接调用，保持导出。
+#[allow(dead_code)]
 pub fn build_registry(compat: bool) -> ToolRegistry {
     build_registry_with_provider(compat, None)
 }

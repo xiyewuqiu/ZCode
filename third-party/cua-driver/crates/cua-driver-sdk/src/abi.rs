@@ -1057,6 +1057,9 @@ mod ffi {
         _private: [u8; 0],
     }
 
+    // FFI 面是固定 ABI 契约，不由当前二进制的调用面驱动；未使用的符号声明
+    // 属正常状态（供 SDK 消费方/未来能力使用），strict 模式下放行。
+    #[allow(dead_code)]
     unsafe extern "C" {
         #[link_name = "cua_driver_buffer_free_v1"]
         pub(super) fn buffer_free(buffer: *mut CuaDriverBuffer);

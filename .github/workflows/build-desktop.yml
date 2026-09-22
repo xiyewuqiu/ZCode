@@ -98,7 +98,12 @@ jobs:
       - name: Build cua-driver native tool
         # vendored Rust 驱动必须在此编译并落到 bundled-tools，否则安装包缺少
         # resources/tools/cua-driver（electron-builder 对缺失源目录只告警不报错）。
+        # RUSTFLAGS 显式清空：第三方组件（vendor）的 lint 策略属于组件自身，
+        # 主仓的 warnings-as-errors 严格模式不侵入其编译（上游代码存在大量
+        # cfg 门控/FFI 面的 dead_code，默认 warning 即可，不应升级为 error）。
         run: pnpm build:cua-driver
+        env:
+          RUSTFLAGS: ''
 
       - name: Bundle Desktop App (Windows x64)
         run: pnpm --filter @zcode/desktop run bundle -- --os win --arch x64
