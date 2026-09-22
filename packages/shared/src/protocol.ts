@@ -272,6 +272,16 @@ export interface AppSettings {
    * 关闭后按钮不再渲染，且不因重启或版本更新自愈，仅能在设置页重新开启。
    */
   computerUseComposerEntryHidden?: boolean;
+  /**
+   * 电脑控制（cua-driver）总开关与权限模式。
+   * enabled 决定 Agent 是否可操控本机桌面；permissionMode 决定免确认范围：
+   * standard=常规自动化免确认、bounded=仅清单内工具、unrestricted=完全放开。
+   * 驱动是否可用属于运行时探测结果，不落盘。
+   */
+  computerControl?: {
+    enabled: boolean;
+    permissionMode: "standard" | "bounded" | "unrestricted";
+  };
   /** 自动归档已完成旧任务的总开关 */
   taskAutoArchiveEnabled?: boolean;
   /** 自动归档阈值；当任务最后更新时间早于该天数时允许被归档 */

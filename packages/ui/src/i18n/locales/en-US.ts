@@ -5871,6 +5871,54 @@ const enUS: Record<string, string> = {
     "Computer Use is not yet supported on Linux desktops. Switch to a local macOS or Windows workspace.",
   "settings.computerUse.unsupported.badge": "Unavailable here",
   "settings.computerUse.unsupported.group": "Unavailable built-in capabilities",
+  "settings.computerControlTitle": "Computer Control",
+  "settings.computerControlDescription":
+    "Let the agent work this computer directly: read windows and controls, move the mouse, type on the keyboard. Everything runs on this machine, and you can turn it off at any time.",
+  "settings.computerControl.desktopOnly.title": "Computer Control is desktop-only",
+  "settings.computerControl.desktopOnly.description":
+    "The web client cannot drive your local desktop. Open this setting in the ZCode desktop app.",
+  "settings.computerControl.toggleLabel": "Enable Computer Control",
+  "settings.computerControl.toggleDescription":
+    "When on, the agent can drive this computer; turning it off stops those tools immediately.",
+  "settings.computerControl.enabledToast": "Computer Control enabled",
+  "settings.computerControl.disabledToast": "Computer Control disabled",
+  "settings.computerControl.disabledNotice":
+    "Computer Control is off. Turn it on to choose a permission mode and check the driver status.",
+  "settings.computerControl.saveFailed": "Failed to save: {error}",
+  "settings.computerControl.permission.title": "Permission mode",
+  "settings.computerControl.permission.description":
+    "How far the agent may go on this computer without asking. The wider the mode, the fewer interruptions — and the more risk.",
+  "settings.computerControl.permission.standard.title": "Standard",
+  "settings.computerControl.permission.standard.description":
+    "Routine automation runs without prompts: clicks, typing, and scrolling execute directly, while sensitive actions such as installing software or changing system settings still ask you first.",
+  "settings.computerControl.permission.bounded.title": "Bounded",
+  "settings.computerControl.permission.bounded.description":
+    "Only allowlisted tools: bounded mode requires a reviewed capability manifest; this build runs standard mode until a manifest is shipped. Best for repetitive, fixed-step work.",
+  "settings.computerControl.permission.unrestricted.title": "Unrestricted",
+  "settings.computerControl.permission.unrestricted.description":
+    "No per-step prompts: any app and any tool may run. Use it only when you fully trust the current task.",
+  "settings.computerControl.permission.unrestrictedWarning":
+    "With Unrestricted, ZCode stops asking before each step, so mistakes take effect immediately. Make sure you accept that risk.",
+  "settings.computerControl.permission.saved": "Permission mode updated",
+  "settings.computerControl.driver.title": "Driver status",
+  "settings.computerControl.driver.ready": "Ready",
+  "settings.computerControl.driver.readyDescription":
+    "cua-driver is installed — version {version}.",
+  "settings.computerControl.driver.readyDescriptionNoVersion":
+    "cua-driver is installed and Computer Control is ready to use.",
+  "settings.computerControl.driver.missing": "Not installed",
+  "settings.computerControl.driver.missingDescription":
+    "cua-driver was not found. Build or download the driver before Computer Control can work.",
+  "settings.computerControl.driver.unknown": "Unknown",
+  "settings.computerControl.driver.unknownDescription":
+    "The driver status could not be read. Try checking again.",
+  "settings.computerControl.driver.unavailableDescription":
+    "This environment does not expose the driver status API, so cua-driver cannot be detected.",
+  "settings.computerControl.driver.checking": "Checking…",
+  "settings.computerControl.driver.checkingDescription":
+    "Checking the local cua-driver installation…",
+  "settings.computerControl.driver.recheck": "Check again",
+  "settings.computerControl.driver.recheckDone": "Driver status refreshed",
   "scheduledPreview.keepAwakeEnabled": "Keep awake enabled",
   "scheduledPreview.keepAwakeDisabled": "Keep awake disabled",
   "scheduledPreview.toast.running": "Running “{title}”…",

@@ -1,5 +1,6 @@
 import {
   Monitor,
+  MonitorCog,
   Moon,
   Settings,
   Settings2,
@@ -128,8 +129,16 @@ const BASE_SETTINGS_SECTIONS: SettingsSectionDefinition[] = [
     titleId: "settings.browser.title",
     groupId: "basics",
   },
-  // 电脑控制紧跟「浏览器」：两者都是给 Agent 用的本机操控入口，
-  // 放在基础设置里让用户在同一处理解「控制浏览器 / 控制整台电脑」的关系。
+  // 「电脑控制」（cua-driver）紧邻「浏览器控制」：同为本机操控入口，
+  // 让用户在相邻位置理解「控制浏览器 / 控制整台电脑」的关系。
+  {
+    id: "computerControl",
+    icon: MonitorCog,
+    titleId: "settings.computerControlTitle",
+    groupId: "basics",
+  },
+  // 旧「电脑控制」（zcode-cua 插件）入口已从设置导航隐藏，只保留分区定义与 SettingsPage 的渲染分支；
+  // 当前用户可见的电脑控制是上面的 computerControl（cua-driver）。
   {
     id: "computerUse",
     icon: Monitor,

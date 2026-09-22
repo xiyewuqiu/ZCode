@@ -56,6 +56,34 @@ export const integratedTerminalShellSelectionSchema = z.discriminatedUnion("mode
 ]);
 const providerFamilyDomainSchema = z.enum(["zai", "bigmodel"]);
 
+const computerControlEnabledSchema = z.boolean();
+const computerControlPermissionModeSchema = z.enum(["standard", "bounded", "unrestricted"]);
+
+/**
+ * 电脑控制（cua-driver）设置。
+ * 内层字段各自带 default：历史 setting.json 里只写过 enabled 的残缺对象也能补全，
+ * 避免一次字段新增把整份 settings 解析打回默认值。
+ */
+const computerControlSettingsSchema = z.object({
+  enabled: computerControlEnabledSchema.default(false),
+  permissionMode: computerControlPermissionModeSchema.default("standard"),
+});
+
+/**
+ * patch 是整对象替换：setting 服务只做顶层浅合并，缺字段会被内层 default 静默重置，
+ * 因此写入时两个字段都必须给出，与 AppSettings 的类型（字段非可选）保持一致。
+ */
+const computerControlPatchSchema = z.object({
+  enabled: computerControlEnabledSchema,
+  permissionMode: computerControlPermissionModeSchema,
+});
+
+/** 电脑控制默认值：关闭 + 标准模式。取 schema 的输出类型，字段缺省时由内层 default 补齐。 */
+const DEFAULT_COMPUTER_CONTROL_SETTINGS: z.output<typeof computerControlSettingsSchema> = {
+  enabled: false,
+  permissionMode: "standard",
+};
+
 export const postUpdateReleaseNotesPayloadSchema = z.object({
   version: nonEmptyStringSchema,
   title: nonEmptyStringSchema,
@@ -436,6 +464,8 @@ const appSettingsObjectSchema = z.object({
   // 输入框电脑操作入口改为默认不展示，设置项保留、默认关闭。
   // default 只对缺省字段生效，显式存过 false 的用户仍保持展示。
   computerUseComposerEntryHidden: z.boolean().default(true),
+  // 电脑控制（cua-driver）总开关与权限模式；缺省即「关闭 + 标准模式」。
+  computerControl: computerControlSettingsSchema.default(DEFAULT_COMPUTER_CONTROL_SETTINGS),
   taskAutoArchiveEnabled: z.boolean().default(false),
   taskAutoArchiveOlderThanDays: z.number().int().positive().max(365).default(7),
   closeToTrayOnWindows: z.boolean().default(true),
@@ -504,6 +534,7 @@ export const appSettingsPatchSchema = z.object({
   embeddedBrowserAllowInsecureCertificates: z.boolean().optional(),
   embeddedBrowserViewportPreference: embeddedBrowserViewportPreferenceSchema.optional(),
   computerUseComposerEntryHidden: z.boolean().optional(),
+  computerControl: computerControlPatchSchema.optional(),
   taskAutoArchiveEnabled: z.boolean().optional(),
   taskAutoArchiveOlderThanDays: z.number().int().positive().max(365).optional(),
   closeToTrayOnWindows: z.boolean().optional(),

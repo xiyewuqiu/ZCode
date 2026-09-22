@@ -5622,6 +5622,51 @@ const zhCN: Record<string, string> = {
     "Computer Use 暂不支持 Linux 桌面环境。请切换到本机 macOS 或 Windows 工作区。",
   "settings.computerUse.unsupported.badge": "当前环境不可用",
   "settings.computerUse.unsupported.group": "不可用的内置能力",
+  "settings.computerControlTitle": "电脑控制",
+  "settings.computerControlDescription":
+    "让 Agent 直接操作这台电脑：读取窗口与控件、移动鼠标、输入键盘。所有动作都在本机执行，你可以随时关闭。",
+  "settings.computerControl.desktopOnly.title": "电脑控制只在桌面端可用",
+  "settings.computerControl.desktopOnly.description":
+    "Web 端无法操控本机桌面。请在 ZCode 桌面端打开此设置。",
+  "settings.computerControl.toggleLabel": "启用电脑控制",
+  "settings.computerControl.toggleDescription":
+    "开启后 Agent 可以操控本机桌面；关闭会立即停用相关工具。",
+  "settings.computerControl.enabledToast": "已启用电脑控制",
+  "settings.computerControl.disabledToast": "已关闭电脑控制",
+  "settings.computerControl.disabledNotice":
+    "电脑控制当前已关闭。开启后可以设置权限模式并查看驱动状态。",
+  "settings.computerControl.saveFailed": "保存失败：{error}",
+  "settings.computerControl.permission.title": "权限模式",
+  "settings.computerControl.permission.description":
+    "决定 Agent 在这台电脑上可以免确认执行到哪一步。放得越开，打扰越少，风险越高。",
+  "settings.computerControl.permission.standard.title": "标准",
+  "settings.computerControl.permission.standard.description":
+    "常规自动化免确认：点击、输入、滚动等日常操作直接执行；安装软件、修改系统设置等敏感操作仍需你确认。",
+  "settings.computerControl.permission.bounded.title": "受限",
+  "settings.computerControl.permission.bounded.description":
+    "只允许清单内的工具：受限模式需要经过审查的能力清单；当前版本未内置清单时按标准模式运行。适合步骤固定的重复任务。",
+  "settings.computerControl.permission.unrestricted.title": "完全放开",
+  "settings.computerControl.permission.unrestricted.description":
+    "不再逐项确认：任意应用、任意工具都可以执行，只在完全信任当前任务时使用。",
+  "settings.computerControl.permission.unrestrictedWarning":
+    "完全放开后 ZCode 不再逐项确认，误操作会直接生效。请确认你了解其中的风险。",
+  "settings.computerControl.permission.saved": "权限模式已更新",
+  "settings.computerControl.driver.title": "驱动状态",
+  "settings.computerControl.driver.ready": "已就绪",
+  "settings.computerControl.driver.readyDescription": "cua-driver 已安装，当前版本 {version}。",
+  "settings.computerControl.driver.readyDescriptionNoVersion":
+    "cua-driver 已安装，电脑控制可以正常工作。",
+  "settings.computerControl.driver.missing": "未安装",
+  "settings.computerControl.driver.missingDescription":
+    "未检测到 cua-driver。需要先构建或下载驱动，电脑控制才能生效。",
+  "settings.computerControl.driver.unknown": "未知",
+  "settings.computerControl.driver.unknownDescription": "暂时读不到驱动状态，可以重新检测。",
+  "settings.computerControl.driver.unavailableDescription":
+    "当前环境没有提供驱动状态接口，无法检测 cua-driver。",
+  "settings.computerControl.driver.checking": "检测中…",
+  "settings.computerControl.driver.checkingDescription": "正在检测本机 cua-driver 驱动…",
+  "settings.computerControl.driver.recheck": "重新检测",
+  "settings.computerControl.driver.recheckDone": "已重新检测驱动状态",
   "scheduledPreview.keepAwakeEnabled": "已开启保持唤醒",
   "scheduledPreview.keepAwakeDisabled": "已关闭保持唤醒",
   "scheduledPreview.toast.running": "正在运行“{title}”…",
