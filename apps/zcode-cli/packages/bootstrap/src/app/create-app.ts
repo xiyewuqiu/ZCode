@@ -93,6 +93,7 @@ import {
   type NodeReplBrowserBroker,
 } from "./node-repl-browser-broker.js";
 import { resolveBuiltInNodeReplMcpServers } from "./built-in-node-repl.js";
+import { resolveBuiltInComputerControlMcpServers } from "./built-in-computer-control.js";
 import { resolveZCodeCustomCommandPrompt } from "../custom-command-prompt.js";
 import { resolveZCodeBuiltinPromptCommand } from "../builtin-prompt-command.js";
 import { collectDisabledPaths } from "../skill-command-overrides.js";
@@ -227,10 +228,16 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
       modelSelectionOverrides: zcodeSubagentProfileOutcome.pluginAgentModelSelectionOverrides,
     }).profiles;
     const pluginRuntimeFeatures = resolvePluginRuntimeFeatures(pluginOutcome);
-    const builtInMcpServers = resolveBuiltInNodeReplMcpServers({
-      pluginOutcome,
-      workingDirectory,
-    });
+    // 宿主内建的 MCP server（不受用户/插件配置影响，最后合并保留身份）：
+    // node_repl 由插件启用与产物决定；cua-driver 由 desktop host 的 computerControl 设置门控
+    // （开关事实随 agent spawn env 下发，这里只做组装与 fail-closed 校验）。
+    const builtInMcpServers = {
+      ...resolveBuiltInNodeReplMcpServers({
+        pluginOutcome,
+        workingDirectory,
+      }),
+      ...resolveBuiltInComputerControlMcpServers({ env: options.env ?? process.env }),
+    };
     // 用户目录已在 loader 前完成原地迁移；不能给项目/插件旧身份加内存兼容旁路。
     const subagentProfiles = [...zcodeSubagentProfiles, ...pluginSubagentProfiles];
     const ownsSessionStore = options.sessionStore === undefined;

@@ -20,6 +20,82 @@ export type CliMcpSource = Exclude<McpSource, "mcp">;
 export type McpScope = "common" | "user" | "workspace";
 export type McpFileFormat = "json";
 
+// ---------------------------------------------------------------------------
+// 电脑控制（cua-driver）内置 MCP server 契约
+//
+// 驱动不是用户配置的 MCP：它随包分发（resources/tools/cua-driver/），由设置页的
+// `AppSettings.computerControl` 门控，并由 CLI bootstrap 以「宿主内建 server」的身份最后合入
+// （见 apps/zcode-cli 的 resolveBuiltInNodeReplMcpServers / runtime-config 的注释）。
+//
+// 链路（三处共用本文件的常量，避免字面量漂移）：
+//   设置页 computerControl.enabled/permissionMode
+//     → desktop host 在 agent spawn env 下发驱动路径 + 权限模式
+//     → CLI bootstrap 组装成内置 MCP server（command = 驱动，args = ["mcp"]，env = 驱动授权变量）
+//     → 模型可见工具 mcp__cua-driver__*
+// ---------------------------------------------------------------------------
+
+/** 内置 MCP server key；同时是模型可见工具前缀段（`mcp__cua-driver__*`）。 */
+export const ZCODE_CUA_DRIVER_MCP_SERVER_NAME = "cua-driver";
+
+/**
+ * 驱动自身的 stdio 调用形态：`cua-driver mcp`（等价于 `cua-driver mcp-config` 给出的
+ * `{ command, args: ["mcp"] }`）。MCP 子命令不吃 `serve` 的授权参数，权限只能走 env。
+ */
+export const CUA_DRIVER_MCP_ARGS: readonly string[] = ["mcp"];
+
+/** desktop host → agent spawn env：随包驱动的绝对路径；缺失即视为「无驱动」，不注册 MCP。 */
+export const ZCODE_CUA_DRIVER_BINARY_ENV = "ZCODE_CUA_DRIVER_BINARY";
+
+/** desktop host → agent spawn env：设置页选择的权限模式（原样下发给 CLI 组装 MCP env）。 */
+export const ZCODE_CUA_DRIVER_PERMISSION_MODE_ENV = "ZCODE_CUA_DRIVER_PERMISSION_MODE";
+
+/** 驱动的启动期授权变量（`cua-driver serve` 的同名 CLI 参数只对 serve 有效）。 */
+export const CUA_DRIVER_PERMISSION_MODE_ENV = "CUA_DRIVER_PERMISSION_MODE";
+export const CUA_DRIVER_DANGEROUSLY_BYPASS_APPROVALS_ENV =
+  "CUA_DRIVER_DANGEROUSLY_BYPASS_APPROVALS";
+
+/** 驱动版本检查开关（upstream 默认开启，会访问 GitHub Releases）；内嵌驱动固定关闭。 */
+export const CUA_DRIVER_UPDATE_CHECK_ENV = "CUA_DRIVER_RS_UPDATE_CHECK";
+
+export type ZCodeComputerControlPermissionMode = "standard" | "bounded" | "unrestricted";
+
+export function isZCodeComputerControlPermissionMode(
+  value: unknown,
+): value is ZCodeComputerControlPermissionMode {
+  return value === "standard" || value === "bounded" || value === "unrestricted";
+}
+
+/**
+ * 驱动实际可接受的启动档位。`bounded` 需要**受审的** capability manifest
+ * （`CUA_DRIVER_CAPABILITY_MANIFEST_FILE` + `CUA_DRIVER_CAPABILITY_MANIFEST_APPROVED=1`），
+ * 两者缺一驱动就以 exit 1 拒绝启动（`permission mode bounded requires --capability-manifest`）。
+ * v1 没有可发布的清单，`bounded` 先落到 `standard`（同为免确认的常规自动化档），
+ * 清单定了再把 `bounded` 直通；不要为此造一份未经审阅的清单冒充「已受审」。
+ */
+function resolveCuaDriverStartupPermissionMode(
+  mode: ZCodeComputerControlPermissionMode,
+): "standard" | "unrestricted" {
+  return mode === "unrestricted" ? "unrestricted" : "standard";
+}
+
+/**
+ * 权限模式 → cua-driver MCP 子进程 env。
+ *
+ * 关键约束：`cua-driver mcp` 明确拒绝 `--permission-mode` / `--dangerously-bypass-approvals`
+ * 等 serve-only 参数（传了直接 exit 64），授权只能通过 env 表达；且 `unrestricted` 是
+ * 「模式 + 风险确认」两段式——只给模式会以 MissingDangerAcknowledgement 退出。
+ */
+export function resolveCuaDriverMcpEnv(
+  mode: ZCodeComputerControlPermissionMode,
+): Record<string, string> {
+  return {
+    [CUA_DRIVER_PERMISSION_MODE_ENV]: resolveCuaDriverStartupPermissionMode(mode),
+    ...(mode === "unrestricted" ? { [CUA_DRIVER_DANGEROUSLY_BYPASS_APPROVALS_ENV]: "1" } : {}),
+    // 内嵌驱动的升级通道归产品（vendor + build:cua-driver），不能让它自己去问上游 GitHub。
+    [CUA_DRIVER_UPDATE_CHECK_ENV]: "0",
+  };
+}
+
 // Single MCP server configuration
 export interface McpServerConfig {
   type?: string; // Supports stdio, http, sse, streamableHttp, etc.
