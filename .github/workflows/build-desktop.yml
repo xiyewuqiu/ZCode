@@ -76,6 +76,25 @@ jobs:
         env:
           ZCODE_SKIP_REMOTE_ASSETS: '1'
 
+      - name: Install Rust toolchain (cua-driver)
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Cache cargo registry and cua-driver target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            third-party/cua-driver/target
+          key: cargo-cua-driver-${{ hashFiles('third-party/cua-driver/Cargo.lock') }}
+          restore-keys: |
+            cargo-cua-driver-
+
+      - name: Build cua-driver native tool
+        # vendored Rust 驱动必须在此编译并落到 bundled-tools，否则安装包缺少
+        # resources/tools/cua-driver（electron-builder 对缺失源目录只告警不报错）。
+        run: pnpm build:cua-driver
+
       - name: Bundle Desktop App (Windows x64)
         run: pnpm --filter @zcode/desktop run bundle -- --os win --arch x64
         env:
