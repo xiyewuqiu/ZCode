@@ -4,6 +4,14 @@ import { validateRemoteServerBundle } from "./buildRemoteValidation.js";
 import { loadBuiltinProviderConfig } from "../../scripts/builtin-provider-config.mjs";
 import { stageThirdPartyNotices } from "../../scripts/third-party-notices.mjs";
 
+// 桌面安装包不内置 dist/remote（extraResources 无此目录），远程 bundle 只在开发态
+// 连接 SSH/WSL 时经 SFTP 上传使用。CI 以 ZCODE_SKIP_REMOTE_ASSETS=1 构建安装包时
+// 跳过，避免白白打包一份不会进安装包的产物。
+if (process.env.ZCODE_SKIP_REMOTE_ASSETS === "1") {
+  console.log("[server] skip remote bundle (ZCODE_SKIP_REMOTE_ASSETS=1)");
+  process.exit(0);
+}
+
 const { version } = JSON.parse(readFileSync("../../package.json", "utf-8"));
 const { content: zcodeBuiltinProviderConfigJson } = await loadBuiltinProviderConfig();
 

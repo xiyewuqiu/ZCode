@@ -689,9 +689,8 @@ export default {
   win: {
     target: ["nsis"],
     artifactName: buildDesktopArtifactName("win"),
-    // NSIS 默认 LZMA 压缩 149MB 产物要数分钟；安装包本身已是 ES 模块与资源的高熵
-    // 组合，压缩率有限。CI 场景优先打包速度，改用 store 直写安装器。
-    compression: "store",
+    // compression 保持默认 normal：store 直写会让安装包突破 500MiB 体积审计上限，
+    // NSIS LZMA 在 normal 档已是速度/体积的平衡点，不再显式调档。
   },
   linux: {
     target: ["AppImage", "deb", "rpm", "pacman"],
