@@ -43,7 +43,6 @@ import {
   cronListToolEntry,
   cronUpdateToolEntry,
 } from "./cron.js";
-import { offPeakCreateToolEntry, offPeakListToolEntry } from "./off-peak.js";
 import {
   createEnterPlanModeToolEntry,
   enterPlanModeToolEntry,
@@ -89,8 +88,6 @@ export const builtInTools: ToolEntry[] = [
   cronListToolEntry,
   cronUpdateToolEntry,
   cronDeleteToolEntry,
-  offPeakCreateToolEntry,
-  offPeakListToolEntry,
   enterPlanModeToolEntry,
   exitPlanModeToolEntry,
   askUserQuestionToolEntry,

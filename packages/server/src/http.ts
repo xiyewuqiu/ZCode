@@ -23,7 +23,6 @@ import {
   IGitService,
   ISystemService,
   ITerminalService,
-  IProviderProvisioningTargetService,
 } from "@zcode/services";
 import {
   formatLogPrefix,
@@ -101,18 +100,6 @@ function setupChannelServer(
   const overrides = new Map<string, unknown>();
   if (connectionScope) {
     overrides.set(IZCodeAgentService.channelName, connectionScope.service);
-  }
-  // Provisioning 携带跨 Environment 凭据，只允许 Desktop trusted host 使用；普通 Web
-  // remote/replayable 客户端即使知道频道名，也不能获得 target 写入接口。
-  if (
-    clientMode !== "desktop-continuous" &&
-    services.getOptional(IProviderProvisioningTargetService)
-  ) {
-    overrides.set(IProviderProvisioningTargetService.channelName, {
-      apply: async () => {
-        throw new Error("Provider Provisioning 仅支持受信 Desktop Host");
-      },
-    });
   }
   services.exposeOnChannelServer(server, overrides);
   socket.onClose(() => {

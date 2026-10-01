@@ -26,7 +26,6 @@ export * from "./interfaces/dynamic-workflow-run.port.js";
 export * from "./interfaces/dynamic-workflow-snippet.port.js";
 export * from "./interfaces/model-catalog.port.js";
 export * from "./interfaces/automation.port.js";
-export * from "./interfaces/off-peak.port.js";
 export * from "./interfaces/mcp.port.js";
 
 export * from "./interfaces/runtime-input-presentation.js";
@@ -100,7 +99,5 @@ export {
   VIDEO_INPUT_MAX_BYTES,
 } from "@zcode/shared";
 
-export * from "./tracing/local-turn-preparation.js";
-export type { LocalTtftDetail } from "@zcode/shared";
 
 export * from "./interfaces/permission-full-access.js";

@@ -1482,8 +1482,6 @@ export function createConversationV4Gateway(
         method: V4_NOTIFICATIONS.conversationFrame,
         params: wire,
       }),
-    emitLocalTtftFacts: (facts) =>
-      context.notify({ method: V4_NOTIFICATIONS.localTtftFacts, params: facts }),
     emitConversationTelemetryFact: (fact) =>
       context.notify({
         method: V4_NOTIFICATIONS.conversationTelemetryFact,

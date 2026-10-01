@@ -109,6 +109,18 @@ sequenceDiagram
 3. **预热空实现**：`SessionPane` 的 `reportDraftCreated` 是上报链路移除后留下的空回调，仍被 3 处调用与一处透传引用；为避免改动预热 API 契约，本轮只把入参加 `_` 前缀，待预热链路收口时一并删除。
 4. **账号 Provider / Coding Plan / 闲时 / 用量 / 权益 / `oauth:*` 凭据仓储**：属 P3，尚未开始。
 
+### 2026-10-02 P2/P3 批（账号体系与厂商特性整体移除）
+
+在登录 UI（WelcomeScreen/LoginApiKeyForm）、账号态 store（user/authSessionSeq/setUser、OAuth 恢复标记、JWT 失效重启标记）、`WorkspaceSidebarFooter` 账号菜单（改偏好入口）、quickpick 登出命令移除后，本批把"账号派生"的服务端与协议面整体端掉：
+
+- **闲时 Off-Peak 全删**：services 的 task/repo/service/runtime/serverClient/mockGateway、UI 的任务列表/编辑/模板/资格/通知/store、desktop 的派发计划与调度结算、CLI 的 port/tool/retry、协议方法（offPeakCreate/offPeakList/workspaceUpdateOffPeakToolPolicy）、`offPeakToolEnabled/offPeakTaskId/offPeakRunType` 参数透传、`AutomationsSection` 内嵌整块（tab 收敛为仅 scheduled）、`validation.ts` 协议 schema 与工具注册。
+- **官方 Server MCP 全删**（厂商托管、账号鉴权）：services 的 credentials/issuanceAudit、shared 的 auth/tool-error 协议面、zcode-protocol 的 auth schema 与方法、adapter 的 official-auth 与 `mcp/index` 内整套鉴权 fetch/stdio meta/诊断表、bootstrap 的 auth-port、UI 的错误码横幅分支。
+- **Provider Provisioning 全删**（团队配置下发）：Source/Target/共享协议/HTTP 网关 gate/client 代理/desktop 协调器，`node.ts` 的装配与 WeakMap 侧表，`process-provider-registry-runtime.ts` 重写为纯 Registry 运行时。
+- **账号运行时**：`standalone-account-provider-runtime`、`auth-logout`、`legacyTeamOrganizationResolver`、`onboardingRecord` 的登录态 userId（改可选注入）、`agentTelemetry` 改可选、动态工作流灰度改恒 fail-closed。
+- **P1 漏网清尾**：`desktopRuntimeEnv` 的 OTEL env 捕获与身份注入、node.ts 的 `buildAgentTelemetrySpawnEnv`/telemetryProfile、CLI 的 `telemetry-bootstrap`/`prepareZCodeTelemetryEnv`/`createModelTelemetry`/本地 TTFT（local-ttft、gateway 的 LocalTtftRecorder/envelope.ttft/clock/transport.ttftRelated）、`local-turn-preparation`、`processResourceTelemetry` 常量。
+
+验证：全仓 `tsc -b`（桌面 11 个 tsproject + CLI 5 个 tsproject）0 错误；`lint` 0 错误 / 58 warnings（基线 63）；`architecture:check --changed` 0 violations。约 40 个实现文件物理删除，95 个文件重新格式化。
+
 ### 2026-10-01 P1 第三批（依赖摘除与第三方清单同步）
 
 代码零引用后，实际从依赖图移除遥测包：

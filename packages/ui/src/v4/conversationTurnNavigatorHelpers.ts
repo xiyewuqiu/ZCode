@@ -137,6 +137,42 @@ function buildAssistantPreview(
   };
 }
 
+/** 每个导航组件独立持有；历史回合保持不可变引用时，不重复读取正文和生成摘要。 */
+export function createConversationTurnNavigatorProjector() {
+  let configKey = "";
+  let cache = new WeakMap<
+    ConversationTurnRenderUnit,
+    { unitIndex: number; items: ConversationTurnNavigatorItem[] }
+  >();
+  return (
+    units: readonly ConversationTurnRenderUnit[],
+    options: BuildConversationTurnNavigatorItemsOptions,
+  ): ConversationTurnNavigatorItem[] => {
+    const nextConfigKey = JSON.stringify([
+      options.assistantEmptyPreview,
+      options.assistantRunningPreview,
+      options.userFallbackPreview,
+      options.maxPreviewChars ?? DEFAULT_MAX_PREVIEW_CHARS,
+      options.maxPreviewParagraphs ?? DEFAULT_MAX_PREVIEW_PARAGRAPHS,
+    ]);
+    if (nextConfigKey !== configKey) {
+      configKey = nextConfigKey;
+      cache = new WeakMap();
+    }
+    return units.flatMap((unit, unitIndex) => {
+      const previous = cache.get(unit);
+      if (previous?.unitIndex === unitIndex) return previous.items;
+      // 历史前插会改变虚拟列表位置；不能只按回合引用复用旧 unitIndex。
+      const items = buildConversationTurnNavigatorItems([unit], options).map((item) => ({
+        ...item,
+        unitIndex,
+      }));
+      cache.set(unit, { unitIndex, items });
+      return items;
+    });
+  };
+}
+
 export function buildConversationTurnNavigatorItems(
   units: readonly ConversationTurnRenderUnit[],
   options: BuildConversationTurnNavigatorItemsOptions,
@@ -186,6 +222,20 @@ function resolveFiniteNonNegative(value: number): number {
   return Number.isFinite(value) ? Math.max(0, value) : 0;
 }
 
+function findNavigatorUnitLowerBound(
+  items: readonly ConversationTurnNavigatorItem[],
+  unitIndex: number,
+): number {
+  let start = 0;
+  let end = items.length;
+  while (start < end) {
+    const middle = Math.floor((start + end) / 2);
+    if (items[middle]!.unitIndex < unitIndex) start = middle + 1;
+    else end = middle;
+  }
+  return start;
+}
+
 export function resolveConversationTurnNavigatorActiveUnitIndex({
   items,
   virtualItems,
@@ -196,15 +246,16 @@ export function resolveConversationTurnNavigatorActiveUnitIndex({
     return undefined;
   }
 
-  const itemByUnitIndex = new Map(items.map((item) => [item.unitIndex, item]));
+  // 目录由回合顺序生成，unitIndex 单调不减；滚动时二分查询可见回合，
+  // 避免每个 scroll 事件遍历全部历史并分配 Map。
   const viewportStart = resolveFiniteNonNegative(scrollOffsetPx);
   const viewportEnd = viewportStart + Math.max(1, resolveFiniteNonNegative(viewportHeightPx));
 
   let activeUnitIndex: number | undefined;
   let activeDistance = Number.POSITIVE_INFINITY;
   for (const virtualItem of virtualItems) {
-    const item = itemByUnitIndex.get(virtualItem.index);
-    if (!item) {
+    const item = items[findNavigatorUnitLowerBound(items, virtualItem.index)];
+    if (!item || item.unitIndex !== virtualItem.index) {
       continue;
     }
     const rowStart = resolveFiniteNonNegative(virtualItem.start);
@@ -232,11 +283,8 @@ export function resolveConversationTurnNavigatorActiveUnitIndex({
     return items[0]?.unitIndex;
   }
 
-  return (
-    items.find((item) => item.unitIndex >= topVirtualIndex)?.unitIndex ??
-    items.findLast((item) => item.unitIndex <= topVirtualIndex)?.unitIndex ??
-    items[0]?.unitIndex
-  );
+  const nextItemIndex = findNavigatorUnitLowerBound(items, topVirtualIndex);
+  return items[Math.min(nextItemIndex, items.length - 1)]?.unitIndex;
 }
 
 export function resolveConversationTurnNavigatorActiveQueryRowId({

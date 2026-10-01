@@ -12,7 +12,7 @@ import { cn } from "@/components/lib/utils.js";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import {
-  buildConversationTurnNavigatorItems,
+  createConversationTurnNavigatorProjector,
   resolveConversationTurnNavigatorActiveUnitIndex,
   resolveConversationTurnNavigatorBarVisualState,
   resolveConversationTurnNavigatorVisualFocusItemIndex,
@@ -47,9 +47,10 @@ function ConversationTurnNavigatorImpl({
   const { intl } = useZCodeIntl();
   const prefersReducedMotion = usePrefersReducedMotion();
   const [interactionItemIndex, setInteractionItemIndex] = useState<number | undefined>(undefined);
+  const [projectNavigatorItems] = useState(createConversationTurnNavigatorProjector);
   const items = useMemo(
     () =>
-      buildConversationTurnNavigatorItems(renderUnits, {
+      projectNavigatorItems(renderUnits, {
         assistantEmptyPreview: intl.formatMessage({
           id: "chat.turnNavigator.emptyAssistant",
         }),
@@ -60,7 +61,7 @@ function ConversationTurnNavigatorImpl({
           id: "chat.turnNavigator.userFallback",
         }),
       }),
-    [intl, renderUnits],
+    [intl, renderUnits, projectNavigatorItems],
   );
 
   const activeUnitIndex = useMemo(

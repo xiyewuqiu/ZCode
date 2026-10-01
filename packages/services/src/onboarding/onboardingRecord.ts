@@ -53,9 +53,9 @@ export interface IOnboardingRecordService {
   clearRecords(): Promise<void>;
 }
 
-/** 工厂入参：userId 解析注入（正式装配用 oauthCredentialRepo，测试用桩）。 */
+/** 工厂入参：保留可选注入点，便于测试固定 userId（运行时无登录态时为 null）。 */
 export interface CreateOnboardingRecordServiceOptions {
-  loadUserId: () => Promise<string | null>;
+  loadUserId?: () => Promise<string | null>;
 }
 
 export type OnboardingRecordServiceFactory = (

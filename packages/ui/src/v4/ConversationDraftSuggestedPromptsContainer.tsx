@@ -537,7 +537,7 @@ export function ConversationDraftSuggestedPromptsContainer({
         onOpenAutomations &&
         item.actions?.includes(DRAFT_SUGGESTED_PROMPT_NAVIGATE_AUTOMATIONS_OFFPEAK)
       ) {
-        onOpenAutomations("idle");
+        onOpenAutomations("scheduled");
         return;
       }
       if (

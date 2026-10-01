@@ -1,6 +1,5 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { findOfficialMcpReservedHeaders } from "@zcode/shared";
 import type {
   McpOAuthConfig,
   McpServerConfig,
@@ -260,14 +259,6 @@ function resolveMcpServerConfig(
     if (oauth) {
       throw new Error(
         `MCP server ${identity.mcpKey}: ${officialAuth.type} auth cannot be combined with oauth`,
-      );
-    }
-    // 保留头只在官方鉴权路径下拦截。普通/第三方 MCP 静态携带 authorization 是既有合法用法，
-    // 全局拦截会造成回归。
-    const reserved = findOfficialMcpReservedHeaders(headers);
-    if (reserved.length > 0) {
-      throw new Error(
-        `MCP server ${identity.mcpKey}: static headers must not contain reserved header(s): ${reserved.join(", ")}`,
       );
     }
     return {

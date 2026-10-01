@@ -9,7 +9,6 @@ import { isKnownRemoteResourcePackageId } from "./remoteResourcePackages.js";
 import { zcodeProviderSchema } from "./providers.js";
 import { zcodeAgentProviderSchema } from "./zcode-agent-policy.js";
 import { modelSelectionSchema } from "./model-selection.js";
-import { providerProvisioningTriggerSchema } from "./provider-provisioning.js";
 import {
   zcodeMcpTelemetryEventSchema,
   zcodeMcpResourceSamplesSchema,
@@ -369,23 +368,6 @@ export const hostCronRunMessageSchema = z.object({
   mode: z.string().optional(),
 });
 
-// main → host：闲时任务派发（仿 cron-run，字段独立不复用）。首跑不带 conversationId/sessionId，
-// host createTask 新建 session；3h 续跑 / 中断恢复带上两者 resume 同一会话。
-// serverTicketId 供 idle plan 适配层注入 X-Off-Peak-Ticket-ID 请求头（run 作用域）。
-export const hostOffPeakRunMessageSchema = z.object({
-  type: z.literal("off-peak-run"),
-  offPeakTaskId: nonEmptyStringSchema,
-  workspacePath: nonEmptyStringSchema,
-  workspaceIdentity: z.string().optional(),
-  prompt: nonEmptyStringSchema,
-  // 权限四档映射现有 ZCodeTaskMode；与 cron-run 的 mode 同样按宽松 string 传输
-  permissionMode: nonEmptyStringSchema,
-  modelSelection: modelSelectionSchema,
-  conversationId: z.string().optional(),
-  sessionId: z.string().optional(),
-  serverTicketId: z.string().optional(),
-});
-
 // main → host：browser-use 命令执行结果（按 requestId 关联到 host 的 pending）。
 export const hostBrowserExecuteResultMessageSchema = z.object({
   type: z.literal("browser-execute-result"),
@@ -414,16 +396,6 @@ export const hostCuaPipFocusChangedMessageSchema = z
         sessionId: nonEmptyStringSchema.max(255).nullable(),
       })
       .strict(),
-  })
-  .strict();
-
-export const hostProviderProvisioningExecuteMessageSchema = z
-  .object({
-    type: z.literal("provider-provisioning-execute"),
-    requestId: nonEmptyStringSchema,
-    environmentKey: nonEmptyStringSchema,
-    remoteSessionId: nonEmptyStringSchema,
-    trigger: providerProvisioningTriggerSchema,
   })
   .strict();
 
@@ -463,11 +435,9 @@ export const hostIncomingMessageSchema = z.discriminatedUnion("type", [
   hostSessionMessageDeliveryResultMessageSchema,
   hostFeedbackLogArchiveResultMessageSchema,
   hostCronRunMessageSchema,
-  hostOffPeakRunMessageSchema,
   hostBrowserExecuteResultMessageSchema,
   hostLocalMediaPreviewPathAuthorizeResultMessageSchema,
   hostCuaPipFocusChangedMessageSchema,
-  hostProviderProvisioningExecuteMessageSchema,
 ]);
 
 export const hostRemoteWorkspaceConnectedResponseSchema = z
@@ -806,27 +776,10 @@ export const hostCronRunResultResponseSchema = z.object({
   failureKind: z.enum(["transient", "permanent"]).optional(),
 });
 
-// host → main：闲时任务派发结果。ok=session 已确保存在且 prompt 已发出；迟到结果用 offPeakTaskId 兜底结算。
-export const hostOffPeakRunResultResponseSchema = z.object({
-  type: z.literal("off-peak-run-result"),
-  offPeakTaskId: nonEmptyStringSchema,
-  ok: z.boolean(),
-  conversationId: z.string().optional(),
-  sessionId: z.string().optional(),
-  error: z.string().optional(),
-  failureKind: z.enum(["transient", "permanent"]).optional(),
-});
-
 // host → main：manual run 落库后的 scheduler 唤醒请求；业务数据仍由 scheduler 从 sqlite 读取。
 export const hostCronSchedulerWakeRequestResponseSchema = z.object({
   type: z.literal("cron-scheduler-wake-request"),
   automationId: nonEmptyStringSchema,
-});
-
-// host → main：闲时任务 schedulable 翻转后的 scheduler 唤醒；业务数据仍由 scheduler 从 sqlite 读取。
-export const hostOffPeakSchedulerWakeRequestResponseSchema = z.object({
-  type: z.literal("off-peak-scheduler-wake-request"),
-  offPeakTaskId: z.string().optional(),
 });
 
 // host → main：执行一条 browser-use 命令（main 用 WebContentsView+CDP 执行）。
@@ -869,28 +822,6 @@ export const networkObservationSchema = z.object({
   ttfbMs: z.number().optional(),
   downloadMs: z.number().optional(),
 });
-
-export const hostNetworkTelemetryBatchResponseSchema = z.object({
-  type: z.literal("network-telemetry-batch"),
-  observations: z.array(networkObservationSchema).max(500),
-});
-
-export const hostProviderProvisioningSourceChangedResponseSchema = z
-  .object({
-    type: z.literal("provider-provisioning-source-changed"),
-    trigger: providerProvisioningTriggerSchema.exclude(["environment-online"]),
-  })
-  .strict();
-
-export const hostProviderProvisioningExecutionResultResponseSchema = z
-  .object({
-    type: z.literal("provider-provisioning-execution-result"),
-    requestId: nonEmptyStringSchema,
-    environmentKey: nonEmptyStringSchema,
-    status: z.enum(["applied", "already-applied", "unsupported", "failed", "rollback_failed"]),
-    error: z.string().optional(),
-  })
-  .strict();
 
 export const hostResourceUsageProcessSchema = z
   .object({
@@ -955,13 +886,8 @@ export const hostResponseMessageSchema = z.discriminatedUnion("type", [
   hostFeedbackLogArchiveRequestResponseSchema,
   hostBrowserExecuteRequestResponseSchema,
   hostLocalMediaPreviewPathAuthorizeRequestResponseSchema,
-  hostNetworkTelemetryBatchResponseSchema,
-  hostProviderProvisioningSourceChangedResponseSchema,
-  hostProviderProvisioningExecutionResultResponseSchema,
   hostCronRunResultResponseSchema,
-  hostOffPeakRunResultResponseSchema,
   hostCronSchedulerWakeRequestResponseSchema,
-  hostOffPeakSchedulerWakeRequestResponseSchema,
 ]);
 
 export const zcodeTaskPersistStatusSchema = z.enum(["running", "completed", "error"]);

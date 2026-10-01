@@ -19,12 +19,9 @@ import {
   IFileWatcherService,
   IModelSelectionService,
   IProviderSettingsService,
-  IProviderProvisioningTargetService,
   IUsageStatsService,
-  ICodingPlanSubscriptionService,
   IClientConfigService,
   IClientScenesService,
-  IOffPeakTaskService,
   ISkillsService,
   ISkillSyncService,
   IMcpSyncService,
@@ -71,13 +68,9 @@ export class RemoteServiceAccess implements IServiceAccessor {
   readonly fileWatcherService: IFileWatcherService;
   readonly providerSettingsService: IProviderSettingsService;
   readonly modelSelectionService: IModelSelectionService;
-  /** Host-only target proxy；不属于 IServiceAccessor，避免向 Renderer 暴露 Secret 写入接口。 */
-  readonly providerProvisioningTargetService!: IProviderProvisioningTargetService;
   readonly usageStatsService: IUsageStatsService;
-  readonly codingPlanSubscriptionService: ICodingPlanSubscriptionService;
   readonly clientConfigService: IClientConfigService;
   readonly clientScenesService: IClientScenesService;
-  readonly offPeakTaskService: IOffPeakTaskService;
   readonly skillsService: ISkillsService;
   readonly skillSyncService: ISkillSyncService;
   readonly mcpSyncService: IMcpSyncService;
@@ -157,26 +150,14 @@ export class RemoteServiceAccess implements IServiceAccessor {
     this.modelSelectionService = ProxyChannel.toService<IModelSelectionService>(
       channelClient.getChannel(IModelSelectionService.channelName),
     );
-    Object.defineProperty(this, "providerProvisioningTargetService", {
-      value: ProxyChannel.toService<IProviderProvisioningTargetService>(
-        channelClient.getChannel(IProviderProvisioningTargetService.channelName),
-      ),
-      enumerable: false,
-    });
     this.usageStatsService = ProxyChannel.toService<IUsageStatsService>(
       channelClient.getChannel(IUsageStatsService.channelName),
-    );
-    this.codingPlanSubscriptionService = ProxyChannel.toService<ICodingPlanSubscriptionService>(
-      channelClient.getChannel(ICodingPlanSubscriptionService.channelName),
     );
     this.clientConfigService = ProxyChannel.toService<IClientConfigService>(
       channelClient.getChannel(IClientConfigService.channelName),
     );
     this.clientScenesService = ProxyChannel.toService<IClientScenesService>(
       channelClient.getChannel(IClientScenesService.channelName),
-    );
-    this.offPeakTaskService = ProxyChannel.toService<IOffPeakTaskService>(
-      channelClient.getChannel(IOffPeakTaskService.channelName),
     );
     this.skillsService = ProxyChannel.toService<ISkillsService>(
       channelClient.getChannel(ISkillsService.channelName),

@@ -1,5 +1,32 @@
 # 长会话浏览器回归
 
+## 切换任务首帧标题
+
+```powershell
+pnpm exec vite --config packages/ui/test/browser/taskSwitch.vite.config.mts
+node packages/ui/test/browser/run-task-switch.mjs
+```
+
+使用本机 Chrome、真实标题 hook 与受控服务/转换依赖，记录 layout effect 中每次 commit。
+覆盖切任务首帧、同 taskId 跨工作区/连接、迟到回包、列表标题优先、草稿与读取失败。
+不连接真实 Host 或 Agent，也不替代会话协议投影测试。
+
+## Agent 队列键盘与移动端
+
+独立启动队列场景，使用真实组件、样式和共享常量，以模拟回传验证 UI，不连接真实 Agent：
+
+```powershell
+pnpm exec vite --config packages/ui/test/browser/queue.vite.config.mts
+node --test packages/ui/test/browser/queue.e2e.mjs
+node packages/ui/test/browser/run-queue-feedback.mjs
+```
+
+测试需要已安装浏览器的 `agent-browser`；可用 `AGENT_BROWSER_BIN` 指定可执行文件。
+覆盖键盘移动、取消、焦点保留、锁定行、无排序权限、中英文提示和手机按钮尺寸。
+`run-queue-feedback.mjs` 使用本机 Chrome，验证四类操作拒绝、网络结果未知的可见提示及无未处理异常；
+真实 SessionPane 调用方仍需在完整应用中联调。
+截图写入 `.tmp/queue-e2e`，测试只关闭自己的浏览器会话。
+
 ## 子 Agent 目录
 
 启动下述 Vite 测试服务后运行：

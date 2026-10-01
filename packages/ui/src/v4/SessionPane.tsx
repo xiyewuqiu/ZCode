@@ -38,6 +38,11 @@ import type {
 } from "@zcode/shared/zcode-protocol-v4";
 import { logger } from "@/logger.js";
 import { toast } from "@/components/ui/toast.js";
+import {
+  runQueueCommandWithFeedback,
+  queueCommandFailureMessage,
+  type QueueFeedbackCommand,
+} from "@/v4/queueCommandFeedback.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { DEFAULT_CODE_PREVIEW_SETTINGS } from "@/lib/codePreviewSettings.js";
 import type { CodeViewerSource } from "@/lib/codeViewer.js";
@@ -2500,6 +2505,36 @@ export function SessionPane({
     [dispatchCommand, sessionId],
   );
 
+  const queueFeedbackMounted = useRef(true);
+  useEffect(() => {
+    queueFeedbackMounted.current = true;
+    return () => {
+      queueFeedbackMounted.current = false;
+    };
+  }, []);
+  const dispatchQueueCommand = useCallback(
+    (type: QueueFeedbackCommand, payload: Record<string, unknown>, revision: number) => {
+      return runQueueCommandWithFeedback({
+        send: () => dispatchCommand(type, payload, sessionId, revision),
+        isCurrent: () =>
+          queueFeedbackMounted.current &&
+          composerBindingRef.current.sessionId === sessionId &&
+          composerBindingRef.current.workspaceKey === workspaceKey,
+        report: (failure, visible) => {
+          logger.warn(`[v4-pane] 队列操作 ${type} 未完成`, failure);
+          if (!visible) return;
+          // 旧实现只记录拒绝日志且未处理传输异常，用户点击后看不到结果。
+          toast(intl.formatMessage({ id: queueCommandFailureMessage(type, failure) }), {
+            variant: "warning",
+            durationMs: 5000,
+            dedupeKey: JSON.stringify(["queue-command", workspaceKey, sessionId, type]),
+          });
+        },
+      });
+    },
+    [dispatchCommand, intl, sessionId, workspaceKey],
+  );
+
   const handleDeleteQueueItem = useCallback(
     (queueItemId: string) => {
       const current = snapshotRef.current;
@@ -2507,17 +2542,14 @@ export function SessionPane({
       const sourceCommandId = current.queue.items.find(
         (item) => item.queueItemId === queueItemId,
       )?.sourceCommandId;
-      void dispatchCommand("deleteQueueItem", { queueItemId }, sessionId, current.revision).then(
+      void dispatchQueueCommand("deleteQueueItem", { queueItemId }, current.revision).then(
         (ack) => {
-          if (ack.status !== "accepted" && ack.status !== "noop") {
-            logger.warn(`[v4-pane] deleteQueueItem 被拒绝: ${ack.status} ${ack.reasonCode ?? ""}`);
-            return;
-          }
+          if (!ack) return;
           if (sourceCommandId) pendingCommandRegistry.settle(sessionId, sourceCommandId);
         },
       );
     },
-    [dispatchCommand, sessionId],
+    [dispatchQueueCommand, sessionId],
   );
 
   const handleEditQueueItem = useCallback(
@@ -2590,33 +2622,22 @@ export function SessionPane({
       // 用户明确点击“立即发送”时，视觉意图等价于点击“滚动到底部”；command 的
       // reserve/stop/promote 生命周期仍由 CLI 裁决，不把滚动状态混入协议。
       focusTimelineToLatest();
-      void dispatchCommand("sendQueuedNow", { queueItemId }, sessionId, current.revision).then(
-        (ack) => {
-          if (ack.status !== "accepted" && ack.status !== "noop") {
-            logger.warn(`[v4-pane] sendQueuedNow 被拒绝: ${ack.status} ${ack.reasonCode ?? ""}`);
-          }
-        },
-      );
+      void dispatchQueueCommand("sendQueuedNow", { queueItemId }, current.revision);
     },
-    [dispatchCommand, focusTimelineToLatest, sessionId],
+    [dispatchQueueCommand, focusTimelineToLatest, sessionId],
   );
 
   const handleReorderQueueItem = useCallback(
     (queueItemId: string, beforeQueueItemId: string | null) => {
       const current = snapshotRef.current;
       if (!sessionId || current === null) return;
-      void dispatchCommand(
+      void dispatchQueueCommand(
         "reorderQueueItem",
         { queueItemId, beforeQueueItemId },
-        sessionId,
         current.revision,
-      ).then((ack) => {
-        if (ack.status !== "accepted" && ack.status !== "noop") {
-          logger.warn(`[v4-pane] reorderQueueItem 被拒绝: ${ack.status} ${ack.reasonCode ?? ""}`);
-        }
-      });
+      );
     },
-    [dispatchCommand, sessionId],
+    [dispatchQueueCommand, sessionId],
   );
 
   const handleResumeQueue = useCallback(async () => {
@@ -2624,16 +2645,8 @@ export function SessionPane({
     if (!sessionId || !current || current.queue.autoDrain || current.queue.items.length === 0) {
       return;
     }
-    const ack = await dispatchCommand(
-      "setAutoDrain",
-      { autoDrain: true },
-      sessionId,
-      current.revision,
-    );
-    if (ack.status !== "accepted" && ack.status !== "noop") {
-      logger.warn(`[v4-pane] 恢复暂停队列被拒绝: ${ack.status} ${ack.reasonCode ?? ""}`);
-    }
-  }, [dispatchCommand, sessionId]);
+    await dispatchQueueCommand("setAutoDrain", { autoDrain: true }, current.revision);
+  }, [dispatchQueueCommand, sessionId]);
 
   // 配置面 CAS 命令的 stale 重试。模型→思考深度→模式连续操作时，前一条命令的
   // revision bump 可能尚未回流到本地投影，直接用本地 revision 会被 CAS 判 stale。
@@ -2994,7 +3007,6 @@ export function SessionPane({
         });
   }, [lease, snapshot?.logEpoch]);
 
-
   useEffect(() => {
     if (
       !sessionId ||
@@ -3320,7 +3332,6 @@ export function SessionPane({
   );
   const pendingGuideProjection = snapshot ? projectPendingGuideQueue(snapshot.queue) : null;
   const conversationBottomDockContent = readOnly ? null : (
-
     <>
       {recoverableCommand ? (
         <PendingCommandRecoveryBanner

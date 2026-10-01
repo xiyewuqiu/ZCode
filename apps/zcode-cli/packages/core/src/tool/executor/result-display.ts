@@ -28,7 +28,6 @@ import { createWorkflowObservationDisplay } from "./workflow-observation-display
 // 拆到 create-workflow-display.ts 后保持既有导出面（handlers/create-workflow.ts 仍从这里 import）。
 export { createCreateWorkflowDisplay } from "./create-workflow-display.js";
 import { isRecord } from "./utils.js";
-import { parseOfficialMcpToolError, type OfficialMcpToolErrorCode } from "@zcode/shared";
 import {
   CUA_REQUEST_ACCESS_STATUS_META_KEY,
   cuaRequestAccessStatusSchema,
@@ -47,8 +46,7 @@ export function createMcpToolDisplay(
         serverName: string;
         toolName: string;
         description?: string;
-        official?: boolean;
-      }
+            }
     | undefined,
   output?: unknown,
 ): ToolResultDisplayPayload | undefined {
@@ -59,14 +57,12 @@ export function createMcpToolDisplay(
   const description = metadata.description
     ? boundMcpDisplayText(metadata.description, MCP_TOOL_DISPLAY_MAX_DESCRIPTION_CHARS)
     : undefined;
-  const unavailable = metadata.official ? readOfficialMcpUnavailable(output) : undefined;
   return {
     kind: "mcp_tool",
     serverName,
     toolName,
     ...(description ? { description } : {}),
-    ...(unavailable ? { unavailable } : {}),
-  };
+    };
 }
 
 /**
@@ -77,19 +73,6 @@ export function createMcpToolDisplay(
  * 响应来自已校验 origin 的 ZCode 后端。stdio 官方 MCP 与第三方 MCP 塞同样的 payload 一律忽略：
  * 它们的结果由插件进程自己产出，可以伪造一条 Coding Plan 提示误导用户去购买。
  */
-function readOfficialMcpUnavailable(
-  output: unknown,
-): { code: OfficialMcpToolErrorCode } | undefined {
-  if (!isRecord(output) || output.isError !== true || !Array.isArray(output.content)) {
-    return undefined;
-  }
-  for (const block of output.content) {
-    if (!isRecord(block) || block.type !== "text" || typeof block.text !== "string") continue;
-    const parsed = parseOfficialMcpToolError(block.text);
-    if (parsed) return { code: parsed.code };
-  }
-  return undefined;
-}
 
 export function createToolResultDisplay(
   toolName: string,
@@ -100,8 +83,7 @@ export function createToolResultDisplay(
       serverName: string;
       toolName: string;
       description?: string;
-      official?: boolean;
-    };
+        };
   },
 ): ToolResultDisplayPayload | undefined {
   if (toolName === "Bash") return createBashResultDisplay(output);

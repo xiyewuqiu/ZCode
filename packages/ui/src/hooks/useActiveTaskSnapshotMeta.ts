@@ -1,23 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ZCodeTaskMeta } from "@zcode/shared";
 import { useZCodeSessionService } from "@/hooks/useZCodeSessionService.js";
 import { zcodeSessionSnapshotToTaskMeta } from "@/lib/zcodeSessionProjection.js";
-
-function resolveImmediateActiveTaskSnapshotMeta(
-  previousSnapshotMeta: ZCodeTaskMeta | null,
-  taskId: string | null,
-  taskMetaFromLists?: ZCodeTaskMeta | null,
-) {
-  if (!taskId || taskMetaFromLists) {
-    return null;
-  }
-
-  // pin / archive task 切换时，如果目标任务一开始不在列表数据源里，
-  // 新 snapshot 还没返回前不能继续沿用上一条任务的 snapshot meta。
-  // 否则 Header 会先显示旧标题，再被异步结果改正，体感上就像“名称慢半拍”。
-  // 这里只允许复用“同一个 taskId”的旧 snapshot，跨任务切换时立刻清空。
-  return previousSnapshotMeta?.taskId === taskId ? previousSnapshotMeta : null;
-}
+import { logger } from "@/logger.js";
 
 /**
  * 为当前激活 task 提供一层 snapshot meta 兜底。
@@ -39,53 +24,65 @@ export function useActiveTaskSnapshotMeta(
     preferredRemoteSessionId,
     workspaceIdentity,
   );
-  const [snapshotMeta, setSnapshotMeta] = useState<ZCodeTaskMeta | null>(null);
+  const workspaceKey = workspaceIdentity?.trim() || workspacePath;
+  const needsSnapshot = Boolean(taskId && !taskMetaFromLists);
+  const request = useMemo(
+    () => ({
+      workspaceKey,
+      workspacePath,
+      taskId,
+      preferredRemoteSessionId,
+      zcodeSessionService,
+      needsSnapshot,
+    }),
+    [
+      workspaceKey,
+      workspacePath,
+      taskId,
+      preferredRemoteSessionId,
+      zcodeSessionService,
+      needsSnapshot,
+    ],
+  );
+  const [result, setResult] = useState<{
+    request: typeof request;
+    meta: ZCodeTaskMeta | null;
+  } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
 
-    setSnapshotMeta((currentSnapshotMeta) =>
-      resolveImmediateActiveTaskSnapshotMeta(currentSnapshotMeta, taskId, taskMetaFromLists),
-    );
+    if (!request.needsSnapshot || !request.taskId) return;
 
-    if (!taskId) {
-      return () => {
-        cancelled = true;
-      };
-    }
-
-    if (taskMetaFromLists) {
-      return () => {
-        cancelled = true;
-      };
-    }
-
-    void zcodeSessionService
+    void request.zcodeSessionService
       // active header 只需要 session meta/标题兜底，走 ZCode Protocol 的轻量读取，
       // 避免继续经 legacy snapshot 把大任务消息整包拉回 UI。
       .readSession({
-        workspacePath,
+        workspacePath: request.workspacePath,
         workspaceIdentity,
-        sessionId: taskId,
+        sessionId: request.taskId,
         messageLimit: 1,
       })
       .then((snapshot) => {
         if (cancelled) {
           return;
         }
-        setSnapshotMeta(zcodeSessionSnapshotToTaskMeta(snapshot));
+        setResult({ request, meta: zcodeSessionSnapshotToTaskMeta(snapshot) });
       })
-      .catch(() => {
+      .catch((error: unknown) => {
         if (cancelled) {
           return;
         }
-        setSnapshotMeta(null);
+        logger.warn("[active-task-meta] 读取任务标题失败", error);
+        setResult({ request, meta: null });
       });
 
     return () => {
       cancelled = true;
     };
-  }, [zcodeSessionService, taskId, taskMetaFromLists, workspaceIdentity, workspacePath]);
+  }, [request, workspaceIdentity]);
 
-  return snapshotMeta;
+  // effect 清理发生在 commit 后，无法阻止首帧闪现上一任务的标题。
+  // 渲染时校验请求身份，同时隔离同 taskId 的不同 workspace / 连接。
+  return request.needsSnapshot && result?.request === request ? result.meta : null;
 }

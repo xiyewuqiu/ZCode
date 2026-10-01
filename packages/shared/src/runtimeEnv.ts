@@ -8,6 +8,8 @@ export const ZCODE_REMOTE_HTTP_PROXY_ENV_KEY = "ZCODE_REMOTE_HTTP_PROXY";
 export const ZCODE_REMOTE_NO_PROXY_ENV_KEY = "ZCODE_REMOTE_NO_PROXY";
 export const ZCODE_AGENT_CA_CERT_ENV_KEY = "ZCODE_AGENT_CA_CERT";
 export const ZCODE_TOOL_ENV_PASSTHROUGH_ENV_KEY = "ZCODE_TOOL_ENV_PASSTHROUGH_JSON";
+/** Host 告知 agent 当前服务的 workspace 身份（remote workspace 判定用）。 */
+export const ZCODE_WORKSPACE_IDENTITY_ENV = "ZCODE_WORKSPACE_IDENTITY";
 /** Desktop Main 将服务端裁决的单功能灰度结果传给 Local/Remote Host。 */
 export const ZCODE_DESKTOP_CONTEXT_PROMPT_ENABLED_ENV = "ZCODE_DESKTOP_CONTEXT_PROMPT_ENABLED";
 export const ZCODE_CUA_PRODUCT_HELPER_ENV_KEY = "ZCODE_CUA_PRODUCT_HELPER";
@@ -135,7 +137,6 @@ interface CapturedCuaBrokerCredentials {
 }
 
 let capturedCuaBrokerCredentials: Readonly<CapturedCuaBrokerCredentials> | undefined;
-const capturedZCodeAgentTelemetryEnv: Record<string, string> = {};
 
 // CUA broker socket 会被上面的 sanitize 从子进程 env 中剔除（confused-deputy 防护 —— 不能让
 // 其它 MCP server / Bash / tool 子进程直接驱动已授权 Helper）。但 CLI 入口在 bootstrap
@@ -164,30 +165,6 @@ function captureZCodeCuaBrokerCredentials(env: Record<string, string | undefined
   }
 }
 
-function captureZCodeAgentTelemetryEnv(env: Record<string, string | undefined>): void {
-  Object.assign(capturedZCodeAgentTelemetryEnv, readZCodeAgentTelemetryEnv(env));
-}
-
-/**
- * 只提取供 Agent telemetry bootstrap 使用的配置。宿主可在经过通用 env 清洗后，
- * 将这组值定向传给 host/Agent；不得把它并入 Bash/MCP 的 tool env。
- */
-export function readZCodeAgentTelemetryEnv(
-  env: Record<string, string | undefined>,
-): Record<string, string> {
-  const telemetryEnv: Record<string, string> = {};
-  for (const key of SANITIZED_RUNTIME_ENV_KEYS) {
-    if (!isZCodeAgentTelemetryEnvKey(key)) continue;
-    const value = env[key]?.trim();
-    if (value) telemetryEnv[key] = value;
-  }
-  return telemetryEnv;
-}
-
-export function getCapturedZCodeAgentTelemetryEnv(): Record<string, string> {
-  return { ...capturedZCodeAgentTelemetryEnv };
-}
-
 export function getCapturedZCodeCuaBrokerCredentials(): {
   socket: string | undefined;
   pluginAuthority: string | undefined;
@@ -203,17 +180,10 @@ export function resetCapturedZCodeCuaBrokerCredentialsForTest(): void {
   capturedCuaBrokerCredentials = undefined;
 }
 
-export function resetCapturedZCodeAgentTelemetryEnvForTest(): void {
-  for (const key of Object.keys(capturedZCodeAgentTelemetryEnv)) {
-    delete capturedZCodeAgentTelemetryEnv[key];
-  }
-}
-
 export function sanitizeZCodeRuntimeEnv<T extends Record<string, string | undefined>>(
   env: T,
 ): Record<string, string> {
   captureZCodeCuaBrokerCredentials(env);
-  captureZCodeAgentTelemetryEnv(env);
   const sanitized: Record<string, string> = {};
   for (const [key, value] of Object.entries(env)) {
     if (value === undefined || shouldSanitizeZCodeRuntimeEnvKey(key)) {
@@ -267,20 +237,11 @@ export function readZCodeToolEnvPassthroughEnv(env: EnvRecord): Record<string, s
 
 export function sanitizeZCodeRuntimeEnvInPlace(env: Record<string, string | undefined>): void {
   captureZCodeCuaBrokerCredentials(env);
-  captureZCodeAgentTelemetryEnv(env);
   for (const key of Object.keys(env)) {
     if (shouldSanitizeZCodeRuntimeEnvKey(key)) {
       delete env[key];
     }
   }
-}
-
-function isZCodeAgentTelemetryEnvKey(key: string): boolean {
-  return (
-    key.startsWith("OTEL_") ||
-    key.startsWith("ZCODE_TELEMETRY_") ||
-    key === "ZCODE_MODEL_TELEMETRY_ENABLED"
-  );
 }
 
 export function shouldSanitizeZCodeRuntimeEnvKey(key: string): boolean {
@@ -293,9 +254,6 @@ export function shouldSanitizeZCodeRuntimeEnvKey(key: string): boolean {
 
 export function shouldCaptureZCodeToolEnvPassthroughKey(key: string): boolean {
   const upperKey = key.toUpperCase();
-  if (isZCodeAgentTelemetryEnvKey(upperKey)) {
-    return false;
-  }
   if (NON_TOOL_PASSTHROUGH_RUNTIME_ENV_KEYS.some((candidate) => candidate === upperKey)) {
     return false;
   }

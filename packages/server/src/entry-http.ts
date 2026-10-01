@@ -16,7 +16,6 @@ async function main(): Promise<void> {
   const authToken = process.env["ZCODE_SERVER_AUTH_TOKEN"]?.trim() || undefined;
   const services = createLocalServices({
     zcodeBuiltinProviderConfigFilePath,
-    providerProvisioningTargetEnabled: Boolean(authToken),
   });
 
   createHttpServer(services, port, {

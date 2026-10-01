@@ -1,13 +1,19 @@
 import {
   closestCenter,
   DndContext,
+  KeyboardSensor,
   PointerSensor,
   useSensor,
   useSensors,
   type DragEndEvent,
   type Modifier,
 } from "@dnd-kit/core";
-import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { memo, useCallback, useMemo, useState, type CSSProperties } from "react";
 import {
@@ -188,10 +194,11 @@ const QueueRow = memo(function QueueRow({
           data-v4-queue-drag-handle="true"
           data-queue-item-id={item.queueItemId}
           aria-label={intl.formatMessage({ id: "chat.queue.drag" })}
-          className="shrink-0 cursor-grab touch-none text-foreground-subtlest active:cursor-grabbing"
-          disabled={rowLocked}
+          className="shrink-0 cursor-grab touch-none text-foreground-subtlest active:cursor-grabbing max-md:size-10"
+          disabled={rowLocked || !sortable}
           {...attributes}
           {...listeners}
+          aria-roledescription={intl.formatMessage({ id: "chat.queue.sortable" })}
         >
           <GripVertical className="size-4" />
         </Button>
@@ -213,6 +220,7 @@ const QueueRow = memo(function QueueRow({
           data-icon="inline-start"
           data-testid={testId(TID_V4_QUEUE_ITEM_SEND_NOW, item.queueItemId)}
           data-queue-item-id={item.queueItemId}
+          className="max-md:min-h-10"
           disabled={rowLocked}
           onClick={() => (() => onSendNow(item.queueItemId))()}
         >
@@ -229,6 +237,7 @@ const QueueRow = memo(function QueueRow({
             data-testid={testId(TID_V4_QUEUE_ITEM_EDIT, item.queueItemId)}
             data-queue-item-id={item.queueItemId}
             aria-label={intl.formatMessage({ id: "chat.queue.edit" })}
+            className="max-md:size-10"
             disabled={rowLocked}
             onClick={() => void onEditItem(item.queueItemId)}
           >
@@ -245,6 +254,7 @@ const QueueRow = memo(function QueueRow({
             data-testid={testId(TID_V4_QUEUE_ITEM_DELETE, item.queueItemId)}
             data-queue-item-id={item.queueItemId}
             aria-label={intl.formatMessage({ id: "chat.queue.remove" })}
+            className="max-md:size-10"
             disabled={rowLocked}
             onClick={() => onDeleteItem(item.queueItemId)}
           >
@@ -275,7 +285,34 @@ function ConversationQueuePanelImpl({
     useSensor(PointerSensor, {
       activationConstraint: { distance: 6 },
     }),
+    // 原先仅注册 PointerSensor，按钮虽可聚焦却无法响应读屏提示中的空格排序。
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
+  const accessibility = useMemo(() => {
+    const position = (id: string | number) =>
+      queue.items.findIndex((item) => item.queueItemId === String(id)) + 1;
+    return {
+      screenReaderInstructions: {
+        draggable: intl.formatMessage({ id: "chat.queue.keyboardInstructions" }),
+      },
+      announcements: {
+        onDragStart: ({ active }: { active: { id: string | number } }) =>
+          intl.formatMessage({ id: "chat.queue.sortStart" }, { position: position(active.id) }),
+        onDragOver: ({ over }: { over: { id: string | number } | null }) =>
+          over
+            ? intl.formatMessage({ id: "chat.queue.sortOver" }, { position: position(over.id) })
+            : undefined,
+        onDragEnd: ({ active, over }: DragEndEvent) =>
+          intl.formatMessage({
+            id:
+              over && resolveV4QueueReorderAnchor(queue.items, String(active.id), String(over.id))
+                ? "chat.queue.sortRequested"
+                : "chat.queue.sortCancelled",
+          }),
+        onDragCancel: () => intl.formatMessage({ id: "chat.queue.sortCancelled" }),
+      },
+    };
+  }, [intl, queue.items]);
   const itemIds = useMemo(() => queue.items.map((item) => item.queueItemId), [queue.items]);
   const handleDragEnd = useCallback(
     (event: DragEndEvent) => {
@@ -336,7 +373,7 @@ function ConversationQueuePanelImpl({
               data-testid={TID_V4_QUEUE_RESUME}
               aria-label={intl.formatMessage({ id: "chat.queue.resume.description" })}
               disabled={resumePending}
-              className="shrink-0 text-foreground-subtle hover:text-foreground"
+              className="shrink-0 text-foreground-subtle hover:text-foreground max-md:min-h-10"
               onClick={() => void handleResume()}
             >
               {intl.formatMessage({ id: "chat.queue.resume" })}
@@ -345,6 +382,7 @@ function ConversationQueuePanelImpl({
         </div>
       ) : null}
       <DndContext
+        accessibility={accessibility}
         sensors={sensors}
         collisionDetection={closestCenter}
         modifiers={[restrictQueueDragToPanel]}

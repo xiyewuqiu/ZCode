@@ -157,10 +157,8 @@ function RootInner({
 
   useEffect(() => () => {}, []);
 
-  // 动态工作流灰度快照的唯一取数点：
-  // 放在 app 级 ServiceProvider 这一层取一次，自动化页与 run 面板只读。消费方可能位于
-  // 工作区级 ServiceProvider 内（远程 Host 的 accessor），由它们取数会拿到另一台 Host 的答案。
-  useDynamicWorkflowAvailabilityLoader(services.codingPlanSubscriptionService);
+  // 动态工作流灰度快照的唯一落定点（厂商灰度源移除后恒为 disabled）。
+  useDynamicWorkflowAvailabilityLoader();
 
   const { intl, locale } = useZCodeIntl();
   const theme = useZCodeStore((state) => state.theme);

@@ -16,7 +16,6 @@ import {
   IModelSelectionService,
   IProviderSettingsService,
   IUsageStatsService,
-  ICodingPlanSubscriptionService,
   IClientConfigService,
   IClientScenesService,
   ISkillsService,
@@ -43,7 +42,6 @@ import {
   registerHostApiNetworkTransportForDispose,
   createSettingsSyncService,
   createUsageStatsService,
-  createCodingPlanSubscriptionService,
   createClientScenesService,
   createServiceLogger,
   createSubagentsService,
@@ -55,10 +53,6 @@ import {
   type ZCodeSessionRuntimePreferencesResult,
 } from "@zcode/shared";
 import { assertLegacyRemoteWorkspaceRpcContract } from "./legacyRemoteWorkspaceRpcContract.js";
-import {
-  createRemoteProviderProvisioningExecutorFromWorkspace,
-  registerRemoteProviderProvisioningExecutor,
-} from "./remoteProviderProvisioningService.js";
 
 const runtimePreferencesLogger = createServiceLogger("remote-runtime-preferences");
 
@@ -90,9 +84,6 @@ export function createRemoteWorkspaceServiceCollection(params: {
     fetchImpl: hostApiNetworkTransport.fetch,
   });
   const localBroadcastService = createBroadcastService(params.parentPort);
-  const localCodingPlanSubscriptionService = createCodingPlanSubscriptionService({
-    apiClient: localApiClient,
-  });
   const reportingRemoteZCodeTaskService = params.createReportingRemoteZCodeTaskService(
     params.connectionServices.zcodeTaskService,
   );
@@ -104,8 +95,6 @@ export function createRemoteWorkspaceServiceCollection(params: {
   const remoteZCodeSessionService = params.createRemotePromptAttachmentSessionService(
     params.connectionServices.zcodeSessionService,
   );
-  const remoteProviderProvisioningService =
-    createRemoteProviderProvisioningExecutorFromWorkspace(params);
 
   // desktop-attached remote 的 Agent 运行在远端，但 app-global 设置权威仍在
   // desktop shared Host。通过窄化的 runtime-preferences 请求原路返回，避免远端读取自己的 setting。
@@ -236,7 +225,6 @@ export function createRemoteWorkspaceServiceCollection(params: {
         zcodeAgentService: params.connectionServices.zcodeAgentService,
       }),
     )
-    .register(ICodingPlanSubscriptionService, localCodingPlanSubscriptionService)
     .register(IClientConfigService, params.clientConfigService)
     .register(IClientScenesService, createClientScenesService({ apiClient: localApiClient }))
     // 远端 workspace 的项目级 skills/plugins/commands 位于 SSH/Docker 文件系统。
@@ -258,6 +246,5 @@ export function createRemoteWorkspaceServiceCollection(params: {
     )
     .register(IPromptAttachmentTransferService, params.promptAttachmentTransferService);
   registerHostApiNetworkTransportForDispose(services, hostApiNetworkTransport);
-  registerRemoteProviderProvisioningExecutor(services, remoteProviderProvisioningService);
   return services;
 }

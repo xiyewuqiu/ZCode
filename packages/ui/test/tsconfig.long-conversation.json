@@ -10,6 +10,9 @@
   "include": [
     "../src/**/*.d.ts",
     "./longConversation.test.ts",
+    "./conversationNavigatorCache.test.ts",
+    "./conversationScrollNavigation.test.ts",
+    "./queueCommandFeedback.test.ts",
     "./conversationPreview.test.ts",
     "./conversationOutline.test.ts",
     "./visibleProjection.test.ts",
