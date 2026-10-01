@@ -1,5 +1,7 @@
 import * as permissionFullAccessRepository from "./repositories/permission-full-access.js";
 import { DatabaseSync } from "node:sqlite";
+import type { SessionPurgeParams, SessionStorageTarget } from "@zcode/shared";
+import { SessionPurgeStorage } from "./session-purge.js";
 import type {
   CollaborationMode,
   ClaimLegacySessionWorkspaceInput,
@@ -232,6 +234,7 @@ export class SqliteSessionStore
 {
   private readonly db: DatabaseSync;
   private readonly dbPath: string;
+  private readonly storageMaintenance?: SessionPurgeStorage;
   private readonly forkCommitFaultAt?: ForkCommitFaultStage;
   private dwfJournalStore?: JournalStorePort;
 
@@ -256,6 +259,8 @@ export class SqliteSessionStore
         },
       );
     }
+    if (options.storageRoot)
+      this.storageMaintenance = new SessionPurgeStorage(this.db, options.storageRoot);
     try {
       if (startupToken !== deferredStartup)
         runSqliteSessionMigrations(this.db, this.dbPath, startupLockTimeoutMs);
@@ -291,6 +296,17 @@ export class SqliteSessionStore
 
   getDatabasePath(): string {
     return this.dbPath;
+  }
+
+  async previewSessionStorage(target: SessionStorageTarget) {
+    if (!this.storageMaintenance) throw new Error("session_storage_root_unavailable");
+    return this.storageMaintenance.preview(target);
+  }
+
+  async purgeSessionStorage(params: SessionPurgeParams) {
+    if (!this.storageMaintenance) throw new Error("session_storage_root_unavailable");
+    this.throwBeforeWrite();
+    return this.storageMaintenance.purge(params);
   }
 
   close(): void {

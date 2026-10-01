@@ -64,6 +64,7 @@ export class SessionResidentPool {
   private readonly operationLeaseCounts = new Map<string, number>();
   private readonly inFlightDeactivations = new Map<string, Promise<void>>();
   private activeOperationCount = 0;
+  private maintenanceActive = false;
   private rebalancing = false;
 
   constructor(
@@ -95,6 +96,7 @@ export class SessionResidentPool {
    * 回收并发；按 session 计数表达精确所有权并参与该 session 的 eligibility。
    */
   async acquireOperation(sessionIdsInput?: string | readonly string[]): Promise<() => void> {
+    if (this.maintenanceActive) throw new Error("session_storage_busy");
     const sessionIds = [
       ...new Set(
         (typeof sessionIdsInput === "string" ? [sessionIdsInput] : (sessionIdsInput ?? [])).filter(
@@ -133,6 +135,41 @@ export class SessionResidentPool {
     }
   }
 
+  /** 删除前取得进程独占请求闸门；不等待自身租约，也不取消其它已接受请求。 */
+  acquireStorageMaintenance(): () => void {
+    if (
+      this.maintenanceActive ||
+      this.activeOperationCount > 0 ||
+      this.inFlightDeactivations.size > 0
+    ) {
+      throw new Error("session_storage_busy");
+    }
+    this.maintenanceActive = true;
+    return () => {
+      this.maintenanceActive = false;
+      this.rebalance();
+    };
+  }
+
+  isStorageBlocked(sessionId: string): boolean {
+    const facts = this.host.readResidencyFacts(sessionId);
+    return Boolean(
+      facts &&
+      (!facts.persisted ||
+        facts.hasResidencyBlockingWork ||
+        facts.hasPendingInteractions ||
+        facts.hasQueuedCommands ||
+        facts.hasSubscribers ||
+        facts.hasLegacySubscriber),
+    );
+  }
+
+  async deactivateForStorage(sessionId: string): Promise<void> {
+    if (!this.maintenanceActive || this.isStorageBlocked(sessionId))
+      throw new Error("session_purge_blocked:session-active");
+    await this.host.deactivate(sessionId);
+  }
+
   touch(sessionId: string, usedAt = this.now()): void {
     if (!Number.isFinite(usedAt)) return;
     const previous = this.lastTouchedAt.get(sessionId);
@@ -146,7 +183,7 @@ export class SessionResidentPool {
 
   /** sampler 与 request-release 共用的 TTL / 高低水位收敛入口。 */
   rebalance(): void {
-    if (this.activeOperationCount > 0 || this.rebalancing) return;
+    if (this.maintenanceActive || this.activeOperationCount > 0 || this.rebalancing) return;
     this.rebalancing = true;
     try {
       const observedAt = this.now();

@@ -1529,6 +1529,77 @@ export class TaskIndexRepo {
     });
   }
 
+  async hasTaskStorageReferences(params: {
+    workspacePath: string;
+    workspaceIdentity?: string;
+    taskId: string;
+  }): Promise<boolean> {
+    await this.ensureReady();
+    const database = this.getDatabase();
+    return [
+      "SELECT 1 FROM automations WHERE workspace_key=? AND target_task_id=? LIMIT 1",
+      "SELECT 1 FROM automation_runs WHERE workspace_key=? AND session_id=? LIMIT 1",
+      "SELECT 1 FROM off_peak_tasks WHERE workspace_key=? AND session_id=? LIMIT 1",
+    ].some((sql) => Boolean(database.prepare(sql).get(workspaceKey(params), params.taskId)));
+  }
+
+  async purgeTaskContent(params: {
+    workspacePath: string;
+    workspaceIdentity?: string;
+    taskId: string;
+    cleanupPending: boolean;
+  }): Promise<ZCodeTaskMeta> {
+    await this.ensureReady();
+    return this.enqueueWrite(params, () => {
+      const database = this.getDatabase();
+      database.exec("BEGIN IMMEDIATE");
+      try {
+        const row = this.getTaskRow(params);
+        const key = workspaceKey(params);
+        const alreadyPurged = database
+          .prepare("SELECT 1 FROM task_storage_purge WHERE workspace_key=? AND task_id=?")
+          .get(key, params.taskId);
+        if (!alreadyPurged) {
+          // 旧 delete 只隐藏 membership，全文索引和 meta_json 仍保留正文；永久删除必须一并清空。
+          this.writeRecord({
+            meta: {
+              taskId: params.taskId,
+              workspacePath: params.workspacePath,
+              workspaceIdentity: params.workspaceIdentity,
+              traceId: params.taskId,
+              title: "",
+              mode: "build",
+              provider: ZCODE_AGENT_PROVIDER,
+              createdAt: row?.created_at ?? Date.now(),
+              updatedAt: Date.now(),
+            },
+            pinned: false,
+            archived: true,
+            deleted: !params.cleanupPending,
+            titleOverridden: false,
+            searchableText: "",
+            writeUnreadAt: true,
+          });
+          this.deleteTaskGroupingReferencesReady(key, params.taskId);
+          database
+            .prepare("INSERT INTO task_storage_purge(workspace_key,task_id) VALUES(?,?)")
+            .run(key, params.taskId);
+        } else if (!params.cleanupPending) {
+          database
+            .prepare("UPDATE tasks SET deleted=1 WHERE workspace_key=? AND task_id=?")
+            .run(key, params.taskId);
+        }
+        const sanitized = this.getTaskRow(params);
+        if (!sanitized) throw new Error("task_storage_tombstone_missing");
+        database.exec("COMMIT");
+        return rowToMeta(sanitized);
+      } catch (error) {
+        database.exec("ROLLBACK");
+        throw error;
+      }
+    });
+  }
+
   async deleteArchivedTask(params: {
     workspacePath: string;
     workspaceIdentity?: string;

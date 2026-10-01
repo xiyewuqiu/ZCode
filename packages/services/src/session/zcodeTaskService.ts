@@ -1,5 +1,6 @@
 /* eslint-disable max-lines -- ZCode task wrapper service 接口集中承载 app/runtime API，拆散会让替换阶段更难追踪。 */
 import type { Event } from "@zcode/rpc";
+import type { SessionStoragePreview, SessionPurgeResult } from "@zcode/shared";
 import { ServiceChannels } from "@zcode/shared";
 import type { CommandPayloadMap } from "@zcode/shared/zcode-protocol-v4";
 import { createServiceDescriptor } from "#src/descriptors.js";
@@ -627,6 +628,19 @@ export interface IZCodeTaskService {
     resumeTaskId?: string;
     bumpRuntimeEpoch?: boolean;
   }): Promise<void>;
+
+  previewTaskStorage(params: {
+    taskId: string;
+    workspacePath: string;
+    workspaceIdentity?: string;
+  }): Promise<SessionStoragePreview>;
+  purgeTaskStorage(params: {
+    taskId: string;
+    workspacePath: string;
+    workspaceIdentity?: string;
+    expectedRevision: string;
+    confirmPermanent: true;
+  }): Promise<SessionPurgeResult>;
 
   /** 将已持久化 task 标记为列表不可见；CLI session 内容继续保留 */
   deleteTask(params: {

@@ -9,6 +9,8 @@ export type ForkCommitFaultStage =
 
 export interface SqliteSessionStoreOptions {
   dbPath?: string;
+  /** 明确注入产物根；自定义数据库路径不能用来猜测文件删除范围。 */
+  storageRoot?: string;
   /** 仅供事务原子性测试；生产调用不得设置。 */
   forkCommitFaultAt?: ForkCommitFaultStage;
   /** 仅供启动锁等待边界测试；生产调用使用默认值。 */

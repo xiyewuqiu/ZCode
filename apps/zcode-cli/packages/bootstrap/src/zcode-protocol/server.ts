@@ -1,4 +1,5 @@
 import { querySessionDebug } from "./session-debug.js";
+import { previewSessionStorage, purgeSessionStorage } from "./session-storage.js";
 import {
   zcodePluginsCancelOperationParamsSchema,
   zcodeProtocolMethods,
@@ -441,9 +442,11 @@ export class ZCodeProtocolAgentServer {
       // subscribe hydration、workspace 配置与 resume 都可能跨 await。若只看
       // session 当前状态，sampler 会在 handler 持有旧 record 时把它关闭。进程级 lease
       // 覆盖整个 request；能识别的 sessionIds 额外用于冷恢复闸门与 LRU touch。
-      releaseResidencyOperation = await this.context.sessionResidentPool?.acquireOperation(
-        collectResidencySessionIds(request.params),
-      );
+      if (request.method !== V4_METHODS.conversationPurge) {
+        releaseResidencyOperation = await this.context.sessionResidentPool?.acquireOperation(
+          collectResidencySessionIds(request.params),
+        );
+      }
       const result = await this.dispatchRequest(request);
       return this.ok(request.id, result);
     } catch (error) {
@@ -562,6 +565,10 @@ export class ZCodeProtocolAgentServer {
         return await getUsageStats(this.context, request.params);
       case V4_METHODS.conversationUsage:
         return await getTaskTokenUsage(this.context, request.params);
+      case V4_METHODS.conversationStorage:
+        return await previewSessionStorage(this.context, request.params);
+      case V4_METHODS.conversationPurge:
+        return await purgeSessionStorage(this.context, request.params);
       case V4_METHODS.command:
         return this.requireV4Gateway().handleCommand(request.params);
       case V4_METHODS.commandsQuery:

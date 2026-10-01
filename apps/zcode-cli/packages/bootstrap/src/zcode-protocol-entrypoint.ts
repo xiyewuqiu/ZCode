@@ -1,4 +1,4 @@
-import { createConfig } from "@zcode/adapters/config";
+import { createConfig, resolvePath } from "@zcode/adapters/config";
 import { createNodeModelSelectionFacade } from "@zcode/provider-node";
 import { createNodeLoggerFactory } from "@zcode/adapters/logging";
 import {
@@ -143,6 +143,7 @@ export async function runZCodeProtocolAgent(
       create: () =>
         openProtocolStartupStorage({
           dbPath: getSessionDbPath(configResult),
+          storageRoot: resolvePath(configResult.config.storage.dir),
           output,
           onProgress: (progress) =>
             logger.info("SQLite startup state", {

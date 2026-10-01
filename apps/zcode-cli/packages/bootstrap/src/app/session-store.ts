@@ -82,7 +82,7 @@ export async function openStartupSessionStore(
     stage: "migrate_session_db",
   });
   const store = await SqliteSessionStore.openStartup(
-    { dbPath },
+    { dbPath, storageRoot: resolvePath(configResult.config.storage.dir) },
     {
       onProgress: async (progress) => {
         startupTimer.mark("SQLite startup state", {

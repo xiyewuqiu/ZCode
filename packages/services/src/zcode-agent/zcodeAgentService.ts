@@ -1,4 +1,5 @@
 import { requestPluginReferenceCatalog } from "#src/zcode-agent/pluginReferenceCatalogRequest.js";
+import { sessionStoragePreviewSchema, sessionPurgeResultSchema } from "@zcode/shared";
 import {
   localTtftFactsSchema,
   sessionDebugSnapshotSchema,
@@ -3659,6 +3660,32 @@ export function createZCodeAgentService(
         V4_METHODS.conversationUsage,
         { sessionId: params.sessionId },
         v4ConversationUsageResultSchema,
+      );
+    },
+
+    async previewSessionStorage(params) {
+      const client = await getReadOnlyClient(params);
+      return client.request(
+        V4_METHODS.conversationStorage,
+        {
+          sessionId: params.sessionId,
+          workspaceKey: resolveWorkspaceKey(params),
+        },
+        sessionStoragePreviewSchema,
+      );
+    },
+
+    async purgeSessionStorage(params) {
+      const client = await getReadOnlyClient(params);
+      return client.request(
+        V4_METHODS.conversationPurge,
+        {
+          sessionId: params.sessionId,
+          workspaceKey: resolveWorkspaceKey(params),
+          expectedRevision: params.expectedRevision,
+          confirmPermanent: params.confirmPermanent,
+        },
+        sessionPurgeResultSchema,
       );
     },
 

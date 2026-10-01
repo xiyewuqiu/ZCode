@@ -25,3 +25,4 @@ export * from "./browser-control.port.js";
 export * from "./shared.js";
 
 export * from "./permission-full-access.js";
+export * from "./session-storage.port.js";

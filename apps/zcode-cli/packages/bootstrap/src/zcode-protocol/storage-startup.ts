@@ -10,6 +10,7 @@ import {
 
 export async function openProtocolStartupStorage(options: {
   dbPath: string;
+  storageRoot?: string;
   output: NodeJS.WritableStream;
   onProgress?: (progress: ZCodeStorageStartupState) => void;
 }): Promise<SqliteSessionStore> {
@@ -38,7 +39,10 @@ export async function openProtocolStartupStorage(options: {
   };
   try {
     await report({ phase: "checking", elapsedMs: 0 });
-    return await SqliteSessionStore.openStartup({ dbPath: options.dbPath }, { onProgress: report });
+    return await SqliteSessionStore.openStartup(
+      { dbPath: options.dbPath, storageRoot: options.storageRoot },
+      { onProgress: report },
+    );
   } catch (error) {
     if (!failedReported) {
       try {

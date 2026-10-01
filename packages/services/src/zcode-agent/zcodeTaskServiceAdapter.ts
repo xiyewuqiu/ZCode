@@ -2814,6 +2814,42 @@ export function createZCodeTaskServiceAdapter(
       await options.zcodeAgentService.disposeWorkspace(normalizeWorkspaceParams(params));
     },
 
+    async previewTaskStorage(params) {
+      const preview = await options.zcodeAgentService.previewSessionStorage({
+        ...params,
+        sessionId: params.taskId,
+      });
+      if (await taskIndexRepo.hasTaskStorageReferences(params)) {
+        if (!preview.blockers.includes("workflow-reference"))
+          preview.blockers.push("workflow-reference");
+      }
+      return preview;
+    },
+
+    async purgeTaskStorage(params) {
+      if (await taskIndexRepo.hasTaskStorageReferences(params))
+        throw new Error("session_purge_blocked:workflow-reference");
+      const result = await options.zcodeAgentService.purgeSessionStorage({
+        ...params,
+        sessionId: params.taskId,
+      });
+      // 文件未清完时保留列表入口，重启后可凭持久清单继续；索引失败也允许同版本重试收尾。
+      const meta = await taskIndexRepo.purgeTaskContent({
+        ...params,
+        cleanupPending: result.state === "cleanup-pending",
+      });
+      overlays.delete(taskKey(params));
+      clearLiveToolProjection(params);
+      toolProjectionMemoryByTaskKey.delete(taskKey(params));
+      if (result.state === "purged") {
+        setOverlay(params, { deleted: true });
+        emitWorkspaceTaskListChanged(params, meta, "task_deleted");
+      } else {
+        emitWorkspaceTaskListChanged(params, meta, "task_meta_changed");
+      }
+      return result;
+    },
+
     async deleteTask(params): Promise<void> {
       setOverlay(params, { deleted: true });
       const meta = await updateIndexedTaskState(params, { deleted: true });

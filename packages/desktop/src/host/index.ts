@@ -1915,6 +1915,28 @@ function createControllerRoutedTaskService(
           await route(params, { kind: "delete" });
         };
       }
+      if (property === "previewTaskStorage") {
+        return async (params: Parameters<IZCodeTaskService["previewTaskStorage"]>[0]) =>
+          windowHostControllerRuntime.service.previewTaskStorage({
+            address: await windowHostControllerRuntime.resolveTaskAddress({
+              ...params,
+              attachmentScope,
+              allowMissingTask: true,
+            }),
+          });
+      }
+      if (property === "purgeTaskStorage") {
+        return async (params: Parameters<IZCodeTaskService["purgeTaskStorage"]>[0]) =>
+          windowHostControllerRuntime.service.purgeTaskStorage({
+            address: await windowHostControllerRuntime.resolveTaskAddress({
+              ...params,
+              attachmentScope,
+              allowMissingTask: true,
+            }),
+            expectedRevision: params.expectedRevision,
+            confirmPermanent: params.confirmPermanent,
+          });
+      }
       if (property === "deleteArchivedTasks") {
         return async (params: Parameters<IZCodeTaskService["deleteArchivedTasks"]>[0]) => {
           if (params.taskIds.length === 0) {

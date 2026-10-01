@@ -1,5 +1,6 @@
 /* eslint-disable max-lines -- 投影状态、V4 帧与离线替换属于同一个一致性边界。 */
 import { isDeepStrictEqual } from "node:util";
+import type { SessionStoragePreview, SessionPurgeResult } from "@zcode/shared";
 import type { ZCodeTaskMeta } from "@zcode/shared";
 import type { ZCodeArchivedTaskDeletionResult } from "@zcode/services";
 import {
@@ -50,6 +51,8 @@ export interface WindowHostControllerSessionOverlay {
 }
 
 export type WindowHostControllerMutation =
+  | { kind: "storage-preview" }
+  | { kind: "storage-purge"; expectedRevision: string; confirmPermanent: true }
   | { kind: "pin"; pinned: boolean }
   | { kind: "archive"; archived: boolean }
   | { kind: "delete" }
@@ -60,7 +63,12 @@ export type WindowHostControllerMutation =
   | { kind: "open" }
   | { kind: "resume" };
 
-export type WindowHostControllerMutationResult = void | boolean | ZCodeArchivedTaskDeletionResult;
+export type WindowHostControllerMutationResult =
+  | void
+  | boolean
+  | ZCodeArchivedTaskDeletionResult
+  | SessionStoragePreview
+  | SessionPurgeResult;
 
 interface ControllerSource {
   scope: WindowHostControllerSourceScope;
@@ -493,6 +501,8 @@ export function createWindowHostControllerProjection(options: { createId: () => 
         !source ||
         (mutation.kind !== "delete-archived" &&
           mutation.kind !== "delete-archived-batch" &&
+          mutation.kind !== "storage-preview" &&
+          mutation.kind !== "storage-purge" &&
           !source.rows.has(taskKey(address)))
       ) {
         throw new Error("没有与任务地址匹配的 source");

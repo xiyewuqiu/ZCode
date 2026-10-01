@@ -1,5 +1,6 @@
 // Session Store Port：为会话输入、消息和投影提供稳定的存储边界。
 // ============================================================
+import type { SessionStorageMaintenancePort } from "./session-storage.port.js";
 
 import type {
   MessageId,
@@ -1086,7 +1087,7 @@ export interface LocalSettingStorePort {
   }): CollaborationMode | Promise<CollaborationMode>;
 }
 
-export interface SessionStorePort {
+export interface SessionStorePort extends Partial<SessionStorageMaintenancePort> {
   createSession(input: CreateSessionInput): Promise<SessionInfo>;
   /** legacy 兼容原语；V4 stable/compact-edit fork 禁止调用，统一走 commitForkBundle。 */
   createForkedSessionWithMetadata?(

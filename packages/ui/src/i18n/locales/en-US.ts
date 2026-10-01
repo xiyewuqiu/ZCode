@@ -1,5 +1,43 @@
 /** English translations */
 const enUS: Record<string, string> = {
+  "taskStorage.title": "Storage & permanent deletion",
+  "taskStorage.loading": "Checking conversation storage…",
+  "taskStorage.records": "Database records (estimate)",
+  "taskStorage.files": "Exclusive session files",
+  "taskStorage.recordCount": "{count} records",
+  "taskStorage.fileCount": "{count} files",
+  "taskStorage.scope":
+    "Removes this conversation and files in its exclusive session/agent directories. Shared attachments, global caches, diagnostic logs, workspace files, exports and backups are retained.",
+  "taskStorage.sqlite":
+    "SQLite can reuse released space. The database file does not necessarily shrink after deletion.",
+  "taskStorage.confirm":
+    "I understand this permanently deletes the conversation and cannot be undone.",
+  "taskStorage.close": "Close",
+  "taskStorage.refresh": "Check again",
+  "taskStorage.delete": "Permanently delete",
+  "taskStorage.retry": "Retry cleanup",
+  "taskStorage.deleting": "Deleting…",
+  "taskStorage.complete": "Conversation permanently deleted.",
+  "taskStorage.pending":
+    "Conversation records deleted; {count} files still need cleanup. You can retry.",
+  "taskStorage.removed": "{records} records deleted; {bytes} of file removal confirmed.",
+  "taskStorage.error": "The operation could not be confirmed. Check again before retrying.",
+  "taskStorage.blocker.session-active":
+    "This conversation is open or has running work. Close it in all windows and wait for its work to finish.",
+  "taskStorage.blocker.pending-input":
+    "This conversation has queued input. Process or discard it first.",
+  "taskStorage.blocker.dependent-session":
+    "A branch or child conversation still depends on this conversation.",
+  "taskStorage.blocker.workflow-reference":
+    "A workflow, scheduled task or idle task still references this conversation. Linked deletion is not supported yet.",
+  "taskStorage.blocker.workspace-mismatch":
+    "The conversation belongs to another workspace. Reopen it from the correct workspace.",
+  "taskStorage.blocker.unsafe-file":
+    "The file range could not be verified (link, permission or changed file). Nothing will be deleted.",
+  "taskStorage.blocker.shared-file":
+    "Another conversation references this session’s files. Deletion is blocked.",
+  "taskStorage.blocker.missing-session":
+    "The session is missing and no permanent deletion record exists. Nothing was deleted.",
   "occupationOnboarding.stepMode": "UI mode",
   "occupationOnboarding.modeTitle": "Choose your UI mode",
   "occupationOnboarding.modeDescription": "How would you like ZCode to show its work?",

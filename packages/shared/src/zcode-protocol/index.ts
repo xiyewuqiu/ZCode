@@ -3715,3 +3715,4 @@ export * from "../localTtft.js";
 
 // 桌面本地 TTFT 的严格事实合同；检查点不能替代实际内容帧。
 export { localTtftFactsSchema } from "../localTtft.js";
+export * from "../zcode-protocol-v4/session-storage.js";

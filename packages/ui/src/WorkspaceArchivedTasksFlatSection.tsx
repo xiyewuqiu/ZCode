@@ -1,5 +1,15 @@
 import { useMemo, useState } from "react";
-import { ArchiveX, Cloud, CloudDownload, Folder, Smartphone, Trash2 } from "lucide-react";
+import {
+  ArchiveX,
+  Cloud,
+  CloudDownload,
+  Folder,
+  Smartphone,
+  Trash2,
+  HardDrive,
+} from "lucide-react";
+import { TaskStorageDialog } from "@/TaskStorageDialog.js";
+import type { TaskStorageTarget } from "@/hooks/useTaskStorage.js";
 import { Button } from "@/components/ui/button.js";
 import { cn } from "@/components/lib/utils.js";
 import { ControlHintTooltip } from "@/ControlHintTooltip.js";
@@ -61,6 +71,9 @@ export function WorkspaceArchivedTasksFlatSection({
     [sessionIdByWorkspaceIdentity, sessionIdByWorkspacePath, sessionsById],
   );
   const [showAllTasks, setShowAllTasks] = useState(false);
+  const [storageTarget, setStorageTarget] = useState<
+    (TaskStorageTarget & { title: string }) | null
+  >(null);
   const [deletingTaskKeys, setDeletingTaskKeys] = useState<Set<string>>(() => new Set());
   const collapsedLimit = 20;
   const workspaceLabelByKey = useMemo(
@@ -91,9 +104,26 @@ export function WorkspaceArchivedTasksFlatSection({
     collapsedLimit,
   });
   const canToggleExpanded = total > collapsedLimit;
+  const storageService = storageTarget
+    ? workspaceServiceLookup.get(
+        buildTaskWorkspaceKey(storageTarget.workspacePath, storageTarget.workspaceIdentity),
+      )?.services.zcodeTaskService
+    : null;
 
   return (
     <div>
+      {storageTarget && storageService ? (
+        <TaskStorageDialog
+          key={`${buildTaskWorkspaceKey(storageTarget.workspacePath, storageTarget.workspaceIdentity)}:${storageTarget.taskId}`}
+          target={storageTarget}
+          title={storageTarget.title}
+          service={storageService}
+          onClose={() => {
+            setStorageTarget(null);
+            refresh();
+          }}
+        />
+      ) : null}
       <DeleteAllArchivedTasksButton
         actionsContainer={actionsContainer}
         count={total}
@@ -259,6 +289,28 @@ export function WorkspaceArchivedTasksFlatSection({
                     ) : (
                       <ArchiveX className="size-3.5" />
                     )}
+                  </Button>
+                </ControlHintTooltip>
+                <ControlHintTooltip
+                  title={intl.formatMessage({ id: "taskStorage.title" })}
+                  side="top"
+                >
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label={intl.formatMessage({ id: "taskStorage.title" })}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setStorageTarget({
+                        taskId: task.taskId,
+                        workspacePath: task.workspacePath,
+                        workspaceIdentity: task.workspaceIdentity,
+                        title: taskTitle,
+                      });
+                    }}
+                  >
+                    <HardDrive className="size-3.5" />
                   </Button>
                 </ControlHintTooltip>
                 <ControlHintTooltip title={deleteLabel} side="top">

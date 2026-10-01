@@ -1,6 +1,7 @@
 import type { Event } from "@zcode/rpc";
 import { ServiceChannels } from "@zcode/shared";
 import type { ZCodeTaskMeta } from "@zcode/shared";
+import type { SessionStoragePreview, SessionPurgeResult } from "@zcode/shared";
 import type {
   ControllerResyncParams,
   ControllerResyncResult,
@@ -50,6 +51,12 @@ export type WindowHostControllerFrame =
  * conversation/file/git/terminal 仍由 attachment 对应的 scoped facade 提供。
  */
 export interface IWindowControllerService {
+  previewTaskStorage(params: { address: WindowHostTaskAddress }): Promise<SessionStoragePreview>;
+  purgeTaskStorage(params: {
+    address: WindowHostTaskAddress;
+    expectedRevision: string;
+    confirmPermanent: true;
+  }): Promise<SessionPurgeResult>;
   deleteArchivedTask(params: { address: WindowHostTaskAddress }): Promise<boolean>;
   deleteArchivedTasks(params: {
     address: WindowHostTaskAddress;

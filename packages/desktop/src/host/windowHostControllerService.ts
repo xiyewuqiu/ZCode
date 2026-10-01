@@ -1,6 +1,7 @@
 /* eslint-disable max-lines -- Controller source 聚合、路由、订阅与生命周期属于同一个 Host 边界。 */
 import { Emitter } from "@zcode/rpc";
 import type { ZCodeTaskMeta } from "@zcode/shared";
+import { sessionStoragePreviewSchema, sessionPurgeResultSchema } from "@zcode/shared";
 import type {
   ControllerSubscribeParams,
   WindowHostControllerTaskRow,
@@ -241,6 +242,18 @@ export function createWindowHostControllerRuntime(options: {
     const service = current.taskService;
     const base = mutationParams(address);
     switch (mutation.kind) {
+      case "storage-preview":
+      case "storage-purge": {
+        if (sourceKey(current.scope) !== sourceKey(scope))
+          throw new Error("session_storage_source_changed");
+        return mutation.kind === "storage-preview"
+          ? service.previewTaskStorage(base)
+          : service.purgeTaskStorage({
+              ...base,
+              expectedRevision: mutation.expectedRevision,
+              confirmPermanent: mutation.confirmPermanent,
+            });
+      }
       case "pin":
         await service.setTaskPinned({ ...base, pinned: mutation.pinned });
         break;
@@ -588,12 +601,39 @@ export function createWindowHostControllerRuntime(options: {
     const subscriptions = new Map<string, { dispose(): void }>();
     return {
       listTaskList,
+      async previewTaskStorage({ address }) {
+        const result = sessionStoragePreviewSchema.parse(
+          await projection.mutate(address, { kind: "storage-preview" }),
+        );
+        // 确认跨越远端重连时必须重新预检，不能把旧 source 的确认转交给新 attachment。
+        return { ...result, revision: `${address.remoteSessionId ?? "local"}:${result.revision}` };
+      },
+      async purgeTaskStorage({ address, expectedRevision, confirmPermanent }) {
+        const prefix = `${address.remoteSessionId ?? "local"}:`;
+        if (!expectedRevision.startsWith(prefix)) throw new Error("session_storage_source_changed");
+        const result = sessionPurgeResultSchema.parse(
+          await projection.mutate(address, {
+            kind: "storage-purge",
+            expectedRevision: expectedRevision.slice(prefix.length),
+            confirmPermanent,
+          }),
+        );
+        const resolved = options.resolveSource({
+          workspacePath: address.workspacePath,
+          workspaceIdentity: address.workspaceIdentity,
+        });
+        if (resolved)
+          await refreshSource(resolved, true).catch((error) =>
+            options.onSourceError?.(resolved.scope, "refresh", error),
+          );
+        return result;
+      },
       async deleteArchivedTasks({ address, taskIds }) {
         if (taskIds.length === 0) {
           return { deletedTaskIds: [], skippedTaskIds: [], failedTaskIds: [] };
         }
         const result = await projection.mutate(address, { kind: "delete-archived-batch", taskIds });
-        if (!result || typeof result === "boolean") {
+        if (!result || typeof result === "boolean" || !("deletedTaskIds" in result)) {
           throw new Error("归档删除批次未返回逐项目标结果");
         }
         const resolved = options.resolveSource({
