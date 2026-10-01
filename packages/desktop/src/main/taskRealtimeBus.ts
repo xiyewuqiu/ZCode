@@ -4,15 +4,14 @@ import {
   type TaskOwnerCommandDelivery,
   type TaskOwnerCommandRequest,
   type TaskOwnerCommandResult,
-  type TaskRealtimeDeliveredEvent,
-  type TaskRealtimeEvent,
   type TaskRealtimeHostDeliveryKind,
   type TaskRunLeaseAcquireRequest,
   type TaskRunLeaseResult,
   type TaskRunLeaseTarget,
-  type TaskStreamMirrorBatchEvent,
-  type TaskStreamMirrorOp,
-  type TaskStreamMirrorPublishOp,
+  taskRealtimeDeliveredEventSchema,
+  taskRealtimeEventSchema,
+  taskStreamMirrorOpSchema,
+  taskStreamMirrorPublishOpSchema,
   type TaskStreamWatermark,
   formatZodError,
   HostMessageTypes,
@@ -20,6 +19,13 @@ import {
   hostResponseMessageSchema,
 } from "@zcode/shared";
 import { logger as defaultLogger } from "./logger.js";
+
+// Main 路由已校验的传输信封；正文是 passthrough，不能冒充已验证的旧业务事件联合类型。
+type TaskRealtimeEvent = ReturnType<typeof taskRealtimeEventSchema.parse>;
+type TaskRealtimeDeliveredEvent = ReturnType<typeof taskRealtimeDeliveredEventSchema.parse>;
+type TaskStreamMirrorBatchEvent = Extract<TaskRealtimeEvent, { type: "task_stream_mirror_batch" }>;
+type TaskStreamMirrorOp = ReturnType<typeof taskStreamMirrorOpSchema.parse>;
+type TaskStreamMirrorPublishOp = ReturnType<typeof taskStreamMirrorPublishOpSchema.parse>;
 
 const STREAM_MIRROR_FLUSH_INTERVAL_MS = 1000;
 const STREAM_MIRROR_MAX_REPLAY_BATCHES = 60;
@@ -591,7 +597,11 @@ export class TaskRealtimeBus {
     const coalesced: TaskStreamMirrorPublishOp[] = [];
     for (const op of ops) {
       const previous = coalesced[coalesced.length - 1];
-      if (this.canMergeTextChunk(previous, op)) {
+      if (
+        op.kind === "stream_event" &&
+        typeof op.event.content === "string" &&
+        this.canMergeTextChunk(previous, op)
+      ) {
         coalesced[coalesced.length - 1] = {
           kind: "stream_event",
           event: {
@@ -622,6 +632,7 @@ export class TaskRealtimeBus {
       if (
         op.kind !== "stream_event" ||
         (op.event.type !== "agent_message_chunk" && op.event.type !== "agent_thought_chunk") ||
+        typeof op.event.content !== "string" ||
         op.event.content.length <= STREAM_MIRROR_TEXT_OP_MAX_CHARS
       ) {
         splitOps.push(op);

@@ -18,8 +18,7 @@ import {
 import { loadWindow, type WindowBootstrapOptions } from "./desktopHostProcess.js";
 import {
   buildWindowsTitleBarOverlayForZoomLevel,
-  hasCustomWindowsControls,
-  registerCustomWindowsControls,
+  buildWindowsWindowOptions,
   MACOS_TRAFFIC_LIGHT_BASE_POSITION,
   syncWindowControlsOverlayForZoomLevel,
 } from "./desktopWindowButtonPosition.js";
@@ -56,7 +55,7 @@ function isLinuxDesktopWindow() {
   return process.platform === "linux";
 }
 
-function buildDesktopWindowVisualOptions() {
+function buildDesktopWindowVisualOptions(zoomLevel: number) {
   if (process.platform === "darwin") {
     return {
       backgroundColor: "#00000000",
@@ -68,12 +67,7 @@ function buildDesktopWindowVisualOptions() {
   }
 
   if (process.platform === "win32") {
-    return {
-      backgroundColor: "#00000000",
-      // Windows 窗口操作由 renderer 绘制，禁用原生标题栏，避免出现两套按钮。
-      frame: false,
-      backgroundMaterial: "acrylic" as const,
-    };
+    return buildWindowsWindowOptions(zoomLevel, getWindowOverlayTheme());
   }
 
   return {
@@ -132,11 +126,7 @@ export function applyWindowsTitleBarTheme(
   targetWindow: BrowserWindow,
   theme: DesktopTitleBarTheme,
 ) {
-  if (
-    process.platform !== "win32" ||
-    targetWindow.isDestroyed() ||
-    hasCustomWindowsControls(targetWindow)
-  ) {
+  if (process.platform !== "win32" || targetWindow.isDestroyed()) {
     return;
   }
 
@@ -182,6 +172,11 @@ function attachWindowsWindowRepaint(targetWindow: BrowserWindow) {
     // Windows Acrylic 窗口 hide 到托盘后再次 show 时可能继续复用失效的合成 surface，
     // renderer 与 host 仍存活但窗口只剩宿主底色；复用 resize 的有界双帧重绘，不 reload renderer 或会话。
     scheduleRepaint();
+  });
+  targetWindow.once("closed", () => {
+    // 关闭时取消待执行重绘，避免定时器继续持有已销毁窗口。
+    if (pendingRepaintTimer !== null) clearTimeout(pendingRepaintTimer);
+    pendingRepaintTimer = null;
   });
 }
 
@@ -402,7 +397,7 @@ export function createBrowserWindow(options: {
     icon: options.iconPath,
     // Linux frameless 后部分桌面环境仍可能显示 Electron 原生菜单栏，自动隐藏避免顶部出现两套菜单。
     autoHideMenuBar: isLinuxDesktopWindow(),
-    ...buildDesktopWindowVisualOptions(),
+    ...buildDesktopWindowVisualOptions(initialDesktopZoomLevel),
     webPreferences: {
       preload: options.preloadPath,
       contextIsolation: true,
@@ -420,7 +415,6 @@ export function createBrowserWindow(options: {
   // 缩放命令原本只改当前运行窗口，没有在重启后恢复。
   // 创建窗口时由 main 进程先应用 setting.json 中的桌面缩放档位，同时覆盖 Chromium 可能残留的 per-host zoom。
   win.webContents.setZoomFactor(initialDesktopZoomFactor);
-  if (process.platform === "win32") registerCustomWindowsControls(win);
   syncWindowControlsOverlayForZoomLevel(win, initialDesktopZoomLevel);
 
   if (initialWindowSize.maximized) {

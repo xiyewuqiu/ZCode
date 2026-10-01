@@ -390,6 +390,8 @@ export interface EmbeddedBrowserDataClearResult {
 }
 
 export interface WindowControlsOverlayMetrics {
+  /** 本窗口由系统绘制窗控；renderer 仅保留避让区。缺省使用平台原有自绘行为。 */
+  nativeWindowControls?: boolean;
   leftPaddingPx?: number;
   rightPaddingPx?: number;
   titleBarHeightPx?: number;

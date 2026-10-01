@@ -147,8 +147,7 @@ import {
   resolveConversationShareBackgroundScrollLocked,
   resolveConversationShareSelectionPanelVisible,
 } from "@/v4/conversationShareModePolicy.js";
-import { buildConversationTurnRenderUnits } from "@/v4/conversationTurnRenderUnits.js";
-import { buildConversationTurnNavigatorItems } from "@/v4/conversationTurnNavigatorHelpers.js";
+import { useConversationShareModel } from "@/v4/useConversationShareModel.js";
 import { SessionPluginReferenceIconBoundary } from "@/v4/SessionPluginReferenceIconProvider.js";
 import {
   resolveConversationStatusPanelVariant,
@@ -632,44 +631,26 @@ export function SessionPane({
     enabled: shareSelectionPanelVisible,
     onDismiss: dismissShareSelectionPanel,
   });
-  const shareRenderUnits = useMemo(
-    () => buildConversationTurnRenderUnits(snapshot?.rows.window ?? []),
-    [snapshot?.rows.window],
-  );
-  const shareItems = useMemo(
-    () =>
-      buildConversationTurnNavigatorItems(shareRenderUnits, {
-        assistantEmptyPreview: intl.formatMessage({
-          id: "chat.turnNavigator.emptyAssistant",
-        }),
-        assistantRunningPreview: intl.formatMessage({
-          id: "chat.turnNavigator.runningAssistant",
-        }),
-        userFallbackPreview: intl.formatMessage({
-          id: "chat.turnNavigator.userFallback",
-        }),
-      }),
-    [intl, shareRenderUnits],
-  );
-  const eligibleShareItems = useMemo(
-    () => shareItems.filter((item) => !item.isRunning),
-    [shareItems],
-  );
-  const eligibleShareRowIds = useMemo(
-    () => new Set(eligibleShareItems.map((item) => item.rowId)),
-    [eligibleShareItems],
-  );
+  const {
+    items: shareItems,
+    eligibleItems: eligibleShareItems,
+    eligibleRowIds: eligibleShareRowIds,
+    availableTurns: availableShareTurns,
+    eligibleProductTurnIds: eligibleShareProductTurnIds,
+  } = useConversationShareModel({
+    enabled: shareActive,
+    rows: snapshot?.rows.window,
+    scopeKey: JSON.stringify([
+      workspaceIdentity?.trim() || workspacePath,
+      remoteSessionId,
+      sessionId,
+      snapshot?.logEpoch,
+    ]),
+  });
   useEffect(() => {
     if (!sessionId || !shareActive) return;
-    const rowsById = new Map((snapshot?.rows.window ?? []).map((row) => [row.rowId, row]));
-    syncAvailableTurns(
-      sessionId,
-      eligibleShareItems.flatMap((item) => {
-        const productTurnId = rowsById.get(item.rowId)?.productTurnId;
-        return productTurnId ? [{ rowId: item.rowId, productTurnId }] : [];
-      }),
-    );
-  }, [eligibleShareItems, sessionId, shareActive, snapshot?.rows.window, syncAvailableTurns]);
+    syncAvailableTurns(sessionId, availableShareTurns);
+  }, [availableShareTurns, sessionId, shareActive, syncAvailableTurns]);
   const selectedShareRowIds = useMemo(
     () =>
       new Set(
@@ -736,16 +717,6 @@ export function SessionPane({
       workspacePath,
     ],
   );
-  const eligibleShareProductTurnIds = useMemo(() => {
-    const rowsById = new Map((snapshot?.rows.window ?? []).map((row) => [row.rowId, row]));
-    const seen = new Set<string>();
-    return eligibleShareItems.flatMap((item) => {
-      const productTurnId = rowsById.get(item.rowId)?.productTurnId;
-      if (!productTurnId || seen.has(productTurnId)) return [];
-      seen.add(productTurnId);
-      return [productTurnId];
-    });
-  }, [eligibleShareItems, snapshot?.rows.window]);
   const sharePreflightCacheRef = useRef(new Map<string, ConversationShareTurnPreflightResult>());
   // 传输类失败会被按 turn 缓存成阻断项，仅靠选择变化无法再次触发 RPC；
   // 重试 token 变化时清缓存并重新发起，避免一次网络抖动把用户卡死在选择阶段。
@@ -3890,7 +3861,8 @@ export function SessionPane({
     controlLastError && controlLastErrorKey && !dismissedErrorKeys.includes(controlLastErrorKey)
       ? toComposerUiError(snapshot?.sessionId ?? sessionId, controlLastError)
       : null;
-  const composerError = draftModelReadinessError ?? sendSubmissionError ?? projectedComposerError;  useEffect(() => {
+  const composerError = draftModelReadinessError ?? sendSubmissionError ?? projectedComposerError;
+  useEffect(() => {
     setSendSubmissionError(null);
   }, [sessionId]);
   const handleDismissComposerError = useCallback(() => {
@@ -4283,11 +4255,7 @@ export function SessionPane({
       externalTextInsertRequest={focused && sessionId === null ? composerTextInsertRequest : null}
       onExternalTextInsertApplied={handleExternalTextInsertApplied}
       autoFocusEnabled={focused}
-      disabled={
-        connecting ||
-        draftRuntimeRebuilding ||
-        queueEditActiveForCurrentComposer
-      }
+      disabled={connecting || draftRuntimeRebuilding || queueEditActiveForCurrentComposer}
       workspacePath={workspacePath}
       workspaceIdentity={workspaceIdentity}
       remoteSessionId={remoteSessionId ?? undefined}

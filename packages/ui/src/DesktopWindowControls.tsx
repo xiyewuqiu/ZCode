@@ -9,6 +9,28 @@ import { logger } from "@/logger.js";
 
 export function DesktopWindowControls() {
   const platform = usePlatform();
+  const [overlay, setOverlay] = useState(() => platform.getWindowControlsOverlayMetrics?.());
+  useEffect(() => {
+    const unsubscribe = platform.onWindowControlsOverlayChanged?.(setOverlay);
+    setOverlay(platform.getWindowControlsOverlayMetrics?.());
+    return unsubscribe;
+  }, [platform]);
+  if (overlay?.nativeWindowControls) {
+    // 统一四个页面入口的避让区；能力来自 preload 同步初态，首帧不闪出第二套按钮。
+    return (
+      <div
+        data-testid="native-window-controls-spacer"
+        aria-hidden="true"
+        className="h-12 shrink-0 pointer-events-none"
+        style={{ width: overlay.rightPaddingPx ?? 136 }}
+      />
+    );
+  }
+  return <CustomDesktopWindowControls />;
+}
+
+function CustomDesktopWindowControls() {
+  const platform = usePlatform();
   const { intl } = useZCodeIntl();
   const [maximized, setMaximized] = useState(false);
   useEffect(() => {

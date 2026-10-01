@@ -1,0 +1,24 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "composite": false,
+    "incremental": false,
+    "noEmit": true,
+    "rootDir": "..",
+    "types": ["node", "vite/client"]
+  },
+  "include": [
+    "../src/**/*.d.ts",
+    "./longConversation.test.ts",
+    "./conversationPreview.test.ts",
+    "./conversationOutline.test.ts",
+    "./visibleProjection.test.ts",
+    "./browser/**/*.tsx"
+  ],
+  "references": [
+    { "path": "../../provider" },
+    { "path": "../../shared" },
+    { "path": "../../services" },
+    { "path": "../../rpc" }
+  ]
+}

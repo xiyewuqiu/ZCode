@@ -912,7 +912,17 @@ function syncCloseToTrayOnWindows(value: unknown) {
   logger.info(`[settings] closeToTrayOnWindows=${value}`);
 }
 
-function syncImmediateAppSettings(patch: Partial<AppSettings>) {
+function syncImmediateAppSettings(
+  patch: Partial<
+    Pick<
+      AppSettings,
+      | "closeToTrayOnWindows"
+      | "keepAwakeWhileRunning"
+      | "receivePreviewUpdates"
+      | "shortcutBindings"
+    >
+  >,
+) {
   syncCloseToTrayOnWindows(patch.closeToTrayOnWindows);
 
   if (typeof patch.keepAwakeWhileRunning === "boolean") {
@@ -952,9 +962,6 @@ async function getAutoUpdatePreferences() {
 
 async function setAutoDownloadAndInstallUpdates(enabled: boolean) {
   await mainSettingService.update({
-    autoDownloadAndInstallUpdates: enabled,
-  });
-  syncImmediateAppSettings({
     autoDownloadAndInstallUpdates: enabled,
   });
   for (const win of getApplicationWindowsExcludingCuaIndicator()) {
@@ -1705,6 +1712,8 @@ function createWindowInstance(startupBootstrap: StartupWindowBootstrap = {}) {
             runBrowserCommandOnView({ win: browserWin, ...request }),
         },
         {
+          // 第五个参数是唯一 options 入口；旧的第六参被 JS 忽略，预热端口无法交给 dom-ready。
+          ...spawnOptions,
           taskRealtime: {
             workspaceKeys: windowWorkspaceMap.get(win.id) ?? [],
             onHostId: (hostId) => {
@@ -1712,7 +1721,6 @@ function createWindowInstance(startupBootstrap: StartupWindowBootstrap = {}) {
             },
           },
         },
-        spawnOptions,
       ),
     disposeHostProcess: (child, label, forceKillDelayMs) =>
       disposeHostProcess(
@@ -1748,7 +1756,7 @@ function createWindowInstance(startupBootstrap: StartupWindowBootstrap = {}) {
     initialWindowSize: currentDesktopWindowSize,
     currentApplicationLocale: () => currentApplicationLocale,
     resolveBrowserViewOwner: (webContentsId) =>
-      browserGuestManager.getTabOwnerByWebContentsId(webContentsId),
+      browserGuestManager.getTabOwnerByWebContentsId(webContentsId) ?? undefined,
     persistWindowSize: async (state) => {
       currentDesktopWindowSize = state;
       await mainSettingService.update({ desktopWindowSize: state });
@@ -2230,7 +2238,7 @@ app.whenReady().then(async () => {
   });
 
   const protocolUrl = extractDeepLinkUrlFromArgs(process.argv);
-  if (startupDeepLinkConsumptionGate.shouldHandleReadyProtocolUrl(protocolUrl)) {
+  if (protocolUrl && startupDeepLinkConsumptionGate.shouldHandleReadyProtocolUrl(protocolUrl)) {
     handleDeepLink(protocolUrl, logger, {
       confirmationCopy: resolveExternalWorkspaceConfirmationCopy(),
       resolveApplicationWindow: () => getApplicationWindowsExcludingCuaIndicator()[0] ?? null,

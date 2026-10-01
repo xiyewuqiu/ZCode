@@ -1,3 +1,4 @@
+import { usePrefersReducedMotion } from "@/hooks/usePrefersReducedMotion.js";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 
@@ -56,36 +57,6 @@ function shouldRefreshQueuedSummaryContent(
     current.key === next.key &&
     (current.trailingText !== next.trailingText || current.refreshVersion !== next.refreshVersion)
   );
-}
-
-function usePrefersReducedMotion() {
-  const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
-
-  useEffect(() => {
-    if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
-      return;
-    }
-
-    const query = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const update = () => {
-      setPrefersReducedMotion(query.matches);
-    };
-    update();
-
-    if (typeof query.addEventListener === "function") {
-      query.addEventListener("change", update);
-      return () => {
-        query.removeEventListener("change", update);
-      };
-    }
-
-    query.addListener(update);
-    return () => {
-      query.removeListener(update);
-    };
-  }, []);
-
-  return prefersReducedMotion;
 }
 
 export function QueuedSummaryContent({

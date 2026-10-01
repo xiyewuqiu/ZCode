@@ -141,6 +141,7 @@ function readCurrentWindowControlsOverlayReadyPayload(): WindowControlsOverlayRe
         }
       : process.platform === "win32"
         ? {
+            nativeWindowControls: true,
             rightPaddingPx: Math.round(WINDOWS_WINDOW_CONTROLS_BASE_RIGHT_PADDING_PX / zoomFactor),
             titleBarHeightPx: Math.round(WINDOWS_TITLE_BAR_HEIGHT_PX * zoomFactor),
           }

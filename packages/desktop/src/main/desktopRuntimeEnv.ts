@@ -10,7 +10,6 @@ import {
   ZCODE_AGENT_RUNTIME,
   ZCODE_DYNAMIC_WORKFLOW_MODE_ENV,
   ZCODE_ENV,
-  ZCODE_PRODUCT_FLAVOR,
   ZCODE_RUNTIME_ENV_KEY,
   ZCODE_VERSION,
   buildZCodeToolEnvPassthroughEnv,
@@ -40,9 +39,6 @@ const isLocalDevelopmentRuntime = !isElectronAppPackaged();
 export const desktopRuntimeEnv: ZCodeRuntimeEnv = isLocalDevelopmentRuntime
   ? "development"
   : "production";
-// 身份看编译期 flavor 而不是 ZCODE_ENV：ZCODE_PREVIEW_IDENTITY=1 的生产后端构建同样是 Preview，
-// 需要独立的应用名、Electron 数据目录和 Helper 安装子目录才能与正式版并排运行。
-const isPreviewPackagedRuntime = !isLocalDevelopmentRuntime && ZCODE_PRODUCT_FLAVOR === "preview";
 
 function readRuntimeEnvOverride(name: string): string | undefined {
   return process.env[name]?.trim() || undefined;
@@ -58,7 +54,7 @@ function isTruthyRuntimeEnvOverride(name: string): boolean {
 // 这里允许测试显式隔离运行时身份，正常桌面/远控路径保持原来的默认值。
 export const runtimeApplicationName =
   readRuntimeEnvOverride("ZCODE_DESKTOP_APPLICATION_NAME") ??
-  (isLocalDevelopmentRuntime ? "YCode Dev" : isPreviewPackagedRuntime ? "YCode Preview" : "YCode");
+  (isLocalDevelopmentRuntime ? "YCode Dev" : "YCode");
 // Electron 的 app.getPath("home") 不一定跟随测试进程里的 HOME 覆盖。
 // e2e 默认工作区依赖 home 路径，因此提供显式覆盖，避免测试写到开发者真实 ~/ZCodeProject。
 export const runtimeHomePath = readRuntimeEnvOverride("ZCODE_DESKTOP_HOME_DIR");
@@ -435,11 +431,11 @@ function resolveWindowsAppInstallDirForDataBaseDirGuard(
 }
 
 /**
- * Dynamic Workflow 灰度的本地覆盖按构建档位分三层
+ * 当前产品身份固定为 production，与 shared/env 和打包脚本保持一致。
+ * Dynamic Workflow 灰度的本地覆盖按是否打包处理：
  *
  *   - 未打包 dev：透传 shell 里的合法取值，方便手工切档；非法值直接丢弃而不是转发给 Host，
  *     Host 因此不必再判一次来源；
- *   - 打包 preview：固定写入 `alwaysOn`，忽略 shell，preview 用户始终拥有该功能；
  *   - 打包 production：不写入，且继承值必须被删除，否则本机环境变量就能自行打开灰度。
  * Main 是唯一决策者：对这个键只有「写」和「删」两种动作，绝不原样透传，
  * Host 端的 resolveDynamicWorkflowClientConfig 才能无条件相信读到的值。
@@ -447,14 +443,10 @@ function resolveWindowsAppInstallDirForDataBaseDirGuard(
 function resolveDynamicWorkflowModeHostEnv(options: {
   inheritedValue: string | undefined;
   isPackaged: boolean;
-  isPreview: boolean;
 }): Record<string, string> {
   if (!options.isPackaged) {
     const mode = normalizeDynamicWorkflowMode(options.inheritedValue);
     return mode ? { [ZCODE_DYNAMIC_WORKFLOW_MODE_ENV]: mode } : {};
-  }
-  if (options.isPreview) {
-    return { [ZCODE_DYNAMIC_WORKFLOW_MODE_ENV]: "alwaysOn" };
   }
   return {};
 }
@@ -524,9 +516,8 @@ export function buildHostProcessEnv(hostProcessLocalEnv: Record<string, string>)
   const dynamicWorkflowModeHostEnv = resolveDynamicWorkflowModeHostEnv({
     inheritedValue: rawInheritedEnv[ZCODE_DYNAMIC_WORKFLOW_MODE_ENV],
     isPackaged: packagedDesktop,
-    isPreview: isPreviewPackagedRuntime,
   });
-  // 三层里有两层不写这个键，空对象无法覆盖 inheritedEnv，所以先无条件删掉继承值再按决策 spread 回去。
+  // 空对象无法覆盖 inheritedEnv，所以先无条件删掉继承值再按决策 spread 回去。
   // 少了这一行，production 包和 dev 的非法取值都会原样穿透到 Host。
   delete inheritedEnv[ZCODE_DYNAMIC_WORKFLOW_MODE_ENV];
 
@@ -541,9 +532,6 @@ export function buildHostProcessEnv(hostProcessLocalEnv: Record<string, string>)
     // 显式注入编译期产品身份，保证主进程与 host 的身份语义一致；地址独立解析。
     // inheritedEnv 从 .env 通用变量补齐 ZCode/ZAI 链接，未覆盖时统一使用线上默认值。
     ZCODE_ENV,
-    // Preview 与生产版共享任务、配置和凭据，但不同版本的 Helper 不能互相覆盖或触发降级保护。
-    // 只隔离 computer-use 下的运行组件，不改写 ZCODE_HOME / ZCODE_DATA_BASE_DIR 业务数据根。
-    ...(isPreviewPackagedRuntime ? { ZCODE_CUA_HELPER_INSTALL_VARIANT: "preview" } : {}),
     // Dynamic Workflow 灰度的本地覆盖：Main 决策后写入，production 包为空对象（继承值已在上面删除）。
     ...dynamicWorkflowModeHostEnv,
     // 模型请求默认 header 由 agent 进程构造，过去只继承 shell env 导致桌面启动时拿不到 app 版本。

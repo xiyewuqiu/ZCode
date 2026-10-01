@@ -19,6 +19,8 @@ function resolveDesktopTrayIconPath() {
 }
 
 export function createWindowsDesktopTray(options: {
+  /** 宿主可提供已解析的图标路径；窗口测试与独立入口无需猜测打包布局。 */
+  iconPath?: string;
   getLocale: () => Locale;
   showCurrentWindow: () => Promise<void> | void;
   executeDesktopCommand: (command: DesktopCommandId) => Promise<unknown>;
@@ -34,7 +36,7 @@ export function createWindowsDesktopTray(options: {
   }
 
   try {
-    desktopTray = new Tray(resolveDesktopTrayIconPath());
+    desktopTray = new Tray(options.iconPath ?? resolveDesktopTrayIconPath());
   } catch (error) {
     options.logger.warn("[desktop-tray] failed to create tray icon", error);
     return null;

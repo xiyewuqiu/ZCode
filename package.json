@@ -27,7 +27,7 @@
     "build:cua-driver": "node scripts/build-cua-driver.mjs",
     "pack:native-search": "node scripts/package-native-search-tools.mjs",
     "clean": "node scripts/clean.mjs",
-    "typecheck": "tsc -b packages/rpc packages/provider packages/provider-node packages/shared packages/services packages/client packages/server packages/zcode-server-cli packages/ui packages/web packages/desktop/tsconfig.host.json",
+    "typecheck": "tsc -b packages/rpc packages/provider packages/provider-node packages/shared packages/services packages/client packages/server packages/zcode-server-cli packages/ui packages/web packages/desktop/tsconfig.host.json && node scripts/typecheck-desktop.mjs",
     "bundle:desktop": "pnpm --filter @zcode/desktop run bundle --",
     "fmt": "oxfmt",
     "fmt:check": "oxfmt --check",

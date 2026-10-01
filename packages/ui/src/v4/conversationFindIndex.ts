@@ -85,19 +85,23 @@ export function buildConversationFindIndex(
   options: { projectAssistantCodeComments?: boolean } = {},
 ): ConversationFindIndex {
   const normalizedQuery = normalizeConversationFindQuery(query);
-  const targets: ConversationFindTarget[] = [];
-  units.forEach((unit, unitIndex) =>
-    addTargetsForUnit(targets, unit, unitIndex, options.projectAssistantCodeComments === true),
-  );
-
+  // 查找未开启时只统计行，不能投影/读取全部正文（长会话每次流式更新都会经过这里）。
   if (!normalizedQuery) {
     return {
       query: normalizedQuery,
       matches: [],
       matchCount: 0,
-      loadedRowCount: targets.length,
+      loadedRowCount: units.reduce(
+        (count, unit) => count + unit.visibleUserInputs.length + unit.assistantTextRows.length,
+        0,
+      ),
     };
   }
+
+  const targets: ConversationFindTarget[] = [];
+  units.forEach((unit, unitIndex) =>
+    addTargetsForUnit(targets, unit, unitIndex, options.projectAssistantCodeComments === true),
+  );
 
   const matches: ConversationFindMatch[] = [];
   for (const target of targets) {

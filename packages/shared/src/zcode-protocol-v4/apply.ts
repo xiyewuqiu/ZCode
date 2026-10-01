@@ -8,12 +8,12 @@ import type { ConversationRow } from "./rows.js";
 import type { StreamablePath } from "./core.js";
 
 /**
- * 仅供服务端在未发布的候选快照内批量归约使用。
+ * 仅供未发布的候选快照内批量归约使用。
  *
  * 冷恢复逐条调用不可变 apply 时，每次 append/upsert 都复制随历史增长的
  * rows.window，并再次线性查找 rowId，长会话因此退化为 O(N²)。候选快照尚未对外可见，
- * 可以在这条明确的隔离边界内复用同一份数组和增量索引；普通客户端仍使用上面的
- * 不可变语义，避免已发布快照被后续事件篡改。
+ * 可以在这条明确的隔离边界内复用同一份数组和增量索引；客户端批量入口也必须
+ * 先创建候选副本，避免已发布快照被后续事件篡改。
  */
 export interface MutableConversationSnapshotAccumulator {
   snapshot: ConversationSnapshot;
@@ -121,16 +121,25 @@ export function applyConversationDelta(
   }
 }
 
-/** 按序应用一串 delta。 */
+/** 按序应用一帧 delta，候选快照仅在整个批次完成后发布。 */
 export function applyConversationDeltas(
   snapshot: ConversationSnapshot,
   deltas: readonly ConversationDelta[],
 ): ConversationSnapshot {
+  if (deltas.length === 1) return applyConversationDelta(snapshot, deltas[0]!);
   let current = snapshot;
+  let accumulator: MutableConversationSnapshotAccumulator | undefined;
   for (const delta of deltas) {
-    current = applyConversationDelta(current, delta);
+    // 多条 delta 逐条复制/查找整个历史会变成 O(N*D)。首次行操作才复制一次，
+    // 后续复用候选窗口的索引；空批次和纯状态帧保持 rows 引用，避免无关 UI 更新。
+    if (!accumulator && delta.op === "state.updated") {
+      current = applyConversationDelta(current, delta);
+      continue;
+    }
+    accumulator ??= createMutableConversationSnapshotAccumulator(current);
+    applyConversationDeltaMutable(accumulator, delta);
   }
-  return current;
+  return accumulator?.snapshot ?? current;
 }
 
 /**

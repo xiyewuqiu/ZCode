@@ -1,10 +1,18 @@
 import { useEffect, useRef, useState } from "react";
 import type { PanelImperativeHandle } from "react-resizable-panels";
 
-const PANEL_FLEX_GROW_TRANSITION_CLASSES = ["transition-[flex-grow]", "duration-200", "ease-out"];
+const PANEL_FLEX_GROW_TRANSITION_CLASSES = [
+  "transition-[flex-grow]",
+  "duration-200",
+  "ease-out",
+  "motion-reduce:transition-none",
+];
 const PANEL_FLEX_GROW_TRANSITION_FALLBACK_MS = 240;
 
 function enablePanelFlexGrowTransition(panelElement: HTMLElement): () => void {
+  // 每次交互读取系统设置；不能缓存初次挂载的偏好，否则 Windows 运行中关闭动画后仍会动。
+  // CSS 媒体变体同时处理过渡进行中改变偏好的情况。
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return () => {};
   panelElement.classList.add(...PANEL_FLEX_GROW_TRANSITION_CLASSES);
 
   let finished = false;

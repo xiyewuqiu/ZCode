@@ -80,30 +80,35 @@ export function useConversationTimelineFind({
   const codeCommentCardsEnabled = useAssistantCodeCommentFeatureEnabled();
   const findStable = sessionPhase !== "running" && sessionPhase !== "prewarming";
   const unitFindCacheRef = useRef(
-    new Map<string, { source: ConversationFindMatch[]; loadedRowCount: number }>(),
+    new WeakMap<
+      ConversationTurnRenderUnit,
+      { source: ConversationFindMatch[]; loadedRowCount: number }
+    >(),
   );
   const unitFindCacheQueryRef = useRef("");
   const conversationFindIndex = useMemo(() => {
     const query = conversationFindQuery;
     const normalizedQuery = query.trim().toLocaleLowerCase();
-    if (unitFindCacheQueryRef.current !== normalizedQuery) {
-      unitFindCacheRef.current.clear();
-      unitFindCacheQueryRef.current = normalizedQuery;
+    const queryKey = `${codeCommentCardsEnabled}:${normalizedQuery}`;
+    if (unitFindCacheQueryRef.current !== queryKey) {
+      unitFindCacheRef.current = new WeakMap();
+      unitFindCacheQueryRef.current = queryKey;
     }
+    if (!normalizedQuery) return buildConversationFindIndex(renderUnits, "");
     const matches: ConversationFindMatch[] = [];
     let loadedRowCount = 0;
     // streaming delta 只会改变当前 running turn；稳定 turn 的全文索引可复用，
     // 避免每个 token 都扫描整段历史，导致长会话 renderer 主线程被持续占满。
     renderUnits.forEach((unit, unitIndex) => {
-      const cacheKey = `${normalizedQuery}:${codeCommentCardsEnabled}:${unit.key}`;
-      const cached = !unit.isRunning ? unitFindCacheRef.current.get(cacheKey) : undefined;
+      // turn key 不代表内容版本；补页和同 ID upsert 必须重建索引，旧对象随 GC 释放。
+      const cached = unitFindCacheRef.current.get(unit);
       const unitIndexResult = cached
         ? { matches: cached.source, loadedRowCount: cached.loadedRowCount }
         : buildConversationFindIndex([unit], query, {
             projectAssistantCodeComments: codeCommentCardsEnabled,
           });
-      if (!unit.isRunning && !cached) {
-        unitFindCacheRef.current.set(cacheKey, {
+      if (!cached) {
+        unitFindCacheRef.current.set(unit, {
           source: unitIndexResult.matches,
           loadedRowCount: unitIndexResult.loadedRowCount,
         });
@@ -135,6 +140,8 @@ export function useConversationTimelineFind({
   const searchResultAppliedRequestRef = useRef<number | null>(null);
   const searchResultScrollRequestRef = useRef<number | null>(null);
   const searchResultCleanupTimerRef = useRef<number | undefined>(undefined);
+  const findScrollCleanupRef = useRef<(() => void) | undefined>(undefined);
+  const searchResultScrollCleanupRef = useRef<(() => void) | undefined>(undefined);
   const activeFindMatch =
     resolvedFindActiveIndex >= 0
       ? (conversationFindIndex.matches[resolvedFindActiveIndex] ?? null)
@@ -142,6 +149,7 @@ export function useConversationTimelineFind({
 
   useEffect(() => {
     if (!conversationFindIndex.query) {
+      findScrollCleanupRef.current?.();
       findActiveKeyRef.current = null;
       lastFindQueryRef.current = "";
       lastFindScrollKeyRef.current = "";
@@ -229,7 +237,8 @@ export function useConversationTimelineFind({
       const highlightScrollKey = `${conversationFindNavigationRequestId}:${conversationFindIndex.query}:${activeFindMatch?.rowId ?? "none"}:${activeFindMatch?.rowMatchIndex ?? -1}:${activeFindMatch?.unitIndex ?? -1}`;
       if (activeRange && lastFindHighlightScrollKeyRef.current !== highlightScrollKey) {
         lastFindHighlightScrollKeyRef.current = highlightScrollKey;
-        scrollConversationFindRangeIntoView(activeRange);
+        findScrollCleanupRef.current?.();
+        findScrollCleanupRef.current = scrollConversationFindRangeIntoView(activeRange);
       }
     });
 
@@ -281,6 +290,7 @@ export function useConversationTimelineFind({
   useEffect(() => {
     const request = searchResultHighlightRequest;
     if (!request || !findStable) {
+      searchResultScrollCleanupRef.current?.();
       clearSearchResultHighlight();
       searchResultAppliedRequestRef.current = null;
       searchResultScrollRequestRef.current = null;
@@ -332,11 +342,13 @@ export function useConversationTimelineFind({
         return;
       }
       searchResultAppliedRequestRef.current = request.requestId;
-      scrollConversationFindRangeIntoView(range);
+      searchResultScrollCleanupRef.current?.();
+      searchResultScrollCleanupRef.current = scrollConversationFindRangeIntoView(range);
       if (searchResultCleanupTimerRef.current !== undefined) {
         window.clearTimeout(searchResultCleanupTimerRef.current);
       }
       searchResultCleanupTimerRef.current = window.setTimeout(() => {
+        searchResultScrollCleanupRef.current?.();
         clearSearchResultHighlight();
         onSearchResultHighlightDone?.(request.requestId);
         searchResultCleanupTimerRef.current = undefined;
@@ -361,9 +373,20 @@ export function useConversationTimelineFind({
     return () => {
       clearConversationFindHighlights();
       clearSearchResultHighlight();
+      findScrollCleanupRef.current?.();
+      searchResultScrollCleanupRef.current?.();
       if (searchResultCleanupTimerRef.current !== undefined) {
         window.clearTimeout(searchResultCleanupTimerRef.current);
       }
     };
   }, []);
+
+  // 在高亮 rAF 前挂载命中工作项；查询清空后不继续保留离屏 DOM。
+  return (
+    activeFindMatch?.rowId ??
+    (searchResultHighlightRequest && findStable
+      ? resolveSearchResultHighlightMatch(searchResultFindIndex, searchResultHighlightRequest)
+          ?.rowId
+      : undefined)
+  );
 }

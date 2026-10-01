@@ -174,7 +174,7 @@ function pruneCrashDumpArchive(
   const dumpsToDelete: typeof dumps = [];
 
   while (keptCount > 1 && (keptCount > maxFiles || keptBytes > maxTotalBytes)) {
-    const dump = dumps[keptCount - 1];
+    const dump = dumps[keptCount - 1]!;
     dumpsToDelete.push(dump);
     keptCount -= 1;
     keptBytes -= dump.size;

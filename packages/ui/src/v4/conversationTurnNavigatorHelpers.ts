@@ -1,4 +1,5 @@
 import type { ConversationTurnRenderUnit } from "@/v4/conversationTurnRenderUnits.js";
+import { buildConversationPreview } from "@/v4/conversationPreviewText.js";
 
 export type ConversationTurnNavigatorAssistantPreviewKind = "empty" | "running" | "text";
 
@@ -7,6 +8,7 @@ export interface ConversationTurnNavigatorItem {
   turnId: string;
   unitIndex: number;
   rowId: number;
+  userText: string;
   userPreview: string;
   assistantPreview: string;
   assistantPreviewKind: ConversationTurnNavigatorAssistantPreviewKind;
@@ -99,39 +101,8 @@ export function resolveConversationTurnNavigatorHydrationRetryDelayMs(
 const DEFAULT_MAX_PREVIEW_CHARS = 220;
 const DEFAULT_MAX_PREVIEW_PARAGRAPHS = 2;
 
-function normalizePreviewParagraphs(text: string, maxParagraphs: number): string[] {
-  return text
-    .trim()
-    .split(/\n\s*\n/u)
-    .map((paragraph) => paragraph.replace(/\s+/gu, " ").trim())
-    .filter(Boolean)
-    .slice(0, Math.max(1, maxParagraphs));
-}
-
-function truncatePreview(text: string, maxChars: number): string {
-  const normalizedMaxChars = Math.max(8, maxChars);
-  if (text.length <= normalizedMaxChars) {
-    return text;
-  }
-  return `${text.slice(0, normalizedMaxChars - 3).trimEnd()}...`;
-}
-
-function buildPreviewText({
-  texts,
-  fallback,
-  maxPreviewChars,
-  maxPreviewParagraphs,
-}: {
-  texts: readonly string[];
-  fallback: string;
-  maxPreviewChars: number;
-  maxPreviewParagraphs: number;
-}): string {
-  const paragraphs = normalizePreviewParagraphs(texts.join("\n\n"), maxPreviewParagraphs);
-  if (paragraphs.length === 0) {
-    return fallback;
-  }
-  return truncatePreview(paragraphs.join("\n"), maxPreviewChars);
+function* assistantTexts(unit: ConversationTurnRenderUnit) {
+  for (const row of unit.assistantTextRows) yield row.text;
 }
 
 function buildAssistantPreview(
@@ -143,11 +114,11 @@ function buildAssistantPreview(
 } {
   if (unit.assistantTextRows.length > 0) {
     return {
-      assistantPreview: buildPreviewText({
-        texts: unit.assistantTextRows.map((row) => row.text),
+      assistantPreview: buildConversationPreview({
+        texts: assistantTexts(unit),
         fallback: options.assistantEmptyPreview,
-        maxPreviewChars: options.maxPreviewChars,
-        maxPreviewParagraphs: options.maxPreviewParagraphs,
+        maxChars: options.maxPreviewChars,
+        maxParagraphs: options.maxPreviewParagraphs,
       }),
       assistantPreviewKind: "text",
     };
@@ -195,11 +166,12 @@ export function buildConversationTurnNavigatorItems(
       turnId: unit.turnId,
       unitIndex,
       rowId: row.rowId,
-      userPreview: buildPreviewText({
+      userText: row.text,
+      userPreview: buildConversationPreview({
         texts: [row.text],
         fallback: resolvedOptions.userFallbackPreview,
-        maxPreviewChars: resolvedOptions.maxPreviewChars,
-        maxPreviewParagraphs: resolvedOptions.maxPreviewParagraphs,
+        maxChars: resolvedOptions.maxPreviewChars,
+        maxParagraphs: resolvedOptions.maxPreviewParagraphs,
       }),
       assistantPreview,
       assistantPreviewKind,

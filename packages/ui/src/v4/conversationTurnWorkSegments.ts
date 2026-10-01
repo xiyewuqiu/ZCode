@@ -10,6 +10,7 @@ import {
 } from "@/v4/conversationCuaGroups.js";
 import { buildConversationFlowItems } from "@/v4/conversationTurnFlowItems.js";
 import type { AssistantWorkRow, ConversationTurnFlowItem } from "@/v4/conversationTurnFlowItems.js";
+import type { ConversationTurnRenderUnit } from "@/v4/conversationTurnRenderUnits.js";
 
 export interface ConversationTurnWorkStatus {
   state: "running" | "completed" | "interrupted";
@@ -129,6 +130,49 @@ function resolveSegmentDurationMs(options: {
     return Math.max(0, options.nowMs - startedAt);
   }
   return undefined;
+}
+
+/** 时钟只更新运行段的耗时；不能每秒重新分类整轮工具、CUA 和历史正文。 */
+function refreshConversationWorkSegmentClock(
+  segments: ConversationTurnWorkSegment[] | undefined,
+  header: TurnHeaderRow | undefined,
+  nowMs: number | undefined,
+): ConversationTurnWorkSegment[] | undefined {
+  return segments?.map((segment, index) => {
+    if (segment.workStatus?.state !== "running") return segment;
+    const durationMs = resolveSegmentDurationMs({
+      header,
+      nowMs,
+      segmentIndex: index,
+      triggerRow: segment.triggerRow,
+      nextTriggerRow: segments[index + 1]?.triggerRow,
+      segmentRunning: true,
+      segmentCount: segments.length,
+    });
+    if (durationMs === segment.workStatus.durationMs) return segment;
+    return {
+      ...segment,
+      workStatus: { state: "running", ...(durationMs === undefined ? {} : { durationMs }) },
+    };
+  });
+}
+
+export function refreshConversationTurnClock(
+  unit: ConversationTurnRenderUnit,
+  nowMs: number | undefined,
+): ConversationTurnRenderUnit {
+  if (!unit.isRunning) return unit;
+  const durationMs = resolveConversationTurnWorkDurationMs(unit.header, { nowMs }, true);
+  return {
+    ...unit,
+    workStatus: resolveConversationTurnWorkStatus(
+      unit.header,
+      unit.assistantWorkRows,
+      true,
+      durationMs,
+    ),
+    workSegments: refreshConversationWorkSegmentClock(unit.workSegments, unit.header, nowMs),
+  };
 }
 
 export function buildConversationTurnWorkSegments(options: {

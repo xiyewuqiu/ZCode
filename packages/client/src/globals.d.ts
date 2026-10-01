@@ -1,5 +1,6 @@
 import type {
   DesktopCommandId,
+  IPlatformService,
   DesktopZoomState,
   DesktopWindowChromeState,
   DesktopTitleBarTheme,
@@ -53,7 +54,25 @@ import type {
  */
 declare global {
   interface Window {
-    zcode: {
+    zcode: Required<
+      Pick<
+        IPlatformService,
+        | "createTempTextAttachment"
+        | "loadMcpFromUserDirectory"
+        | "saveMcpToUserDirectory"
+        | "migrateLegacyCommonMcp"
+        | "onShareImport"
+        | "reportArmsCustomEvent"
+        | "reportLocalTtftBatch"
+        | "setShortcutRecordingActive"
+        | "onCloseActiveContextRequest"
+        | "onOpenFeedbackDialog"
+        | "onOpenTicketsPanel"
+        | "getWindowControlsOverlayMetrics"
+        | "onWindowControlsOverlayChanged"
+        | "getZCodeStdioTapDevState"
+      >
+    > & {
       connectRemote(
         options: RemoteTarget,
         requestId?: string,
@@ -70,7 +89,7 @@ declare global {
         remoteSessionId: string;
         workspacePath: string;
         workspaceIdentity?: string;
-      }): Promise<BrowserGuestAttachResult>;
+      }): Promise<void>;
       /** 释放当前窗口里的远程 session */
       disposeRemoteSession(sessionId: string): Promise<void>;
       /** 检查本机 Docker daemon 是否可用 */
@@ -229,7 +248,7 @@ declare global {
         remoteSessionId?: string;
         sessionId?: string;
         residencyGeneration?: number;
-      }): Promise<void>;
+      }): Promise<BrowserGuestAttachResult>;
       /** 重建 `<webview>` 前让 main 精确断开旧 guest 的 CDP。 */
       browserViewDetachGuest?(payload: { key: string; webContentsId: number }): Promise<boolean>;
       browserViewCloseTab?(payload: BrowserViewCloseTabRequest): Promise<void>;

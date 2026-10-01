@@ -9,6 +9,7 @@ import type {
   WorkflowLaunchMeta,
 } from "@zcode/shared/zcode-protocol-v4";
 import type { AssistantWorkRow, ConversationTurnFlowItem } from "@/v4/conversationTurnFlowItems.js";
+import { groupConversationRows, type DraftTurnRenderUnit } from "@/v4/conversationTurnDraft.js";
 import {
   isWorkflowLaunchUserInputRow,
   resolveWorkflowLaunchMeta,
@@ -17,6 +18,7 @@ import {
   buildConversationTurnWorkSegments,
   resolveConversationTurnWorkDurationMs,
   resolveConversationTurnWorkStatus,
+  refreshConversationTurnClock,
 } from "@/v4/conversationTurnWorkSegments.js";
 import type {
   ConversationTurnWorkSegment,
@@ -72,16 +74,6 @@ export interface ConversationTurnRenderUnit {
 interface BuildConversationTurnRenderUnitsOptions {
   nowMs?: number;
   sessionPhase?: SessionPhase;
-}
-
-interface DraftTurnRenderUnit {
-  key: string;
-  turnId: string;
-  header?: TurnHeaderRow;
-  userInputs: UserInputRow[];
-  assistantWorkRows: AssistantWorkRow[];
-  hookInvocations: HookInvocationRow[];
-  orderedRows: ConversationRow[];
 }
 
 function isAssistantTextRow(row: ConversationRow): row is AssistantTextRow {
@@ -357,20 +349,6 @@ function materializeDraftUnit(
   };
 }
 
-function createDraftUnit(turnId: string): DraftTurnRenderUnit {
-  return {
-    // cold snapshot 可能从同一 turn 的 assistant/tool 行中间截断，补到
-    // turnHeader 后首个可见 rowId 会变化。虚拟列表 key 必须只依赖协议稳定的 turnId，
-    // 否则补页会把原 turn 当成新节点重挂，丢失测高缓存和视口锚点。
-    key: turnId,
-    turnId,
-    userInputs: [],
-    assistantWorkRows: [],
-    hookInvocations: [],
-    orderedRows: [],
-  };
-}
-
 function shouldKeepRenderUnit(unit: ConversationTurnRenderUnit): boolean {
   // 隐形行清零后（投影不再产不可渲染 marker），任何工作行都可渲染；
   // 「哪些 marker 可渲染」不再是 UI 的判断。
@@ -435,47 +413,66 @@ function normalizeRenderUnitPosition(
   };
 }
 
-export function buildConversationTurnRenderUnits(
+interface CachedTurn {
+  draft: DraftTurnRenderUnit;
+  unit: ConversationTurnRenderUnit;
+  phase: SessionPhase | undefined;
+  nowMs: number | undefined;
+}
+
+function buildRenderUnits(
   rows: readonly ConversationRow[],
   options: BuildConversationTurnRenderUnitsOptions = {},
+  cache?: Map<string, CachedTurn>,
 ): ConversationTurnRenderUnit[] {
-  const units: DraftTurnRenderUnit[] = [];
-  const unitByTurnId = new Map<string, DraftTurnRenderUnit>();
+  const unitByTurnId = groupConversationRows(rows);
+  const units = [...unitByTurnId.values()];
 
-  const getOrCreateUnit = (turnId: string) => {
-    const existing = unitByTurnId.get(turnId);
-    if (existing) {
-      return existing;
+  const materializedUnits = units.map((draft, index) => {
+    const cached = cache?.get(draft.key);
+    // 每个 token 重建历史轮次会击穿 React.memo，并重复解析工具/CUA 内容。
+    // 按不可变行引用验证缓存，不能只认 turnId：补页、反馈与 rewind 都会改写旧轮。
+    if (
+      cached &&
+      cached.phase === options.sessionPhase &&
+      cached.unit.isLastTurn === (index === units.length - 1) &&
+      cached.draft.header === draft.header &&
+      cached.draft.orderedRows.length === draft.orderedRows.length &&
+      draft.orderedRows.every((row, rowIndex) => row === cached.draft.orderedRows[rowIndex])
+    ) {
+      if (cached.unit.isRunning && cached.nowMs !== options.nowMs) {
+        cached.unit = refreshConversationTurnClock(cached.unit, options.nowMs);
+        cached.nowMs = options.nowMs;
+      }
+      return cached.unit;
     }
-    const unit = createDraftUnit(turnId);
-    units.push(unit);
-    unitByTurnId.set(turnId, unit);
+    const unit = materializeDraftUnit(draft, index, units.length, options);
+    cache?.set(draft.key, { draft, unit, phase: options.sessionPhase, nowMs: options.nowMs });
     return unit;
-  };
-
-  for (const row of rows) {
-    const unit = getOrCreateUnit(row.turnId);
-    if (isTurnHeaderRow(row)) {
-      unit.header = row;
-      continue;
+  });
+  if (cache) {
+    for (const key of cache.keys()) {
+      if (!unitByTurnId.has(key)) cache.delete(key);
     }
-    unit.orderedRows.push(row);
-    if (isUserInputRow(row)) {
-      unit.userInputs.push(row);
-      continue;
-    }
-    if (isHookInvocationRow(row)) {
-      unit.hookInvocations.push(row);
-      continue;
-    }
-    unit.assistantWorkRows.push(row);
   }
-
-  const materializedUnits = units.map((unit, index) =>
-    materializeDraftUnit(unit, index, units.length, options),
-  );
   const keptUnits = materializedUnits.filter(shouldKeepRenderUnit);
   return keptUnits.map((unit, index) =>
     normalizeRenderUnitPosition(unit, index, keptUnits.length, options),
   );
+}
+
+export function buildConversationTurnRenderUnits(
+  rows: readonly ConversationRow[],
+  options: BuildConversationTurnRenderUnitsOptions = {},
+): ConversationTurnRenderUnit[] {
+  return buildRenderUnits(rows, options);
+}
+
+/** 每个 Timeline/session 独立持有，可丢弃的派生缓存，不持有业务状态。 */
+export function createConversationTurnRenderer() {
+  const cache = new Map<string, CachedTurn>();
+  return (
+    rows: readonly ConversationRow[],
+    options: BuildConversationTurnRenderUnitsOptions = {},
+  ) => buildRenderUnits(rows, options, cache);
 }

@@ -1,6 +1,16 @@
 /* eslint-disable max-lines -- turn group 需要在同一处维护普通 assistant 与后台结果的严格行序，拆分会重复 actions/preview/tail 协议。 */
 import { useIsOfficeMode } from "@/hooks/useInterfaceMode.js";
-import { Fragment, memo, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  Fragment,
+  memo,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
+import { ConversationFindRowContext, ConversationWorkWindow } from "@/v4/ConversationWorkWindow.js";
 import { ChevronRightIcon } from "lucide-react";
 import {
   TID_CHAT_ASSISTANT_HISTORY_CONTENT,
@@ -377,27 +387,28 @@ function ConversationAssistantWorkItems({
 
   // 连续工作项（工具/explore/reasoning）统一 gap-4 组容器（对齐旧版 tool-call-group），
   // 取代继承父级 gap-5/gap-2 + 每行 py-2 的双重且不一致的间距。
-  const content = (
-    <div className="flex flex-col gap-4">
-      {items.map((item) =>
-        item.kind === "row" ? (
-          <ConversationTurnRow
-            key={item.key}
-            row={item.row}
-            context={context}
-            hideAssistantActions={item.row.kind === "assistantText"}
-            assistantCodeCommentProjectionEnabled={assistantCodeCommentProjectionEnabled}
-          />
-        ) : item.kind === "agentToolCall" ? (
-          <ConversationAgentToolCallRow key={item.key} item={item} context={context} />
-        ) : item.kind === "exploreGroup" ? (
-          <ConversationExploreGroupRow key={item.key} item={item} context={context} />
-        ) : (
-          <ConversationToolGroupRow key={item.key} item={item} context={context} />
-        ),
-      )}
-    </div>
-  );
+  const renderItem = (item: ConversationAssistantWorkRenderItem) =>
+    item.kind === "row" ? (
+      <ConversationTurnRow
+        key={item.key}
+        row={item.row}
+        context={context}
+        hideAssistantActions={item.row.kind === "assistantText"}
+        assistantCodeCommentProjectionEnabled={assistantCodeCommentProjectionEnabled}
+      />
+    ) : item.kind === "agentToolCall" ? (
+      <ConversationAgentToolCallRow key={item.key} item={item} context={context} />
+    ) : item.kind === "exploreGroup" ? (
+      <ConversationExploreGroupRow key={item.key} item={item} context={context} />
+    ) : (
+      <ConversationToolGroupRow key={item.key} item={item} context={context} />
+    );
+  const content =
+    items.length >= 40 ? (
+      <ConversationWorkWindow items={items} renderItem={renderItem} />
+    ) : (
+      <div className="flex flex-col gap-4">{items.map(renderItem)}</div>
+    );
 
   if (!historyContainer) {
     return content;
@@ -643,6 +654,7 @@ function ConversationWorkSegmentFlow({
   shareSelectionRowId?: number;
 }) {
   const [historyOpen, setHistoryOpen] = useState(segment.assistantHistoryDefaultOpen);
+  const findRowId = useContext(ConversationFindRowContext);
   useEffect(() => {
     setHistoryOpen(segment.assistantHistoryDefaultOpen);
   }, [segment.assistantHistoryDefaultOpen, segment.key]);
@@ -652,7 +664,16 @@ function ConversationWorkSegmentFlow({
     (item) => item.kind !== "userInput",
   );
   let historyChunkIndex = 0;
-  const open = segment.assistantHistoryDefaultOpen ? true : historyOpen;
+  const containsFindRow =
+    findRowId !== undefined &&
+    segment.flowItems.some((item) =>
+      item.kind === "assistantHistory"
+        ? item.rows.some((row) => row.rowId === findRowId)
+        : item.kind === "cuaGroup" &&
+          item.flowKind === "assistantHistory" &&
+          item.events.some((event) => event.row.rowId === findRowId),
+    );
+  const open = segment.assistantHistoryDefaultOpen || historyOpen || containsFindRow;
 
   return (
     <Collapsible

@@ -138,9 +138,9 @@ async function runFlush(entries: PendingLogEntry[]): Promise<void> {
   // 同一批次内按文件分组（日常全部命中同一文件），每组一次 appendFile 减少系统调用。
   let index = 0;
   while (index < entries.length) {
-    const filePath = entries[index].filePath;
+    const filePath = entries[index]!.filePath;
     let groupEnd = index;
-    while (groupEnd < entries.length && entries[groupEnd].filePath === filePath) {
+    while (groupEnd < entries.length && entries[groupEnd]!.filePath === filePath) {
       groupEnd += 1;
     }
     const chunk = entries

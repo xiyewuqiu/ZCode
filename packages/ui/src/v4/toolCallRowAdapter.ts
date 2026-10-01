@@ -79,7 +79,13 @@ function resolveV4ToolErrorText(row: ToolCallRow): string | undefined {
   return readNonEmptyString(row.error?.code);
 }
 
+const toolNodeCache = new WeakMap<ToolCallRow, TaskChatToolCallTreeNode>();
+
 export function toolCallRowToLegacyNode(row: ToolCallRow): TaskChatToolCallTreeNode {
+  // 同一不可变 row 会被分类、聚合与渲染多次读取，长轮次反复 JSON 解析会阻塞主线程。
+  // WeakMap 随原 row 回收；upsert/delta 的新对象自然失效，不能按 toolCallId 永久缓存。
+  const cached = toolNodeCache.get(row);
+  if (cached) return cached;
   const legacyStatus = STATUS_MAP[row.status];
   const errorText = resolveV4ToolErrorText(row);
   const inputPreview = resolveToolInputPreview(row);
@@ -89,7 +95,7 @@ export function toolCallRowToLegacyNode(row: ToolCallRow): TaskChatToolCallTreeN
   // CUA v1 历史 display 会重复保存 input；工具调用行已经持有唯一输入，桥接时丢弃旧副本。
   const legacyDisplay =
     display?.kind === "cua" ? (({ input: _legacyInput, ...rest }) => rest)(display) : display;
-  return {
+  const node: TaskChatToolCallTreeNode = {
     toolCall: {
       toolId: row.toolCallId,
       toolName: row.toolName,
@@ -127,4 +133,6 @@ export function toolCallRowToLegacyNode(row: ToolCallRow): TaskChatToolCallTreeN
     // 由独立 row（subagent/toolCall）表达。
     childToolCalls: [],
   };
+  toolNodeCache.set(row, node);
+  return node;
 }

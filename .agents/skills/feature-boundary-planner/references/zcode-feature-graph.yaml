@@ -137,9 +137,12 @@ nodes:
       - agent profile
       - 子代理
       - 智能体配置
+      - 子智能体目录
     codeSeeds:
       - file: packages/ui/src/settings/SubagentsSection.tsx
         symbol: SubagentsSection
+      - file: packages/ui/src/app-shell/SubagentDirectorySidePane.tsx
+        symbol: SubagentDirectorySidePane
       - file: apps/zcode-cli/packages/core/src/tool/handlers/agent.ts
         symbol: agentHandler
   - id: state.subagent-form-draft

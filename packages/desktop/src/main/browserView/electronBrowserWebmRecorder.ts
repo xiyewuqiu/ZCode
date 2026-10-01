@@ -373,13 +373,8 @@ export async function createElectronBrowserWebmRecorder(
     if (!closed) fail(recorderError(`recorder renderer exited: ${details.reason ?? "unknown"}`));
   };
   recorderWindow.webContents.on("render-process-gone", onRendererGone);
-  const onConsoleMessage = (
-    _event: unknown,
-    details: { level?: string; message?: string },
-  ): void => {
-    debug?.(
-      `[browser-recording] recorder console level=${details.level ?? "unknown"} message=${details.message ?? ""}`,
-    );
+  const onConsoleMessage = (_event: unknown, level: number, message: string): void => {
+    debug?.(`[browser-recording] recorder console level=${level} message=${message}`);
   };
   recorderWindow.webContents.on("console-message", onConsoleMessage);
 

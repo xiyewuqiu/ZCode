@@ -74,6 +74,8 @@ interface HelperProcessResult {
 }
 
 interface ReadAppBoundKeyOptions {
+  expectedAppVersion?: string;
+  expectedBuildCommit?: string;
   appExecutablePath?: string;
   chromeExecutablePath: string;
   helperPath?: string;

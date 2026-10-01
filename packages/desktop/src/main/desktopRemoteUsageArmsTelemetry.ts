@@ -1,3 +1,4 @@
+import { setInterval, clearInterval } from "node:timers";
 import type {
   ArmsCustomEventPayload,
   ArmsRumEnv,
@@ -46,11 +47,11 @@ interface RemoteUsageArmsTelemetryConfig {
   e2eController?: FinalArmsCustomEventE2EController | null;
   logger: { warn: (...args: unknown[]) => void };
   setInterval?: (callback: () => void, delayMs: number) => ReturnType<typeof setInterval>;
-  clearInterval?: (timer: ReturnType<typeof setInterval>) => void;
+  clearInterval?: (timer: ReturnType<typeof setInterval> | number) => void;
 }
 
 let telemetryConfig: RemoteUsageArmsTelemetryConfig | null = null;
-let periodicTimer: ReturnType<typeof setInterval> | null = null;
+let periodicTimer: ReturnType<typeof setInterval> | number | null = null;
 let lastGaugeRendererId: number | null = null;
 
 function buildRemoteConnectResultArmsPayload(params: {
@@ -115,7 +116,7 @@ export function configureRemoteUsageArmsTelemetry(config: RemoteUsageArmsTelemet
   telemetryConfig = config;
   const schedule = config.setInterval ?? setInterval;
   periodicTimer = schedule(reportPeriodicGauge, REMOTE_USAGE_GAUGE_INTERVAL_MS);
-  periodicTimer.unref?.();
+  if (typeof periodicTimer === "object") periodicTimer.unref?.();
 }
 
 function dispatchSafely(rendererId: number, payload: ArmsCustomEventPayload): void {

@@ -2,9 +2,12 @@ import { lazy, Suspense, useEffect } from "react";
 import { ServiceProvider } from "@/hooks/useServices.js";
 import { logger } from "@/logger.js";
 import type { WorkspaceSettingsLayerProps } from "@/root/types.js";
+import { SettingsPageLoading } from "@/root/SettingsPageLoading.js";
 // 设置页是低频入口但体积巨大（2MB+），必须懒加载；
 // Root.tsx 已懒加载 SettingsPage，这里同样处理，避免设置页被静态依赖链拖进首屏闭包。
-const SettingsPage = lazy(() => import("@/SettingsPage.js").then((m) => ({ default: m.SettingsPage })));
+const SettingsPage = lazy(() =>
+  import("@/SettingsPage.js").then((m) => ({ default: m.SettingsPage })),
+);
 
 export function WorkspaceSettingsLayer({
   workspaceScopedServices,
@@ -29,7 +32,16 @@ export function WorkspaceSettingsLayer({
   }, []);
 
   const settingsPage = (
-    <Suspense fallback={null}>
+    <Suspense
+      fallback={
+        <SettingsPageLoading
+          isDesktop={isDesktop}
+          isMacDesktop={isMacDesktop}
+          isWindowsDesktop={isWindowsDesktop}
+          onBack={onBack}
+        />
+      }
+    >
       <SettingsPage
         isDesktop={isDesktop}
         isMacDesktop={isMacDesktop}

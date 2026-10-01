@@ -5,6 +5,7 @@
     "rootDir": "src/renderer",
     "lib": ["es2025", "dom", "dom.iterable"],
     "jsx": "react-jsx",
+    "types": ["vite/client", "@zcode/client/globals"],
     "noEmit": true
   },
   "include": ["src/renderer"],

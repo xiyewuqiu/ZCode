@@ -195,7 +195,48 @@ export function applySearchResultHighlight({
 export function scrollConversationFindRangeIntoView(range: Range) {
   const container = range.commonAncestorContainer;
   const element = container instanceof Element ? container : container.parentElement;
-  element?.scrollIntoView({ block: "center", behavior: "smooth" });
+  // 虚拟项在定位后继续测高，smooth 会被尺寸校正打断而停在半途；直接对齐命中行。
+  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const virtualWorkItem = element?.closest("[data-work-index]");
+  const workWindow = virtualWorkItem?.closest<HTMLElement>("[data-work-window]");
+  const scroller = workWindow?.closest<HTMLElement>("[data-v4-timeline-scroll]");
+  if (workWindow && scroller) {
+    let frame: number | undefined;
+    const align = () => {
+      frame = undefined;
+      if (!range.startContainer.isConnected) {
+        dispose();
+        return;
+      }
+      const target = range.getBoundingClientRect();
+      const viewport = scroller.getBoundingClientRect();
+      if (target.top < viewport.top || target.bottom > viewport.bottom) {
+        scroller.scrollTop +=
+          target.top - viewport.top - Math.max(0, (viewport.height - target.height) / 2);
+      }
+    };
+    const observer = new ResizeObserver(() => {
+      if (frame === undefined) frame = requestAnimationFrame(align);
+    });
+    const dispose = () => {
+      observer.disconnect();
+      if (frame !== undefined) cancelAnimationFrame(frame);
+      for (const event of ["wheel", "pointerdown", "touchstart", "keydown"])
+        document.removeEventListener(event, dispose);
+    };
+    // 第一次跳转后新挂载项仍会测高；按真实布局变化纠偏，用户操作立即收回滚动权。
+    observer.observe(workWindow);
+    if (virtualWorkItem) observer.observe(virtualWorkItem);
+    for (const event of ["wheel", "pointerdown", "touchstart", "keydown"])
+      document.addEventListener(event, dispose, { passive: true });
+    align();
+    return dispose;
+  }
+  element?.scrollIntoView({
+    block: "center",
+    behavior: virtualWorkItem || reduceMotion ? "instant" : "smooth",
+  });
+  return undefined;
 }
 
 export function clearConversationFindHighlights() {

@@ -1,0 +1,15 @@
+{
+  "extends": "../tsconfig.main.json",
+  "compilerOptions": {
+    "composite": false,
+    "incremental": false,
+    "noEmit": true,
+    "rootDir": ".."
+  },
+  "include": ["./windowChrome.electron.ts", "./hostStartup.electron.ts"],
+  "references": [
+    { "path": "../../shared" },
+    { "path": "../../services" },
+    { "path": "../../server" }
+  ]
+}

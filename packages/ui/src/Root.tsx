@@ -8,6 +8,7 @@ import {
   type RemoteTarget,
 } from "@zcode/shared";
 import { TooltipProvider } from "@/components/ui/tooltip.js";
+import { SettingsPageLoading } from "@/root/SettingsPageLoading.js";
 import { Button } from "@/components/ui/button.js";
 import { PlatformProvider } from "@/hooks/usePlatform.js";
 import { ServiceProvider } from "@/hooks/useServices.js";
@@ -23,7 +24,9 @@ import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 // DirectoryBrowser（目录浏览器）与 OnboardingDialog 都是低频入口，静态引入会让首屏
 // JS 体积虚胖。lazy chunk 在各自首次挂载时才加载，不阻塞首帧渲染。
 const SSHDialog = lazy(() => import("@/SSHDialog.js").then((m) => ({ default: m.SSHDialog })));
-const SettingsPage = lazy(() => import("@/SettingsPage.js").then((m) => ({ default: m.SettingsPage })));
+const SettingsPage = lazy(() =>
+  import("@/SettingsPage.js").then((m) => ({ default: m.SettingsPage })),
+);
 const WelcomeScreen = lazy(() =>
   import("@/WelcomeScreen.js").then((m) => ({ default: m.WelcomeScreen })),
 );
@@ -953,7 +956,7 @@ function RootInner({
               variant="panel"
               className="h-full"
             >
-              <Suspense fallback={null}>
+              <Suspense fallback={<SettingsPageLoading {...settingsLayerProps} />}>
                 <SettingsPage {...settingsLayerProps} />
               </Suspense>
             </ScopedErrorBoundary>

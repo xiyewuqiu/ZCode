@@ -8,14 +8,16 @@ const MACOS_TRAFFIC_LIGHT_POSITION_MOVEMENT_GAIN = 1.5;
 export const WINDOWS_WINDOW_CONTROLS_BASE_RIGHT_PADDING_PX = 136;
 export const WINDOWS_TITLE_BAR_HEIGHT_PX = 48;
 const MACOS_TRAFFIC_LIGHT_MIN_POSITION_PX = 4;
-const customWindowsControls = new WeakSet<BrowserWindow>();
 
-export function registerCustomWindowsControls(window: BrowserWindow) {
-  customWindowsControls.add(window);
-}
-
-export function hasCustomWindowsControls(window: BrowserWindow) {
-  return customWindowsControls.has(window);
+export function buildWindowsWindowOptions(zoomLevel: number, theme: "light" | "dark") {
+  return {
+    backgroundColor: "#00000000",
+    // 自绘最大化按钮没有系统非客户区语义，Windows 11 无法提供原生 Snap Layouts。
+    // hidden 保留系统窗口能力，overlay 让应用标题内容和原生按钮共用同一行。
+    titleBarStyle: "hidden" as const,
+    titleBarOverlay: buildWindowsTitleBarOverlayForZoomLevel(zoomLevel, theme),
+    backgroundMaterial: "acrylic" as const,
+  };
 }
 
 function resolveMacOSWindowButtonPositionForZoomLevel(zoomLevel: number): Point {
@@ -48,7 +50,8 @@ function resolveWindowsTitleBarOverlayHeightForZoomLevel(zoomLevel: number) {
 
 function resolveWindowsWindowControlsOverlayMetricsForZoomLevel(zoomLevel: number) {
   return {
-    // 原生按钮宽度不随页面缩放；固定 CSS 边距只适用于下面的自绘窗控分支。
+    nativeWindowControls: true,
+    // 原生按钮宽度不随页面缩放，renderer 安全区需反向补偿。
     rightPaddingPx: Math.round(
       WINDOWS_WINDOW_CONTROLS_BASE_RIGHT_PADDING_PX / resolveDesktopZoomFactorForLevel(zoomLevel),
     ),
@@ -87,13 +90,6 @@ export function syncWindowControlsOverlayForZoomLevel(
   }
 
   if (process.platform === "win32") {
-    if (hasCustomWindowsControls(targetWindow)) {
-      // 自绘按钮随页面缩放，安全区也使用固定 CSS 像素，不能再反向补偿原生按钮宽度。
-      targetWindow.webContents.send(PlatformChannels.WindowControlsOverlayChanged, {
-        rightPaddingPx: WINDOWS_WINDOW_CONTROLS_BASE_RIGHT_PADDING_PX,
-      });
-      return;
-    }
     // Windows titleBarOverlay 的原生窗控不会跟 renderer 页面缩放自动同步。
     // 只同步高度会让右上角按钮和标题栏垂直尺寸一致，但固定 136px 安全区会被页面 zoom 一起放大，
     // 导致左侧按钮组和右侧窗控越拉越远；缩小时如果高度还被基线钳住，窗控也会提前停止变化。

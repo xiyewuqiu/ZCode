@@ -1,4 +1,5 @@
-import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { AnimatePresence, motion } from "motion/react";
+import { usePrefersReducedMotion } from "@/hooks/usePrefersReducedMotion.js";
 import { cn } from "@/components/lib/utils.js";
 import { resolveConversationShareSelectionScrimMotion } from "@/v4/conversationShareModeMotion.js";
 
@@ -11,7 +12,7 @@ export function ConversationShareSelectionScrim({
   interactive?: boolean;
   onBackdropClick?: () => void;
 }) {
-  const prefersReducedMotion = useReducedMotion() === true;
+  const prefersReducedMotion = usePrefersReducedMotion();
   const motionConfig = resolveConversationShareSelectionScrimMotion(prefersReducedMotion);
 
   return (

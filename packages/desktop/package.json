@@ -6,6 +6,7 @@
   "type": "module",
   "main": "out/main/index.js",
   "scripts": {
+    "typecheck": "node ../../scripts/typecheck-desktop.mjs",
     "pre-dev": "node scripts/ensure-local-runtime-assets.mjs && node -e \"require('node:fs').rmSync('./out',{recursive:true,force:true})\"",
     "dev": "node ../../scripts/dev-desktop-env.mjs production",
     "pre-dev:local-cli": "pnpm --dir ../.. exec node scripts/build-desktop-agent-cli.mjs && node -e \"require('node:fs').rmSync('./out',{recursive:true,force:true})\"",

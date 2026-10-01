@@ -35,7 +35,7 @@ export function createWindow(options: {
   spawnHostProcess: (
     win: BrowserWindow,
     label: string,
-    initMessage: HostInitMessage,
+    initMessage: Omit<HostInitMessage, "zcodeBuiltinProviderConfigFilePath">,
     spawnOptions?: SpawnHostProcessOptions,
   ) => ElectronUtilityProcess;
   disposeHostProcess: (
