@@ -35,7 +35,6 @@ import { ConversationFindRowContext } from "@/v4/ConversationWorkWindow.js";
 import { ConversationPendingGuideList } from "@/v4/ConversationPendingGuideList.js";
 import type { AssistantFeedbackHandler } from "@/v4/ConversationRowView.js";
 import { ConversationTurnNavigator } from "@/v4/ConversationTurnNavigator.js";
-import { syncConversationShareSelectionPanelLayout } from "@/v4/conversationShareSelectionPanelLayout.js";
 import type { ConversationRowRenderContext } from "@/v4/conversationRowContext.js";
 import { splitConversationTimelineLiveTail } from "@/v4/conversationTimelineLiveTail.js";
 import {
@@ -325,11 +324,6 @@ interface ConversationTimelineProps {
     onAskInSideChat: (reference: ConversationSelectionReference) => void;
   };
   /** 分享选择阶段的本轮勾选状态；仅桌面分享时间线传入。 */
-  shareSelection?: {
-    eligibleRowIds: ReadonlySet<number>;
-    selectedRowIds: ReadonlySet<number>;
-    onToggle: (rowId: number) => void;
-  };
   /** 分享选择流程存在时，左侧 rail 由分享面板或 reopen 按钮独占。 */
   hideTurnNavigator?: boolean;
 }
@@ -377,7 +371,6 @@ function ConversationTimelineImpl({
   scrollToBottomActionRef,
   scrollToQueryActionRef,
   selectionActions,
-  shareSelection,
   hideTurnNavigator = false,
 }: ConversationTimelineProps) {
   const { intl } = useZCodeIntl();
@@ -510,10 +503,6 @@ function ConversationTimelineImpl({
   const [turnNavigatorHydrationRetryRevision, setTurnNavigatorHydrationRetryRevision] = useState(0);
   const timelineRootRef = useRef<HTMLDivElement>(null);
   const composerDockRef = useRef<HTMLDivElement>(null);
-  const shareSelectionPanelLayoutRef = useRef<{
-    centerYPx: number;
-    maxHeightPx: number;
-  } | null>(null);
   // 右侧状态面板完整 inline 展开时，中间消息列和输入 dock 必须使用同一偏移；
   // 否则面板会覆盖正文，而不是并排布局。
   const summaryPanelInlineOffsetClassName =
@@ -522,47 +511,6 @@ function ConversationTimelineImpl({
     centeredEmptyLayout,
     statusPanelLayout: summaryPanelLayout,
   });
-
-  const syncShareSelectionPanelLayout = useCallback(() => {
-    if (!backgroundScrollLocked) return;
-    const container = selectionPanelLayoutContainerRef?.current;
-    const dock = composerDockRef.current;
-    if (!container || !dock) return;
-
-    // 选择面板是 SessionPane 的兄弟节点，不能把 CSS 变量写在 Timeline
-    // 自身，否则面板拿不到 dock 的真实边界；统一写入共享父容器供两者使用。
-    const layout = syncConversationShareSelectionPanelLayout(container, dock);
-    const previous = shareSelectionPanelLayoutRef.current;
-    if (previous?.centerYPx === layout.centerYPx && previous.maxHeightPx === layout.maxHeightPx) {
-      return;
-    }
-    shareSelectionPanelLayoutRef.current = layout;
-  }, [backgroundScrollLocked, selectionPanelLayoutContainerRef]);
-
-  useLayoutEffect(() => {
-    if (!backgroundScrollLocked) return;
-    const container = selectionPanelLayoutContainerRef?.current;
-    const dock = composerDockRef.current;
-    if (!container || !dock) return;
-
-    syncShareSelectionPanelLayout();
-    let resizeObserver: ResizeObserver | null = null;
-    if (typeof ResizeObserver !== "undefined") {
-      resizeObserver = new ResizeObserver(syncShareSelectionPanelLayout);
-      resizeObserver.observe(container);
-      resizeObserver.observe(timelineRootRef.current ?? container);
-      if (scrollRef.current) resizeObserver.observe(scrollRef.current);
-      resizeObserver.observe(dock);
-    }
-
-    // ResizeObserver 在部分 Electron flex 布局中可能晚于窗口尺寸变化回调，
-    // 因此窗口 resize 也始终触发一次几何同步，保证面板随窗口放大/缩小。
-    window.addEventListener("resize", syncShareSelectionPanelLayout);
-    return () => {
-      window.removeEventListener("resize", syncShareSelectionPanelLayout);
-      resizeObserver?.disconnect();
-    };
-  }, [backgroundScrollLocked, selectionPanelLayoutContainerRef, syncShareSelectionPanelLayout]);
 
   useEffect(() => {
     if (!hasRunningUnit) {
@@ -1855,8 +1803,7 @@ function ConversationTimelineImpl({
                           onRetry={onRetry}
                           onFeedbackChange={onFeedbackChange}
                           onEdit={onEdit}
-                          shareSelection={shareSelection}
-                        />
+                                    />
                       </div>
                     );
                   })}
@@ -1885,8 +1832,7 @@ function ConversationTimelineImpl({
                       onRetry={onRetry}
                       onFeedbackChange={onFeedbackChange}
                       onEdit={onEdit}
-                      shareSelection={shareSelection}
-                    />
+                            />
                   </div>
                 ) : null}
                 {pendingGuides.length > 0 ? (

@@ -142,6 +142,8 @@ function RootInner({
   preferDirectoryBrowser,
   supportsEmbeddedBrowser: explicitSupportsEmbeddedBrowser,
   allowRemoteWorkspace = true,
+  reconnectingRemoteWorkspaceKeys = [],
+  remoteWorkspaceErrorByWorkspaceKey = {},
   initialWorkspaceLoadingFallback,
 }: RootProps) {
   useEffect(() => {
@@ -165,7 +167,6 @@ function RootInner({
   const {
     settings: appSettings,
     refresh: refreshAppSettings,
-    update: updateAppSettings,
   } = useSettings();
   const [providerFamilyDomainMigrationComplete, setProviderFamilyDomainMigrationComplete] =
     useState(false);
@@ -444,8 +445,6 @@ function RootInner({
 
   const {
     remoteWorkspaceSessions,
-    reconnectingRemoteWorkspaceKeys,
-    remoteWorkspaceErrorByWorkspaceKey,
     reconnectingRemoteWorkspaceLogsByWorkspaceKey,
     buildPersistedTabPatch,
     restorePersistedSession,
@@ -537,8 +536,6 @@ function RootInner({
     tabs,
     activeWorkspacePath,
     activeWorkspaceIdentity,
-    reconnectingRemoteWorkspaceKeys,
-    remoteWorkspaceErrorByWorkspaceKey,
     totalUnreadTaskCount,
     hasCompletedFullTabRestore: hasCompletedFullRestore,
     intl,

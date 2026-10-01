@@ -61,7 +61,6 @@ declare global {
         | "loadMcpFromUserDirectory"
         | "saveMcpToUserDirectory"
         | "migrateLegacyCommonMcp"
-        | "onShareImport"
         | "setShortcutRecordingActive"
         | "onCloseActiveContextRequest"
         | "onOpenFeedbackDialog"

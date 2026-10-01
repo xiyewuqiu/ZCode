@@ -44,7 +44,6 @@ import { spawn } from "node:child_process";
 import { join } from "node:path";
 
 import {
-  createCredentialService,
   createSettingService,
   buildRuntimeProcessEnvPatch,
   captureLoginShellEnvSnapshot,

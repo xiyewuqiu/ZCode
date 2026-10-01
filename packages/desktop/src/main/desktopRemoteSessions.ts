@@ -5,7 +5,6 @@ import type { MessagePortMain, UtilityProcess as ElectronUtilityProcess } from "
 import {
   buildRemoteWorkspaceIdentity,
   buildRemoteEnvironmentKey,
-  buildSshRemoteHostKey,
   HostMessageTypes,
   HostResponseTypes,
   hostResponseMessageSchema,

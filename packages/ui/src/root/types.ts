@@ -4,6 +4,9 @@ import type { ReactNode } from "react";
 import type { CreateTaskRequest } from "@/app-shell/types.js";
 
 export interface RootProps {
+  /** 远端 workspace 重连中的 key 集合（由 App 层生命周期提供）。 */
+  reconnectingRemoteWorkspaceKeys?: string[];
+  remoteWorkspaceErrorByWorkspaceKey?: Record<string, string>;
   services: IServiceAccessor;
   platform: IPlatformService;
   /** 如果从 main 进程传入则跳过项目选择页 */

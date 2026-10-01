@@ -7,70 +7,8 @@ import {
 } from "../src/v4/conversationTurnRenderUnits.js";
 import { buildConversationFindIndex } from "../src/v4/conversationFindIndex.js";
 import { toolCallRowToLegacyNode } from "../src/v4/toolCallRowAdapter.js";
-import { createConversationShareModel } from "../src/v4/conversationShareModel.js";
 import { buildConversationTurnNavigatorItems } from "../src/v4/conversationTurnNavigatorHelpers.js";
 
-const shareLabels = {
-  assistantEmptyPreview: "Empty",
-  assistantRunningPreview: "Running",
-  userFallbackPreview: "Question",
-};
-
-test("closed sharing releases its projection and reopening uses the latest rows", () => {
-  const project = createConversationShareModel();
-  const dormant = project(null, shareLabels);
-  assert.equal(dormant.items.length, 0);
-  const rows = [...turn(1), ...turn(2, true)].map((row) => ({
-    ...row,
-    productTurnId: row.turnId,
-  }));
-  assert.equal(project(rows, shareLabels).items.length, 2);
-  assert.equal(project(null, shareLabels), dormant);
-  const replaced = turn(1).map((row) =>
-    row.kind === "userInput" ? { ...row, text: "Replacement after rewind" } : row,
-  );
-  assert.equal(project(replaced, shareLabels).items[0]?.userPreview, "Replacement after rewind");
-});
-
-test("share projection preserves canonical candidates across streaming, pagination and locale", () => {
-  const project = createConversationShareModel();
-  const rows = [...turn(1), ...turn(2, true)].map((row) => ({
-    ...row,
-    productTurnId: row.turnId,
-  }));
-  const initial = project(rows, shareLabels);
-  assert.deepEqual(
-    initial.items,
-    buildConversationTurnNavigatorItems(buildConversationTurnRenderUnits(rows), shareLabels),
-  );
-  assert.deepEqual([...initial.eligibleRowIds], [4]);
-  assert.deepEqual(initial.availableTurns, [{ rowId: 4, productTurnId: "turn-1" }]);
-  assert.deepEqual(initial.eligibleProductTurnIds, ["turn-1"]);
-  const completed = [...turn(0), ...turn(1), ...turn(2)].map((row) => ({
-    ...row,
-    productTurnId: row.turnId,
-  }));
-  assert.deepEqual(project(completed, shareLabels).eligibleProductTurnIds, [
-    "turn-0",
-    "turn-1",
-    "turn-2",
-  ]);
-  const emptyAnswer = turn(3).slice(0, 2);
-  assert.equal(project(emptyAnswer, shareLabels).items[0]?.assistantPreview, "Empty");
-  assert.equal(
-    project(emptyAnswer, { ...shareLabels, assistantEmptyPreview: "暂无回复" }).items[0]
-      ?.assistantPreview,
-    "暂无回复",
-  );
-});
-
-test("share projection deduplicates product turns without losing individual query candidates", () => {
-  const rows = [...turn(1), ...turn(2)].map((row) => ({ ...row, productTurnId: "product-1" }));
-  const result = createConversationShareModel()(rows, shareLabels);
-  assert.equal(result.eligibleItems.length, 2);
-  assert.equal(result.availableTurns.length, 2);
-  assert.deepEqual(result.eligibleProductTurnIds, ["product-1"]);
-});
 
 function turn(id: number, running = false): ConversationRow[] {
   const base = { turnId: `turn-${id}`, createdAt: id, createdAtSeq: id };

@@ -16,7 +16,6 @@ import {
   ICuaPermissionService,
   IComputerControlDriverStatusService,
   type ComputerControlDriverStatus,
-  IConversationShareService,
   IFileWatcherService,
   IModelSelectionService,
   IProviderSettingsService,
@@ -69,7 +68,6 @@ export class RemoteServiceAccess implements IServiceAccessor {
   // 电脑控制驱动状态探测：只有随包提供 cua-driver 的 host（desktop local host）注册该频道。
   // 这里始终挂上代理，未注册频道的 host 调用会 reject，由设置页按「未知」兜底。
   readonly getComputerControlDriverStatus: () => Promise<ComputerControlDriverStatus>;
-  readonly conversationShareService: IConversationShareService;
   readonly fileWatcherService: IFileWatcherService;
   readonly providerSettingsService: IProviderSettingsService;
   readonly modelSelectionService: IModelSelectionService;
@@ -150,9 +148,6 @@ export class RemoteServiceAccess implements IServiceAccessor {
       );
     this.getComputerControlDriverStatus = () =>
       computerControlDriverStatusService.getComputerControlDriverStatus();
-    this.conversationShareService = ProxyChannel.toService<IConversationShareService>(
-      channelClient.getChannel(IConversationShareService.channelName),
-    );
     this.fileWatcherService = ProxyChannel.toService<IFileWatcherService>(
       channelClient.getChannel(IFileWatcherService.channelName),
     );

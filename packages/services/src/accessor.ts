@@ -37,7 +37,6 @@ import type { IFeedbackService } from "./feedback/feedback.js";
 import type { IPromptAttachmentTransferService } from "./prompt-attachment-transfer/promptAttachmentTransfer.js";
 import type { IWindowControllerService } from "./window-controller/windowController.js";
 import type { IOnboardingRecordService } from "./onboarding/onboardingRecord.js";
-import type { IConversationShareService } from "./conversation-share/conversationShare.js";
 
 /** UI 层消费的统一服务接口 */
 export interface IServiceAccessor {
@@ -65,7 +64,6 @@ export interface IServiceAccessor {
    */
   readonly getComputerControlDriverStatus?: ComputerControlDriverStatusProbe;
   readonly fileWatcherService: IFileWatcherService;
-  readonly conversationShareService: IConversationShareService;
   /** 当前 Environment 的 Provider 配置与设置视图。 */
   readonly providerSettingsService: IProviderSettingsService;
   /** 当前 Environment Registry 发布的唯一模型选择 View。 */
