@@ -35,6 +35,7 @@ import {
 import { createQuickPickCommands } from "@/quickpick/quickPickCommands.js";
 import { CommandCenterDialog } from "@/command-center/CommandCenterDialog.js";
 import { FeedbackHost } from "@/feedback/FeedbackHost.js";
+import { TaskStorageDialogHost } from "@/TaskStorageDialogHost.js";
 import { useFeedbackStore } from "@/feedback/feedbackStore.js";
 import {
   resolveQuickPickConversationNavigation,
@@ -95,9 +96,6 @@ export function App({
   onSelectRemoteProject,
   onCancelRemoteProject,
   onReconnectRemoteWorkspace,
-  onLogout,
-  onLogin,
-  user,
   reconnectingRemoteWorkspaceKeys,
   remoteWorkspaceErrorByWorkspaceKey,
   reconnectingRemoteWorkspaceLogsByWorkspaceKey = EMPTY_RECONNECTING_REMOTE_WORKSPACE_LOGS_BY_WORKSPACE_KEY,
@@ -136,16 +134,11 @@ export function App({
   const { intl, locale, setLocale } = useZCodeIntl();
   const isOfficeMode = useIsOfficeMode();
   const platform = usePlatform();
-  // 进程内存本地诊断日志：每窗口一个 60s 采样器，
-  // 经门控后写桌面主日志；Web 端无日志桥时为 no-op。同一次读数还经 preload 桥把 heap 送 main 的
-  // renderer_main 资源事件，无桥时同样 no-op。
-  const reportRendererHeapSample = platform.reportRendererHeapSample;
+  // 进程内存本地诊断日志：每窗口一个 60s 采样器，经门控后只写本地日志；不再有 heap 上报出口。
   useEffect(() => {
-    const memoryDiagnosticsLogger = startMemoryDiagnosticsLogger({
-      reportHeapSample: reportRendererHeapSample,
-    });
+    const memoryDiagnosticsLogger = startMemoryDiagnosticsLogger();
     return () => memoryDiagnosticsLogger.stop();
-  }, [reportRendererHeapSample]);
+  }, []);
   const activeWorkspaceRpcTarget = useTabStore(
     useShallow((state) => {
       if (!state.activeTabId) {
@@ -660,7 +653,6 @@ export function App({
   }, []);
   const openFeedbackSubmit = useFeedbackStore((state) => state.openSubmit);
   const openFeedbackTickets = useFeedbackStore((state) => state.openTickets);
-  const isLoggedIn = Boolean(user);
   const handleOpenFeedback = useCallback(() => {
     void platform.openFeedback();
   }, [platform]);
@@ -1000,9 +992,6 @@ export function App({
         canOpenCommunity: canOpenCommunityFromQuickPick,
         isSidebarVisible,
         supportsEmbeddedBrowser,
-        // quick pick 命令只关心登录态布尔值。
-        // 如果依赖完整 user 对象，auth store 返回等价新引用时会重建整组 command/run 闭包。
-        isLoggedIn,
         themeTarget,
         shortcuts: {
           newTask: newTaskShortcutLabel,
@@ -1026,8 +1015,6 @@ export function App({
           openFeedback: handleOpenFeedback,
           openCommunity: handleOpenCommunity,
           openProductDocs: handleOpenProductDocs,
-          login: onLogin,
-          logout: onLogout,
           toggleSidebar: () => runVisibleWorkspaceCommand(handleToggleSidebar),
           toggleTerminal: () => runVisibleWorkspaceCommand(handleToggleTerminalIfWritable),
           togglePreview: () => runVisibleWorkspaceCommand(handleToggleBrowser),
@@ -1051,12 +1038,9 @@ export function App({
       handleToggleBrowser,
       handleToggleSidebar,
       handleToggleTerminalIfWritable,
-      isLoggedIn,
       isSidebarVisible,
       newTaskShortcutLabel,
       handleCreateTaskIfWritable,
-      onLogin,
-      onLogout,
       onOpenWorkspace,
       runVisibleWorkspaceCommand,
       openSettingsTab,
@@ -1122,6 +1106,9 @@ export function App({
       {/* 反馈是应用级能力，必须固定走本机 base host；SSH session 连接中或断开时，
           workspace-scoped services 会切成断连代理，不能让反馈提交跟随远程 session 失效。 */}
       <FeedbackHost feedbackService={baseFeedbackService} platform={platform} />
+      {/* 会话永久删除入口分布在任务列表右键菜单与 Header 菜单，弹窗按 store 目标只挂一份：
+          逐处挂载会同时存在多份预检实例，也容易让旧结果串到新目标。 */}
+      <TaskStorageDialogHost />
       <WorkspaceShellLayout
         services={services}
         workspaceReadOnlyReason={workspaceReadOnlyReason}
@@ -1138,9 +1125,6 @@ export function App({
         onSelectRemoteProject={onSelectRemoteProject}
         onCancelRemoteProject={onCancelRemoteProject}
         onReconnectRemoteWorkspace={onReconnectRemoteWorkspace}
-        onLogout={onLogout}
-        onLogin={onLogin}
-        user={user}
         reconnectingRemoteWorkspaceKeys={reconnectingRemoteWorkspaceKeys}
         remoteWorkspaceErrorByWorkspaceKey={remoteWorkspaceErrorByWorkspaceKey}
         reconnectingRemoteWorkspaceLogsByWorkspaceKey={

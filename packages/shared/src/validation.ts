@@ -1,15 +1,10 @@
 import { databaseStartupControlSchema, databaseStartupStateSchema } from "./database-startup.js";
-import {
-  sessionCreateTelemetrySchema,
-  automationSessionCreateTelemetrySchema,
-} from "./sessionCreateTelemetry.js";
 /* eslint-disable max-lines -- 运行时 schema 当前集中在共享包入口，外部 relay payload 校验加入后先保持单一导出面。 */
 import { z } from "zod";
 import { zcodeProcessDiagnosticSchema } from "./process-diagnostic.js";
 import { browserCommandSchema } from "./browser-use/commands.js";
 import { browserCommandResultSchema } from "./browser-use/result.js";
 import { REMOTE_ASSET_INSTALL_MODES } from "./remoteAssetInstallMode.js";
-import { PROCESS_RESOURCE_CLI_LANES } from "./processResourceTelemetry.js";
 import { isKnownRemoteResourcePackageId } from "./remoteResourcePackages.js";
 import { zcodeProviderSchema } from "./providers.js";
 import { zcodeAgentProviderSchema } from "./zcode-agent-policy.js";
@@ -22,9 +17,7 @@ import {
   zcodeProcessResourceSampleSchema,
 } from "./zcode-protocol/index.js";
 import { zcodeTaskModeSchema } from "./zcode-task-mode-schema.js";
-import { PROTOCOL_V4_LIMITS } from "./zcode-protocol-v4/core.js";
 import { errorAttributionSchema } from "./zcode-protocol-v4/snapshot.js";
-import { sessionWorkflowActivitySchema } from "./zcode-protocol-v4/sessions-index-workflow-activity.js";
 import {
   taskOwnerCommandDeliverySchema,
   taskOwnerCommandRequestSchema,
@@ -619,9 +612,10 @@ export type HostAgentProcessExceptionResponse = z.infer<
  * 协议样本时按所属进程管理器补上。样本自身仍按 CLI 协议 schema 严格校验，因此 CLI 自报 lane
  * 会被协议层直接拒绝。`lane` 可选是为了兼容版本落后、还没打标的远端 server。
  */
-export const processResourceCliLaneSchema = z.enum(PROCESS_RESOURCE_CLI_LANES);
+
+/** `lane` 由 services 层按调用方补齐的进程泳道标签；协议侧只做可选字符串校验，不再枚举具体泳道。 */
 export const agentLaneResourceSampleSchema = zcodeProcessResourceSampleSchema
-  .extend({ lane: processResourceCliLaneSchema.optional() })
+  .extend({ lane: z.string().optional() })
   .strict();
 export type AgentLaneResourceSample = z.infer<typeof agentLaneResourceSampleSchema>;
 
@@ -633,7 +627,7 @@ export const hostAgentResourceSampleResponseSchema = z
     type: z.literal("agent-resource-sample"),
     runtimeSurface: z.enum(["local", "remote"]),
     environmentKey: resourceTelemetryEnvironmentKeySchema.optional(),
-    sample: agentLaneResourceSampleSchema,
+    sample: zcodeProcessResourceSampleSchema,
   })
   .strict();
 export type HostAgentResourceSampleResponse = z.infer<typeof hostAgentResourceSampleResponseSchema>;
@@ -705,16 +699,6 @@ export const hostMcpTelemetryResponseSchema = z
   })
   .strict();
 export type HostMcpTelemetryResponse = z.infer<typeof hostMcpTelemetryResponseSchema>;
-
-export const hostSessionCreateTelemetryResponseSchema = z
-  .object({
-    type: z.literal("session-create-telemetry"),
-    event: automationSessionCreateTelemetrySchema,
-  })
-  .strict();
-export type HostSessionCreateTelemetryResponse = z.infer<
-  typeof hostSessionCreateTelemetryResponseSchema
->;
 
 export const hostAgentRunningTaskCountChangedResponseSchema = z.object({
   type: z.literal("agent-running-task-count-changed"),
@@ -952,7 +936,6 @@ export const hostResponseMessageSchema = z.discriminatedUnion("type", [
   hostMcpTelemetryResponseSchema,
   hostMcpResourceSamplesResponseSchema,
   hostToolExecResourceResponseSchema,
-  hostSessionCreateTelemetryResponseSchema,
   hostAgentRunningTaskCountChangedResponseSchema,
   hostWorkspaceRunningTaskCountChangedResponseSchema,
   hostCuaOperationStateResponseSchema,

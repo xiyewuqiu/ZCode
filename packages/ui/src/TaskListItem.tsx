@@ -28,6 +28,7 @@ import { TaskInteractionBadge } from "@/TaskInteractionBadge.js";
 import { useTaskListItemContextActions } from "@/useTaskListItemContextActions.js";
 import { useFeedbackStore } from "@/feedback/feedbackStore.js";
 import { useModelTrajectoryStore } from "@/store/modelTrajectoryStore.js";
+import { useTaskStorageDialogStore } from "@/store/taskStorageDialogStore.js";
 import { buildTaskFeedbackDescription } from "@/lib/taskFeedbackDraft.js";
 import { toast } from "@/components/ui/toast.js";
 import { buildTaskWorkspaceKey } from "@/lib/taskQueryCache.js";
@@ -44,7 +45,6 @@ import { useOptionalTabStore } from "@/store/TabStoreProvider.js";
 import { isWorkspaceReadOnly } from "@/store/tabStore.js";
 import { TaskTitleOverflowText } from "@/components/TaskTitleOverflowText.js";
 import { createTaskWorkbenchDragPreview } from "@/lib/taskWorkbenchDragPreview.js";
-import { runUserAction } from "@/lib/userActionTelemetry.js";
 import { TaskRowActionButton } from "@/workspace-grouped-tasks/task-row-action-button.js";
 import { TaskWorkflowRunLines } from "@/components/workflow-run-line/TaskWorkflowRunLines.js";
 
@@ -248,12 +248,7 @@ export const MemoTaskItem = memo(function TaskListItem({
       id: task.forkedFromTaskId ? "taskList.forkedUntitled" : "taskList.untitled",
     });
   const handleSelect = useCallback(() => {
-    runUserAction({
-      input: { featureId: "task.lifecycle", action: "open", trigger: "button" },
-      operation: () => onSelectTask(task.taskId),
-      completed: { resultSource: "optimistic_projection" },
-      failureStage: "task_open",
-    });
+    (() => onSelectTask(task.taskId))();
   }, [onSelectTask, task.taskId]);
   const handleDragStart = useCallback(
     (event: React.DragEvent<HTMLLIElement>) => {
@@ -312,12 +307,7 @@ export const MemoTaskItem = memo(function TaskListItem({
       if (workspaceActionsDisabled) {
         return;
       }
-      runUserAction({
-        input: { featureId: "workbench.file", action: "open_tree", trigger: "button" },
-        operation: () => onOpenFileTree?.(task),
-        completed: { resultSource: "local_commit" },
-        failureStage: "file_tree_open",
-      });
+      (() => onOpenFileTree?.(task))();
     },
     [onOpenFileTree, task, workspaceActionsDisabled],
   );
@@ -329,12 +319,7 @@ export const MemoTaskItem = memo(function TaskListItem({
         event.stopPropagation();
         return;
       }
-      runUserAction({
-        input: { featureId: "task.lifecycle", action: "archive", trigger: "button" },
-        operation: () => onArchiveTaskInline(event, task.taskId),
-        completed: { resultSource: "optimistic_projection" },
-        failureStage: "task_archive",
-      });
+      (() => onArchiveTaskInline(event, task.taskId))();
     },
     [onArchiveTaskInline, task.taskId, workspaceActionsDisabled],
   );
@@ -924,6 +909,17 @@ export function TaskListItemContextMenuContent({
       openInSplitPaneDisabled={workspaceActionsDisabled || !canOpenInSplitPane}
       onOpenTaskFeedback={() => {
         void handleOpenTaskFeedback();
+      }}
+      onDeleteSession={() => {
+        // 列表右键菜单以前只有「归档任务」，永久删除只藏在归档列表里，用户找不到入口。
+        // 这里复用归档列表同一份预检弹窗（占用统计、阻塞原因、CAS 确认），由 app 级 host 挂载。
+        useTaskStorageDialogStore.getState().open({
+          taskId: task.taskId,
+          workspacePath,
+          ...(task.workspaceIdentity?.trim() ? { workspaceIdentity: task.workspaceIdentity } : {}),
+          ...(remoteSessionId ? { remoteSessionId } : {}),
+          title: taskTitle,
+        });
       }}
       onOpenTaskPathInFileManager={() => {
         void handleOpenTaskPathInFileManager();

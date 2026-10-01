@@ -6,8 +6,6 @@ import { createPortal } from "react-dom";
 import { PaletteIcon, WandSparkles } from "lucide-react";
 import {
   $createTextNode,
-  $getSelection,
-  $isRangeSelection,
   BLUR_COMMAND,
   COMMAND_PRIORITY_CRITICAL,
   COMMAND_PRIORITY_LOW,
@@ -17,6 +15,7 @@ import {
   KEY_ESCAPE_COMMAND,
   KEY_TAB_COMMAND,
 } from "lexical";
+
 import { useZCodeIntl } from "../i18n/IntlProvider.js";
 import {
   extractActivePromptInputTrigger,

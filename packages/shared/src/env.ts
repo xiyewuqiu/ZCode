@@ -1,9 +1,6 @@
-import type { ZCodeRuntimeEnv } from "./runtimeEnv.js";
-
 export type ZCodeEnv = "test" | "production";
 /** 安装包身份：决定应用名、app id、Electron 数据目录与更新策略；与后端环境 `ZCodeEnv` 是两个轴。 */
 export type ZCodeProductFlavor = "production" | "preview";
-export type ArmsRumEnv = "local" | "prod";
 
 // 非构建环境（如 e2e 测试的 mocha）下 define 不存在，用 typeof 检查 + fallback 避免 ReferenceError
 declare const __ZCODE_ENV__: string;
@@ -38,16 +35,4 @@ export const ZCODE_BUILD_COMMIT_ID_ENV = "ZCODE_BUILD_COMMIT_ID" as const;
 export const RUNTIME_ZCODE_DEBUG =
   typeof process !== "undefined" ? process.env.ZCODE_DEBUG : undefined;
 
-// 全局遥测与上报彻底掐断：纯本地开发使用，禁止任何外部打点、事件与监控收集
-export const ZCODE_TELEMETRY_ENABLED: boolean = false;
-
-/** 数仓事件上报端点：已彻底断开 */
-export const ZCODE_TELEMETRY_REPORT_ENDPOINT = "";
-
-/** ARMS RUM 接入端点：已彻底断开 */
-export const ZCODE_ARMS_RUM_ENDPOINT = "";
-
-/** 将本地运行态与编译期 ZCODE_ENV 映射为 ARMS 控制台识别的上报环境标签 */
-export function mapZCodeEnvToArmsRumEnv(_runtimeEnv: ZCodeRuntimeEnv): ArmsRumEnv {
-  return "local";
-}
+// 遥测开关、上报端点与 ARMS 环境映射已随上报链路一并移除：开源运行时不保留任何上报配置。

@@ -64,8 +64,8 @@ export interface IServiceAccessor {
    * Web / 远端环境 / 旧 host 不提供；调用方必须按可选能力处理（缺失或 reject 都按「未知」兜底）。
    */
   readonly getComputerControlDriverStatus?: ComputerControlDriverStatusProbe;
-  readonly conversationShareService: IConversationShareService;
   readonly fileWatcherService: IFileWatcherService;
+  readonly conversationShareService: IConversationShareService;
   /** 当前 Environment 的 Provider 配置与设置视图。 */
   readonly providerSettingsService: IProviderSettingsService;
   /** 当前 Environment Registry 发布的唯一模型选择 View。 */

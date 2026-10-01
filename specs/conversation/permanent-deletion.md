@@ -47,7 +47,9 @@ Desktop continuous 与 Web replayable 的业务流顺序不变；永久删除结
 
 ## 交付与验证（2026-10-01）
 
-入口为侧边栏「归档」列表每行的「存储与永久删除」按钮。占用统计只在打开弹窗时执行；长列表不会逐行查询数据库，也不逐行挂载弹窗。数据库统计是 CLI 会话记录序列化后的 UTF-8 估算值；文件统计只包含 `cli/sessions/<id>` 和 `cli/agents/<id>` 的常规独占文件。索引副本同步清除，但不额外计入这份占用估算。
+入口为侧边栏「归档」列表每行的「存储与永久删除」按钮，以及普通任务列表右键菜单与 Header「更多」菜单的「删除会话…」项（2026-10-01 补充）。占用统计只在打开弹窗时执行；长列表不会逐行查询数据库，也不逐行挂载弹窗。数据库统计是 CLI 会话记录序列化后的 UTF-8 估算值；文件统计只包含 `cli/sessions/<id>` 和 `cli/agents/<id>` 的常规独占文件。索引副本同步清除，但不额外计入这份占用估算。
+
+删除入口只传递目标会话（taskId、workspacePath、workspaceIdentity、remoteSessionId、标题），由 app 级 `TaskStorageDialogHost` 按目标解析 Host services 并挂载唯一弹窗实例，因此多个任务列表与 Header 复用同一份预检与确认链路，不会并存多份预检结果。只读 workspace 下入口保留但禁用；运行中、排队中或有工作流依赖时按既有的 blocker 提示阻止提交。
 
 共享附件、全局缓存、诊断日志、工作区文件、导出、导入原件和备份保留；有工作流/定时/闲时任务关联时阻止删除。不是全盘痕迹擦除，也不自动运行 VACUUM。空的专属目录可能保留。文件在提交后变化或暂时无权限时返回待清理，保留清单；旧副本或备份不会被作为成功回收计入。
 
@@ -67,6 +69,16 @@ node --import tsx --test apps/zcode-cli/packages/adapters/test/session-purge.tes
 corepack pnpm exec vite --config packages/ui/test/browser/vite.config.mjs
 # 保持上述 Vite 服务运行，在另一个终端执行：
 node packages/ui/test/browser/run-task-storage.mjs
+node packages/ui/test/browser/run-task-delete-entry.mjs
+corepack pnpm exec tsx --tsconfig packages/ui/tsconfig.json --test packages/ui/test/taskStorageDialogStore.test.ts
 ```
 
 远端断连/换代由真实 Host Controller 配合隔离服务验证；没有连接真实远端机器执行删除。未在 macOS/Linux 实机验证。开发过程中未删除或迁移真实历史数据。
+
+## 入口可发现性补充（2026-10-01）
+
+已安装版本反馈「找不到对话删除」：原有唯一入口在归档列表行内图标，普通列表与右键菜单都没有删除项，归档行内的垃圾桶只把任务标记为列表不可见、并不清理会话数据，容易被误读成删除失败。
+
+本轮新增普通任务列表右键菜单与 Header「更多」菜单的「删除会话…」（`taskList.deleteSession`），点击只打开既有的存储预检弹窗，不新增删除语义。实现为 `store/taskStorageDialogStore.ts`（目标桥）+ `TaskStorageDialogHost.tsx`（app 级唯一弹窗，按目标解析 Host services），菜单侧仅调用 `open({ taskId, workspacePath, workspaceIdentity, remoteSessionId, title })`；`TaskListItem.tsx`、`WorkspaceHeaderSections.tsx` 各接一处，`TaskActionMenuContent.tsx` 增加可选 `onDeleteSession` 与 destructive 样式项。
+
+验证：`corepack pnpm typecheck` 通过；`corepack pnpm lint` 为 0 错误、63 个既有警告；`corepack pnpm architecture:check --changed` 为 0 violations / 0 baseline / 0 new；`tsx --test` 下 `taskStorageDialogStore.test.ts` 与既有 8 项查询测试共 9 项通过。`packages/ui/test/browser/run-task-delete-entry.mjs` 已编写（真实菜单组件 + 真实弹窗 host，覆盖打开、确认前不可删、确认后提交、中文文案与只读禁用），但本机 5199 测试服务未启动，该浏览器用例本轮未实际执行。

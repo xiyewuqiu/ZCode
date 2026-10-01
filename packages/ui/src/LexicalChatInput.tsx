@@ -55,7 +55,6 @@ import {
   PromptMentionNode,
 } from "./mentions/nodes/PromptMentionNode.js";
 import { logger } from "./logger.js";
-import { recordInputLag } from "./lib/uiPerfArmsTelemetry.js";
 import { navigatePromptHistory } from "./lib/promptHistory.js";
 import type { MentionItemData } from "@/mentions/mentionTypes.js";
 import type { ComposerMentionPrefill } from "@/store/zcodeSessionStoreTypes.js";
@@ -868,13 +867,6 @@ function TextContentPlugin({
 
         const lagMs = performance.now() - startedAt;
         // 程序化改写与 IME 组合态不算打字卡顿(判定在 recordInputLag 内统一短路)。
-        recordInputLag({
-          lagMs,
-          textLength: nextText.length,
-          isProgrammatic: tags.has(PROGRAMMATIC_UPDATE_TAG),
-          isComposing: composingRef.current,
-          taskId: taskId ?? undefined,
-        });
       },
     );
   }, [editor, onChange, taskId]);

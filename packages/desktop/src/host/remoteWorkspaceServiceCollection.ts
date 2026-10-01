@@ -2,7 +2,6 @@
 import {
   ServiceCollection,
   IFileService,
-  IMediaPreviewService,
   IGitService,
   IGitCheckpointService,
   ISystemService,
@@ -35,6 +34,7 @@ import {
   IPromptAttachmentTransferService,
   type IServiceAccessor,
 } from "@zcode/services";
+
 import {
   ConversationShareHttpClient,
   ConversationShareService,
@@ -46,7 +46,6 @@ import {
   registerHostApiNetworkTransportForDispose,
   createSettingsSyncService,
   createUsageStatsService,
-  createMediaPreviewService,
   createCodingPlanSubscriptionService,
   createClientScenesService,
   createServiceLogger,
@@ -54,6 +53,7 @@ import {
   createMemoryService,
   createRemoteConversationShareArtifactSource,
 } from "@zcode/services/node";
+
 import {
   buildRuntimeZCodeApiUrl,
   DEFAULT_ZCODE_MODEL_CONTEXT_BUDGET_STRATEGY,

@@ -6,7 +6,6 @@
  */
 import { create } from "zustand";
 import type { IBroadcastService, BroadcastMessage } from "@zcode/services";
-import type { UserInfo } from "@zcode/shared";
 import type { CodePreviewSettings } from "@/lib/codePreviewSettings.js";
 import { DEFAULT_CODE_PREVIEW_SETTINGS } from "@/lib/codePreviewSettings.js";
 import { readSafeLocalStorage, writeSafeLocalStorage } from "@/lib/browserEnvironment.js";
@@ -102,20 +101,6 @@ export interface ZCodeState {
   notificationSoundEnabled: boolean;
   setNotificationSoundEnabled: (enabled: boolean) => void;
 
-  /** 当前用户信息 */
-  user: UserInfo | null;
-  /** 用户由未登录进入登录态时递增；连接额外 provider 不会误判为重新登录。 */
-  authSessionSeq: number;
-  setUser: (user: UserInfo | null) => void;
-
-  /** 启动阶段是否仍在落定账号登录态（OAuth 渠道已移除，仅保留启动门禁语义）。 */
-  isRestoringOAuthSession: boolean;
-  setIsRestoringOAuthSession: (restoring: boolean) => void;
-
-  apiKeyLoginSuccessSeq: number;
-  lastApiKeyLoginModel: string | null;
-  markApiKeyLoginSuccess: (preferredModel?: string | null) => void;
-
   /** 手动请求打开 onboarding 弹窗 */
   newUserOnboardingOpen: boolean;
   setNewUserOnboardingOpen: (open: boolean) => void;
@@ -144,12 +129,7 @@ const STATE_CHANNEL_PREFIX = "state:";
  *
  * @param broadcastService - 广播服务。Desktop 走 RPC，Web 可传 no-op 实现
  */
-export function createZCodeStore(
-  broadcastService: IBroadcastService,
-  options: {
-    initialIsRestoringOAuthSession?: boolean;
-  } = {},
-) {
+export function createZCodeStore(broadcastService: IBroadcastService) {
   /** 标记：正在应用来自广播的更新，此时不再重复广播（防止循环） */
   let applyingBroadcast = false;
   let cleanupSystemThemeListener: (() => void) | null = null;
@@ -227,25 +207,6 @@ export function createZCodeStore(
       set({ notificationSoundEnabled: enabled });
     },
 
-    user: null,
-    authSessionSeq: 0,
-    setUser: (user: UserInfo | null) =>
-      set((state) => ({
-        user,
-        authSessionSeq:
-          state.user === null && user !== null ? state.authSessionSeq + 1 : state.authSessionSeq,
-      })),
-
-    isRestoringOAuthSession: options.initialIsRestoringOAuthSession ?? false,
-    setIsRestoringOAuthSession: (restoring: boolean) => set({ isRestoringOAuthSession: restoring }),
-
-    apiKeyLoginSuccessSeq: 0,
-    lastApiKeyLoginModel: null,
-    markApiKeyLoginSuccess: (preferredModel?: string | null) =>
-      set((state) => ({
-        apiKeyLoginSuccessSeq: state.apiKeyLoginSuccessSeq + 1,
-        lastApiKeyLoginModel: preferredModel?.trim() || null,
-      })),
     newUserOnboardingOpen: false,
     setNewUserOnboardingOpen: (open) => set({ newUserOnboardingOpen: open }),
     onboardingDialogRequested: false,

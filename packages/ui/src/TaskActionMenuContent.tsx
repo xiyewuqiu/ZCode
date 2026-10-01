@@ -1,4 +1,4 @@
-import { TID_V4_TASK_OPEN_IN_SPLIT } from "@zcode/shared";
+import { TID_TASK_DELETE_SESSION, TID_V4_TASK_OPEN_IN_SPLIT } from "@zcode/shared";
 
 interface TaskActionMenuItemProps {
   children: React.ReactNode;
@@ -6,6 +6,7 @@ interface TaskActionMenuItemProps {
   disabled?: boolean;
   onSelect?: () => void;
   title?: string;
+  variant?: "default" | "destructive";
 }
 
 interface TaskActionMenuSeparatorProps {
@@ -33,6 +34,7 @@ export function TaskActionMenuContent({
   onOpenInSplitPane,
   openInSplitPaneDisabled = false,
   onOpenTaskFeedback,
+  onDeleteSession,
   onOpenTaskPathInFileManager,
   onCopyWorkspacePath,
   onCopyTaskPath,
@@ -68,6 +70,11 @@ export function TaskActionMenuContent({
   /** 当前 session 或 pane 数达上限且目标无已有归属时禁用（保留布局与层级）。 */
   openInSplitPaneDisabled?: boolean;
   onOpenTaskFeedback?: () => void;
+  /**
+   * 「删除会话」入口（打开存储预检与永久删除弹窗）。
+   * 只提供回调、不在此处解析 workspace services：菜单树被多个列表和 Header 复用。
+   */
+  onDeleteSession?: () => void;
   onOpenTaskPathInFileManager: () => void;
   onCopyWorkspacePath: () => void;
   onCopyTaskPath: () => void;
@@ -112,6 +119,22 @@ export function TaskActionMenuContent({
       >
         {intl.formatMessage({ id: "taskList.archive" })}
       </Item>
+      {onDeleteSession ? (
+        <Item
+          data-testid={TID_TASK_DELETE_SESSION}
+          disabled={taskTargetActionsDisabled}
+          title={taskTargetActionsDisabled ? disabledReason : undefined}
+          variant="destructive"
+          onSelect={() => {
+            // 菜单不直接删除：先打开预检弹窗，占用统计与阻塞原因由用户确认后再提交。
+            if (!taskTargetActionsDisabled) {
+              onDeleteSession();
+            }
+          }}
+        >
+          {intl.formatMessage({ id: "taskList.deleteSession" })}
+        </Item>
+      ) : null}
       <Item
         disabled={taskTargetActionsDisabled}
         title={disabledReason}

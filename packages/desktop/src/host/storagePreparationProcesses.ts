@@ -2,16 +2,15 @@ import { realpath } from "node:fs/promises";
 import { resolve as resolvePath } from "node:path";
 import { Worker } from "node:worker_threads";
 import { createInterface } from "node:readline";
-import { z } from "zod";
+
 import {
   classifyDatabaseStartupError,
-  databaseStartupErrorCodeSchema,
   databaseMigrationFactsSchema,
   type DatabaseMigrationFacts,
-  databaseStartupErrorDetailsSchema,
   zcodeStoragePreparationFrameSchema,
   type DatabaseStartupState,
 } from "@zcode/shared";
+
 import {
   prepareTasksIndexStorage,
   resolveDefaultZCodeAgentCommand,

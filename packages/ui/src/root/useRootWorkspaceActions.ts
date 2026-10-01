@@ -1,18 +1,14 @@
 /* eslint-disable max-lines -- Root workspace action hook 集中编排项目、远程和 conversation 入口；合并期保持动作边界完整，后续按领域拆分。 */
 import { useCallback, useEffect, useState } from "react";
 import {
-  DesktopCommandIds,
   type AppSettings,
   type IPlatformService,
   type RemoteTarget,
-  type UserInfo,
   type ZCodeTaskClientMode,
 } from "@zcode/shared";
 import type { IServiceAccessor } from "@zcode/services";
 import type { CreateTaskRequest } from "@/app-shell/types.js";
 import { useConfirmDialog } from "@/hooks/useConfirmDialog.js";
-import { reportAppTelemetryEvent } from "@/lib/appTelemetry.js";
-import { resolveLogoutProviderFamilyDomain } from "@/lib/providerFamilyDomainSettings.js";
 import { isRendererReloadNavigation } from "@/lib/rendererNavigation.js";
 import { parseWslUncWorkspacePath } from "@/lib/wslUncWorkspace.js";
 import { logger } from "@/logger.js";
@@ -80,11 +76,6 @@ export function useRootWorkspaceActions({
   allowOpenWorkspace,
   preferDirectoryBrowser,
   openDirectoryBrowser,
-  refreshProviderState,
-  updateAppSettings,
-  setUser,
-  onProviderFamilyDomainClearedAfterLogout,
-  userId,
   onOpenRemoteConnection,
   workbenchGroupClientMode = "desktop-continuous",
 }: {
@@ -99,11 +90,6 @@ export function useRootWorkspaceActions({
   allowOpenWorkspace: NonNullable<RootProps["allowOpenWorkspace"]>;
   preferDirectoryBrowser: boolean;
   openDirectoryBrowser?: () => void;
-  refreshProviderState: () => Promise<void>;
-  updateAppSettings: (patch: Partial<AppSettings>) => Promise<void>;
-  setUser: (user: UserInfo | null) => void;
-  onProviderFamilyDomainClearedAfterLogout?: () => void;
-  userId?: string;
   onOpenRemoteConnection?: (preference?: OpenRemoteConnectionPreference) => void;
   workbenchGroupClientMode?: ZCodeTaskClientMode;
 }) {
@@ -279,78 +265,6 @@ export function useRootWorkspaceActions({
     },
     [addTab, intl, tabStoreApi, workbenchGroupClientMode],
   );
-
-  const handleLogout = useCallback(async () => {
-    let runningAgentSessionCount: number | null = null;
-    try {
-      const sessionActivity = await platform.getDesktopSessionActivity?.();
-      runningAgentSessionCount =
-        typeof sessionActivity?.runningAgentSessionCount === "number"
-          ? sessionActivity.runningAgentSessionCount
-          : null;
-    } catch (error) {
-      logger.warn("[Root] 查询桌面运行中会话数量失败，使用保守退出登录文案", { error });
-    }
-
-    const confirmed = await requestConfirmation({
-      title: intl.formatMessage({ id: "logout.confirm.title" }),
-      description:
-        runningAgentSessionCount !== null && runningAgentSessionCount > 0
-          ? intl.formatMessage(
-              { id: "logout.confirm.descriptionWithRunningSessions" },
-              { count: String(runningAgentSessionCount) },
-            )
-          : intl.formatMessage({ id: "logout.confirm.descriptionDefault" }),
-      confirmLabel: intl.formatMessage({ id: "logout.confirm.ok" }),
-      cancelLabel: intl.formatMessage({ id: "logout.confirm.cancel" }),
-    });
-    if (!confirmed) {
-      return;
-    }
-
-    // Bug 原因：telemetry 是辅助链路；等待网络重试会延迟退出登录，甚至在旧的无超时实现里
-    // 无限阻塞主流程。这里只调度事件，Main 侧负责有界重试与退出 drain。
-    void reportAppTelemetryEvent(
-      platform,
-      {
-        elementName: "app_user_logout",
-        eventRegion: "app_profile",
-        eventType: "ck",
-        eventExtraDetail: {},
-        userId,
-      },
-      "Root",
-    );
-    const settingsBeforeLogout = await services.settingService.get();
-    const nextProviderFamilyDomain = resolveLogoutProviderFamilyDomain({
-      currentDomain: settingsBeforeLogout.providerFamilyDomain,
-    });
-    await updateAppSettings({
-      providerFamilyDomain: (nextProviderFamilyDomain ?? "") as AppSettings["providerFamilyDomain"],
-      providerFamilyDomainUpdatedAt: Date.now(),
-      providerFamilyDomainMigrated: true,
-    });
-    if (!nextProviderFamilyDomain) {
-      onProviderFamilyDomainClearedAfterLogout?.();
-    }
-    // OAuth 登录链路已移除：本机不存在账号会话与派生的 Coding/Start key，
-    // 退出登录只需落定“未登录”展示态并让 Provider Registry 重新解析。
-    setUser(null);
-    // 退出登录后刷新 Account Source 与 Registry，避免继续展示退出前的 Provider 状态。
-    await refreshProviderState();
-    await platform.executeDesktopCommand(DesktopCommandIds.RelaunchApp);
-  }, [
-    intl,
-    requestConfirmation,
-    refreshProviderState,
-    onProviderFamilyDomainClearedAfterLogout,
-    platform,
-    services.modelSelectionService,
-    services.settingService,
-    setUser,
-    updateAppSettings,
-    userId,
-  ]);
 
   const handleSelectProject = useCallback(
     async (path: string) => {
@@ -561,7 +475,6 @@ export function useRootWorkspaceActions({
     setWorkspaceActionError,
     startDraftInWorkspace,
     startNewTaskFromActiveWorkspace,
-    handleLogout,
     handleSelectProject,
     handleSelectConversationWorkspace,
     handleResolveConversationWorkspace,

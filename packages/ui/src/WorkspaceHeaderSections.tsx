@@ -34,6 +34,7 @@ import { resolveWorkspaceHeaderProvider } from "@/lib/workspaceHeaderProvider.js
 import { toast } from "@/components/ui/toast.js";
 import { useFeedbackStore } from "@/feedback/feedbackStore.js";
 import { useModelTrajectoryStore } from "@/store/modelTrajectoryStore.js";
+import { useTaskStorageDialogStore } from "@/store/taskStorageDialogStore.js";
 import { buildTaskFeedbackDescription } from "@/lib/taskFeedbackDraft.js";
 import { resolveGitBranchTriggerLabel } from "@/git-branch-switcher/display.js";
 import type {
@@ -672,6 +673,24 @@ export function WorkspaceHeaderTitleSection({
                 onOpenTaskFeedback={() => {
                   void handleOpenTaskFeedback();
                 }}
+                onDeleteSession={
+                  resolvedTaskActionTaskId
+                    ? () => {
+                        // Header「更多」菜单与列表右键菜单保持同一入口，
+                        // 都打开存储预检弹窗，不在菜单里直接删除。
+                        useTaskStorageDialogStore.getState().open({
+                          taskId: resolvedTaskActionTaskId,
+                          workspacePath: workspaceAbsPath,
+                          ...(workspaceIdentity ? { workspaceIdentity } : {}),
+                          ...(remoteSessionId ? { remoteSessionId } : {}),
+                          title:
+                            activeTaskMeta?.title?.trim() ||
+                            activeTaskTitle?.trim() ||
+                            intl.formatMessage({ id: "taskList.untitled" }),
+                        });
+                      }
+                    : undefined
+                }
                 onOpenTaskPathInFileManager={() => {
                   void handleOpenTaskPathInFileManager();
                 }}

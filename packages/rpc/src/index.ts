@@ -103,15 +103,7 @@ export {
   LoggingChannelClient,
 } from "./logging-middleware.js";
 
-export {
-  type NetworkTransportKind,
-  type NetworkObservation,
-  type NetworkTelemetrySink,
-  setNetworkTelemetrySink,
-  emitNetworkTelemetryObservation,
-  NetworkTelemetryChannelServer,
-  NetworkTelemetryChannelClient,
-} from "./network-telemetry-middleware.js";
+// 网络遥测中间件已移除：它只服务于向厂商上报网络窗口指标，开源运行时没有接收端。
 
 // Layer 6: Remote
 export {

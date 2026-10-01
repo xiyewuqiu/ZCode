@@ -45,7 +45,7 @@ export function useRootPlatformEffects({
   totalUnreadTaskCount,
   hasCompletedFullTabRestore = true,
   intl,
-  isRestoringOAuthSession,
+  providerStartupPending,
 }: {
   initialWorkspaceAbsPath?: string;
   initialWorkspaceIdentity?: string;
@@ -78,7 +78,7 @@ export function useRootPlatformEffects({
   totalUnreadTaskCount: number;
   hasCompletedFullTabRestore?: boolean;
   intl: ReturnType<typeof import("@/i18n/IntlProvider.js").useZCodeIntl>["intl"];
-  isRestoringOAuthSession: boolean;
+  providerStartupPending: boolean;
 }) {
   const didBootstrapInitialWorkspaceRef = useRef(false);
   const baseServices = useOptionalBaseWorkspaceServices();
@@ -288,7 +288,7 @@ export function useRootPlatformEffects({
     if (!pending || !baseServices || activeShareImportRef.current || importOperationRef.current) {
       return;
     }
-    if (isRestoringOAuthSession) {
+    if (providerStartupPending) {
       return;
     }
 
@@ -485,7 +485,7 @@ export function useRootPlatformEffects({
     addTab,
     baseServices,
     intl,
-    isRestoringOAuthSession,
+    providerStartupPending,
     locale,
     shareImportRevision,
   ]);

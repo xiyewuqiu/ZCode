@@ -97,9 +97,6 @@ export interface UserInfo {
   avatarUrl?: string;
 }
 
-/** Host 在检测到 ZCode JWT 失效后通知 Renderer 展示确认并重启。 */
-export const ZCODE_JWT_INVALID_BROADCAST_CHANNEL = "auth:zcode-jwt-invalid";
-
 /** 归一化用户信息 */
 export interface OAuthUserProfile {
   id: string;

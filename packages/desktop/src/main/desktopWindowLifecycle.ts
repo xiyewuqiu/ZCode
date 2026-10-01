@@ -3,7 +3,6 @@ import { randomUUID } from "node:crypto";
 import { app, BrowserWindow, Menu, MessageChannelMain } from "electron";
 import type { MessagePortMain, UtilityProcess as ElectronUtilityProcess } from "electron";
 import { HostMessageTypes, InternalChannels, PlatformChannels, type Locale } from "@zcode/shared";
-import { scheduleArmsBrowserPerfLoadNudge } from "./armsBrowserPerfLoadNudge.js";
 import { createBrowserWindow } from "./desktopWindowChrome.js";
 import type {
   HostInitMessage,
@@ -116,7 +115,6 @@ export function createWindow(options: {
   // 资源遥测据此把主窗口 renderer 归 renderer_main；辅助窗口与 DevTools 归 chromium_other。
   registerMainApplicationWindow(wcId);
   let domReadyGeneration = 0;
-  scheduleArmsBrowserPerfLoadNudge(win.webContents);
 
   // ---- 首窗 Host 提前预热 ----
   // 旧实现等 renderer dom-ready 后才 fork Host：Host 的 Node 启动、SQLite 初始化与

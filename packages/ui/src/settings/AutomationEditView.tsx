@@ -130,7 +130,6 @@ import { useModelSelectionView } from "@/hooks/useModelSelectionView.js";
 import { resolveModelThoughtOption } from "@/lib/modelThoughtOption.js";
 import { decodeCustomModelValue, encodeCustomModelValue } from "@/lib/zcodeCustomModelValue.js";
 import { parseModelPickerValue } from "@/lib/zcodeSessionProjection.js";
-import { startUserAction } from "@/lib/userActionTelemetry.js";
 import { logger } from "@/logger.js";
 import {
   findAutomationWorkspaceOptionByKey,
@@ -1797,24 +1796,13 @@ export function AutomationEditView({
           : null;
       // 只禁用按钮无法覆盖快捷键或异步回调；提交边界也必须拒绝无有效项目的新建。
       if (!target) return false;
-      const trace = startUserAction({
-        featureId: "automation.lifecycle",
-        action: editing ? "update" : "create",
-        trigger: "button",
-        workspaceKind: editing?.workspaceIdentity?.trim() ? "remote" : "local",
-        automationKind: "scheduled",
-      });
       try {
         const ok = await onSubmit({ input, ...target });
         if (ok) {
-          trace.complete({ resultSource: "platform_result" });
           if (options?.returnToList !== false) onBack();
-        } else {
-          trace.reject({ resultSource: "platform_result" });
         }
         return ok;
       } catch (error) {
-        trace.fail({ failureStage: "automation_save" });
         throw error;
       }
     },

@@ -834,17 +834,6 @@ export function createZCodeAgentConnectionScope(
         base.onDynamicConversationFrame(params),
       );
     },
-    onDynamicLocalTtftFacts(params) {
-      assertOpen();
-      if (
-        role !== "terminal-client" ||
-        context.clientMode !== "desktop-continuous" ||
-        params.workspaceIdentity?.trim() ||
-        params.remoteSessionId
-      )
-        return RpcEvent.None;
-      return base.onDynamicLocalTtftFacts(workspaceTarget(params));
-    },
     onDynamicConversationTelemetryFact(params) {
       assertOpen();
       // 可信 clientMode 来自 host attachment；Web/mobile/relay 即使能读权威对话态，

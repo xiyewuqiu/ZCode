@@ -10,18 +10,6 @@ import type {
 import type { AppSettings, Locale } from "./protocol.js";
 import type { StorageCleanRequest, StorageCleanResult, StorageUsageSnapshot } from "./storage.js";
 import type {
-  ArmsCustomEventPayload,
-  ConfigureFinalArmsCustomEventE2ERequest,
-  FinalArmsCustomEventE2EEntry,
-  RendererTelemetryEventPayload,
-  TelemetryRendererContext,
-} from "./telemetry.js";
-import type {
-  RendererActionTraceBatchV1,
-  RendererActionTraceConfigV1,
-} from "./rendererActionTrace.js";
-import type { RendererHeapSample } from "./validation.js";
-import type {
   CancelPendingRemoteConnectionRequest,
   BindRemoteWorkspaceSessionContextRequest,
   BrowserViewScreenshotSurfacePreparePayload,
@@ -300,27 +288,6 @@ export const PlatformChannels = {
   ShareImport: "zcode:share-import",
   /** Renderer → Main：renderer 已就绪，可接收缓存的 deep link */
   RendererReady: "zcode:renderer-ready",
-  /** Renderer → Main：同步当前 renderer 的 telemetry 上下文 */
-  SyncTelemetryContext: "zcode:sync-telemetry-context",
-  /** Renderer → Main：通过统一 telemetry 层上报业务事件 */
-  ReportTelemetryEvent: "zcode:report-telemetry-event",
-  /** Renderer → Main：上报 ARMS 自定义事件 */
-  ReportArmsCustomEvent: "zcode:report-arms-custom-event",
-  /** Renderer → Main：读取 Renderer 用户操作 Trace 灰度配置。 */
-  GetRendererActionTraceConfig: "zcode:get-renderer-action-trace-config",
-  /** Main → Renderer：Renderer 用户操作 Trace 灰度配置变化。 */
-  RendererActionTraceConfigChanged: "zcode:renderer-action-trace-config-changed",
-  /** Renderer → Main：发送已结束的 ui_action batch。 */
-  ReportRendererActionTraceBatch: "zcode:report-renderer-action-trace-batch",
-  /** Renderer → Main：主窗口 renderer 每 60 秒的 heap 读数，单向 send，不需要回执。 */
-  ReportRendererHeapSample: "zcode:report-renderer-heap-sample",
-  ReportLocalTtftBatch: "zcode:report-local-ttft-batch",
-  /** E2E preload → Main：读取 sendCustom 最终参数的内存 ring。 */
-  ReadFinalArmsCustomEventsE2E: "zcode:e2e:read-final-arms-custom-events",
-  /** E2E preload → Main：清空 sendCustom 最终参数的内存 ring。 */
-  ClearFinalArmsCustomEventsE2E: "zcode:e2e:clear-final-arms-custom-events",
-  /** E2E preload → Main：配置只针对目标 event name 的真实网络抑制。 */
-  ConfigureFinalArmsCustomEventsE2E: "zcode:e2e:configure-final-arms-custom-events",
   /** Renderer → Main：触发任务完成/失败的系统通知 */
   ShowTaskNotification: "zcode:show-task-notification",
   /** Main → Preload：通知 renderer 播放任务通知提示音 */
@@ -833,53 +800,12 @@ export interface PlatformChannelMap {
     request: { operationId: string };
     response: void;
   };
-  [PlatformChannels.ShareImport]: {
-    request: { shareCode: string };
-    response: void;
-  };
   [PlatformChannels.RendererReady]: {
     request: void;
     response: void;
   };
-  [PlatformChannels.SyncTelemetryContext]: {
-    request: TelemetryRendererContext;
-    response: void;
-  };
-  [PlatformChannels.ReportTelemetryEvent]: {
-    request: RendererTelemetryEventPayload;
-    response: void;
-  };
-  [PlatformChannels.ReportArmsCustomEvent]: {
-    request: ArmsCustomEventPayload;
-    response: void;
-  };
-  [PlatformChannels.GetRendererActionTraceConfig]: {
-    request: void;
-    response: RendererActionTraceConfigV1;
-  };
-  [PlatformChannels.RendererActionTraceConfigChanged]: {
-    request: RendererActionTraceConfigV1;
-    response: void;
-  };
-  [PlatformChannels.ReportRendererActionTraceBatch]: {
-    request: RendererActionTraceBatchV1;
-    response: void;
-  };
-  // 单向 send（不是 invoke）：60 秒一条的旁路遥测样本，renderer 不等 main 回执。
-  [PlatformChannels.ReportRendererHeapSample]: {
-    request: RendererHeapSample;
-    response: void;
-  };
-  [PlatformChannels.ReadFinalArmsCustomEventsE2E]: {
-    request: void;
-    response: FinalArmsCustomEventE2EEntry[];
-  };
-  [PlatformChannels.ClearFinalArmsCustomEventsE2E]: {
-    request: void;
-    response: void;
-  };
-  [PlatformChannels.ConfigureFinalArmsCustomEventsE2E]: {
-    request: ConfigureFinalArmsCustomEventE2ERequest;
+  [PlatformChannels.ShareImport]: {
+    request: { shareCode: string };
     response: void;
   };
   [PlatformChannels.ShowTaskNotification]: {

@@ -20,24 +20,17 @@ const DirectoryBrowser = lazy(() =>
 import { useWorkspaceServices } from "@/hooks/useWorkspaceServices.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 // 重型页面/弹窗全部懒加载，只把首屏真正需要的模块留在主 bundle 里：
-// SettingsPage（复杂设置页）、SSHDialog（远程 SSH 面板）、WelcomeScreen（登录屏）、
+// SettingsPage（复杂设置页）、SSHDialog（远程 SSH 面板）、
 // DirectoryBrowser（目录浏览器）与 OnboardingDialog 都是低频入口，静态引入会让首屏
 // JS 体积虚胖。lazy chunk 在各自首次挂载时才加载，不阻塞首帧渲染。
 const SSHDialog = lazy(() => import("@/SSHDialog.js").then((m) => ({ default: m.SSHDialog })));
 const SettingsPage = lazy(() =>
   import("@/SettingsPage.js").then((m) => ({ default: m.SettingsPage })),
 );
-const WelcomeScreen = lazy(() =>
-  import("@/WelcomeScreen.js").then((m) => ({ default: m.WelcomeScreen })),
-);
-import type { LoginCompleteReason } from "@/WelcomeScreen.js";
 import { setDefaultFileDisplayBasePath } from "@/lib/fileDisplay.js";
-import { readRendererLaunchTimings, shouldReportLaunchToInput } from "@/lib/launchToInputReport.js";
-import { reportUiLaunchToInput } from "@/lib/uiPerfArmsTelemetry.js";
 import { countAllUnreadTasks } from "@/lib/unreadTaskCount.js";
 import {
   isProviderStartupSyncPending,
-  shouldEnableProviderAvailabilityLoginEntryGuard,
   shouldResolveProviderStartupState,
   shouldBlockRootRender,
   shouldShowRootStartupLoading,
@@ -47,7 +40,7 @@ import { StoreProvider, useZCodeStore } from "@/store/StoreProvider.js";
 import { setMcpStorePlatform } from "@/store/mcpStore.js";
 import { useZCodeSessionStore } from "@/store/zcodeSessionStore.js";
 import { TabStoreProvider, useTabStore, useTabStoreApi } from "@/store/TabStoreProvider.js";
-import { isSettingsTab, isWorkspaceTab, type WorkspaceTabState } from "@/store/tabStore.js";
+import { isSettingsTab, isWorkspaceTab } from "@/store/tabStore.js";
 import { logger } from "@/logger.js";
 import { RootShell } from "@/root/RootShell.js";
 import { RootWorkspaceContent } from "@/root/RootWorkspaceContent.js";
@@ -61,15 +54,14 @@ import { useRemoteWorkspaceTabLifecycle } from "@/root/useRemoteWorkspaceTabLife
 import { useRootProviderStateRefresh } from "@/root/useRootProviderStateRefresh.js";
 import { useModelSelectionServiceView } from "@/hooks/useModelSelectionView.js";
 import { useRootProviderSettingsSnapshot } from "@/root/useRootProviderSettingsSnapshot.js";
-import { useRootSessionEffects } from "@/root/useRootSessionEffects.js";
-import { consumeZcodeJwtInvalidRestartMarker } from "@/root/zcodeJwtInvalidRestartMarker.js";
+import { useRootStartupEffects } from "@/root/useRootStartupEffects.js";
 import { useDesktopNativeThemeSync } from "@/root/useDesktopNativeThemeSync.js";
 import { useRootPlatformEffects } from "@/root/useRootPlatformEffects.js";
 import { useRootWorkspaceActions } from "@/root/useRootWorkspaceActions.js";
 import { registerBaseWorkspaceServices } from "@/store/remoteWorkspaceSessionStore.js";
 import type { RootProps } from "@/root/types.js";
 import { DiffsWorkerPoolProvider } from "@/root/DiffsWorkerPoolProvider.js";
-import { useGlobalTaskList } from "@/hooks/useGlobalTaskList.js";
+
 import { ScopedErrorBoundary } from "@/ErrorBoundary.js";
 import { useRemoteConnectionLogs } from "@/hooks/useRemoteConnectionLogs.js";
 import {
@@ -80,32 +72,19 @@ import {
   markCodeCommentRemoved,
 } from "@/lib/codeCommentContext.js";
 import { useCodeCommentPreviewStore } from "@/store/codeCommentPreviewStore.js";
-import { setUiPerfArmsReporter } from "@/lib/uiPerfArmsTelemetry.js";
-import { setSessionOpenArmsReporter } from "@/lib/sessionOpenArmsTelemetry.js";
-import { setSendFunnelArmsReporter } from "@/lib/sendFunnelArmsTelemetry.js";
 import { RootStartupLoading } from "@/root/RootStartupLoading.js";
 import { resolveProviderAvailabilityState } from "@/lib/modelProviderAvailability.js";
-import { useProviderAvailabilityLoginEntryGuard } from "@/root/useProviderAvailabilityLoginEntryGuard.js";
+import { useProviderAvailabilityStartupCheck } from "@/root/useProviderAvailabilityStartupCheck.js";
 import { ensureProviderFamilyDomainMigration } from "@/lib/providerFamilyDomainMigration.js";
 import { useSettings } from "@/hooks/useSettingService.js";
 import { CLOSE_ACTIVE_CONTEXT_REQUEST_EVENT } from "@/lib/closeActiveContext.js";
 import { AssistantCodeCommentFeatureProvider } from "@/AssistantCodeCommentFeatureProvider.js";
-import {
-  disposeConversationTelemetrySupervisors,
-  reconcileConversationTelemetryWorkspaceScopes,
-} from "@/v4/telemetry/ConversationTelemetryAttachment.js";
 
 const DEFAULT_LUCIDE_STROKE_WIDTH = 1.5;
 interface RemoteConnectionOpenPreference {
   preferredKind?: RemoteTarget["kind"];
   preferredWslDistro?: string;
 }
-
-type WelcomeScreenOpenReason =
-  | "manual-login"
-  | "provider-request"
-  | "logout-provider-required"
-  | "session-expired";
 
 /**
  * Root —— 应用根组件
@@ -128,10 +107,7 @@ export function Root(props: RootProps) {
          */}
         <ServiceProvider services={props.services}>
           <PlatformProvider platform={props.platform}>
-            <StoreProvider
-              broadcastService={props.services.broadcastService}
-              initialIsRestoringOAuthSession
-            >
+            <StoreProvider broadcastService={props.services.broadcastService}>
               <TabStoreProvider>
                 <DiffsWorkerPoolProvider>
                   <AssistantCodeCommentFeatureProvider
@@ -171,24 +147,13 @@ function RootInner({
   useEffect(() => {
     setMcpStorePlatform(platform);
     // 对话 UI perf 只属于 desktop-continuous；Web/mobile 即使能看到权威状态也不装 reporter。
-    setUiPerfArmsReporter(isDesktop ? platform : null);
-    setSessionOpenArmsReporter(isDesktop ? platform : null);
     // 发送漏斗同理：只在 Electron 桌面端上报，Web/mobile 的 reportArmsCustomEvent 是空实现。
-    setSendFunnelArmsReporter(isDesktop ? platform : null);
     return () => {
       setMcpStorePlatform(null);
-      setUiPerfArmsReporter(null);
-      setSessionOpenArmsReporter(null);
-      setSendFunnelArmsReporter(null);
     };
   }, [isDesktop, platform]);
 
-  useEffect(
-    () => () => {
-      disposeConversationTelemetrySupervisors();
-    },
-    [],
-  );
+  useEffect(() => () => {}, []);
 
   // 动态工作流灰度快照的唯一取数点：
   // 放在 app 级 ServiceProvider 这一层取一次，自动化页与 run 面板只读。消费方可能位于
@@ -197,19 +162,11 @@ function RootInner({
 
   const { intl, locale } = useZCodeIntl();
   const theme = useZCodeStore((state) => state.theme);
-  const user = useZCodeStore((state) => state.user);
-  const isRestoringOAuthSession = useZCodeStore((state) => state.isRestoringOAuthSession);
-  const setUser = useZCodeStore((state) => state.setUser);
-  const setIsRestoringOAuthSession = useZCodeStore((state) => state.setIsRestoringOAuthSession);
   const {
     settings: appSettings,
     refresh: refreshAppSettings,
     update: updateAppSettings,
   } = useSettings();
-  const [welcomeScreenOpenReason, setWelcomeScreenOpenReason] =
-    useState<WelcomeScreenOpenReason | null>(() =>
-      consumeZcodeJwtInvalidRestartMarker() ? "session-expired" : null,
-    );
   const [providerFamilyDomainMigrationComplete, setProviderFamilyDomainMigrationComplete] =
     useState(false);
   const rootModelSelectionRead = useModelSelectionServiceView(services.modelSelectionService);
@@ -404,7 +361,6 @@ function RootInner({
 
   const shouldPreferDirectoryBrowser = Boolean(preferDirectoryBrowser);
   const supportsEmbeddedBrowser = explicitSupportsEmbeddedBrowser ?? Boolean(isDesktop);
-  const isResolvingStartupAuthState = isRestoringOAuthSession;
   const rootProviderAvailability = resolveProviderAvailabilityState({
     modelSelectionView: rootModelSelectionView,
   });
@@ -413,13 +369,8 @@ function RootInner({
     modelSelectionViewHydrated:
       rootProviderAvailability.hydrated || rootModelSelectionRead.state.status === "error",
   });
-  const providerAvailabilityLoginEntryGuardEnabled =
-    shouldEnableProviderAvailabilityLoginEntryGuard();
   const { startupCheckCompleted: providerAvailabilityStartupCheckCompleted } =
-    useProviderAvailabilityLoginEntryGuard({
-      enabled: providerAvailabilityLoginEntryGuardEnabled,
-      user,
-      isRestoringOAuthSession: isResolvingStartupAuthState || providerStartupSyncPending,
+    useProviderAvailabilityStartupCheck({
       providerFamilyDomain: appSettings?.providerFamilyDomain,
       modelSelectionView: rootModelSelectionView,
       modelSelectionError:
@@ -435,8 +386,7 @@ function RootInner({
   });
   // 首次安装时 provider 可用性判定晚于 workspace 注入，ChatView 会先 mount 并触发草稿预热。
   // 这里把 provider 启动检查纳入 workspace 恢复门禁，避免在模型配置就绪前启动 ZCode session。
-  const canRestoreWorkspaceSession =
-    !isResolvingStartupAuthState && !isResolvingProviderStartupState;
+  const canRestoreWorkspaceSession = !isResolvingProviderStartupState;
 
   useEffect(() => {
     // 跨 workspace 任务列表需要一个稳定的“本地/root services”入口。
@@ -452,14 +402,10 @@ function RootInner({
   const handleOpenDirectoryBrowser = useCallback(() => {
     setDirectoryBrowserOpen(true);
   }, []);
-  const handleReauthenticationRequired = useCallback(() => {
-    setWelcomeScreenOpenReason("session-expired");
-  }, []);
   const {
     setWorkspaceActionError,
     startDraftInWorkspace,
     startNewTaskFromActiveWorkspace,
-    handleLogout,
     handleSelectProject,
     handleSelectConversationWorkspace,
     handleResolveConversationWorkspace,
@@ -481,13 +427,6 @@ function RootInner({
     allowOpenWorkspace,
     preferDirectoryBrowser: shouldPreferDirectoryBrowser,
     openDirectoryBrowser: handleOpenDirectoryBrowser,
-    refreshProviderState,
-    updateAppSettings,
-    setUser,
-    onProviderFamilyDomainClearedAfterLogout: () => {
-      setWelcomeScreenOpenReason("logout-provider-required");
-    },
-    userId: user?.id,
     onOpenRemoteConnection: allowRemoteWorkspace ? handleOpenRemoteConnection : undefined,
   });
   const handleRemoteWorkspaceActivated = useCallback(
@@ -561,50 +500,16 @@ function RootInner({
     if (!isDesktop || !hasCompletedFullRestore) return;
     // Bug 原因：active-first 的单 workspace 只是 Renderer 首屏投影，若立刻对外同步，
     // 会短暂撤销其他 workspace 的 telemetry scope。完整补齐后才能发布全量集合。
-    reconcileConversationTelemetryWorkspaceScopes(
-      windowWorkspaceTabs.map((tab) => ({
-        workspacePath: tab.workspacePath,
-        ...(tab.workspaceIdentity ? { workspaceIdentity: tab.workspaceIdentity } : {}),
-        ...(tab.remoteSessionId ? { remoteSessionId: tab.remoteSessionId } : {}),
-      })),
-    );
   }, [hasCompletedFullRestore, isDesktop, windowWorkspaceTabs]);
 
   // 启动阻塞是桌面窗口保护期，手机 Web 远控在进入 Root 前已有配对/加载页。
   // Web 端继续使用该 gate 会在 workspace tab 注入前渲染空 RootShell，露出浏览器白底。
   const isStartupRenderBlocked = shouldShowRootStartupLoading({
     isDesktop,
-    welcomeScreenOpen: Boolean(welcomeScreenOpenReason),
-    isResolvingStartupAuthState,
     isResolvingProviderStartupState,
     isRestoring,
     isBootstrappingInitialWorkspace: isBootstrappingInitialWorkspace || isCreatingFallbackWorkspace,
   });
-
-  const launchReportedRef = useRef(false);
-  useEffect(() => {
-    if (
-      !shouldReportLaunchToInput({
-        isStartupRenderBlocked,
-        welcomeScreenOpen: Boolean(welcomeScreenOpenReason),
-        alreadyReported: launchReportedRef.current,
-      })
-    ) {
-      return;
-    }
-    launchReportedRef.current = true;
-    const timings = readRendererLaunchTimings();
-    if (!timings || !timings.marks) {
-      return; // 锚点缺失(非桌面/未注入 marks),整批跳过
-    }
-    reportUiLaunchToInput({
-      marks: timings.marks,
-      rendererStart: timings.rendererStart,
-      reactCommit: timings.reactCommit,
-      inputReady: Date.now(), // T6
-      sessionId: `launch-${timings.marks.createdAt}`,
-    });
-  }, [isStartupRenderBlocked, welcomeScreenOpenReason]);
 
   useRootPlatformEffects({
     initialWorkspaceAbsPath,
@@ -637,7 +542,7 @@ function RootInner({
     totalUnreadTaskCount,
     hasCompletedFullTabRestore: hasCompletedFullRestore,
     intl,
-    isRestoringOAuthSession: isResolvingStartupAuthState || providerStartupSyncPending,
+    providerStartupPending: providerStartupSyncPending,
   });
 
   useEffect(() => {
@@ -658,13 +563,9 @@ function RootInner({
     });
   }, [platform]);
 
-  useRootSessionEffects({
+  useRootStartupEffects({
     platform,
-    services,
     refreshProviderState,
-    setUser,
-    setIsRestoringOAuthSession,
-    onReauthenticationRequired: handleReauthenticationRequired,
   });
 
   useEffect(
@@ -706,9 +607,7 @@ function RootInner({
   );
 
   const canEnterNativeThemeSyncSurface = Boolean(
-    !isStartupRenderBlocked &&
-    !welcomeScreenOpenReason &&
-    (workspaceShellPath || isSettingsTabActive),
+    !isStartupRenderBlocked && (workspaceShellPath || isSettingsTabActive),
   );
 
   useEffect(() => {
@@ -738,7 +637,6 @@ function RootInner({
   useEffect(() => {
     if (
       shouldBlockRootRender({
-        isResolvingStartupAuthState,
         isResolvingProviderStartupState,
         isRestoring,
         isBootstrappingInitialWorkspace,
@@ -791,7 +689,6 @@ function RootInner({
     handleSelectConversationWorkspace,
     isBootstrappingInitialWorkspace,
     isResolvingProviderStartupState,
-    isResolvingStartupAuthState,
     isRestoring,
     isSettingsTabActive,
     services.fileService,
@@ -810,20 +707,6 @@ function RootInner({
     );
   }, [isSettingsTabActive, workspaceShellPath]);
 
-  const handleOpenLoginEntry = () => {
-    setWelcomeScreenOpenReason("manual-login");
-  };
-  const handleWelcomeScreenComplete = useCallback(
-    async (_reason: LoginCompleteReason) => {
-      // 启动不再强制弹登录（startup-provider-required 已移除）：WelcomeScreen
-      // 只由 manual-login / logout-provider-required / session-expired 打开，
-      // 完成后一律关闭并回到原 workspace 上下文；默认 workspace 由启动兜底 effect 负责创建，
-      // 登录流程不需要再承担“登录后建 workspace”的职责。
-      await refreshAppSettings();
-      setWelcomeScreenOpenReason(null);
-    },
-    [refreshAppSettings],
-  );
   const handleRemoteConnectionDialogOpenChange = useCallback((open: boolean) => {
     setRemoteConnectionDialogOpen(open);
     if (!open) {
@@ -886,9 +769,6 @@ function RootInner({
     onCreateTask: handleCreateTask,
     onOpenWorkspace: handleOpenWorkspace,
     allowOpenWorkspace,
-    onLogin: !user ? handleOpenLoginEntry : undefined,
-    onLogout: user ? handleLogout : undefined,
-    user,
   };
 
   if (isStartupRenderBlocked) {
@@ -902,19 +782,6 @@ function RootInner({
             之前阻塞恢复 tab / 初始 workspace 注入时重新渲染纯文字“加载中...”，所以启动被拆成两套 loading。
             这里复用同一套 SVG 启动画面，只把文案保留到 aria-label，保证视觉始终连续且不牺牲可访问性。 */}
         <RootStartupLoading label={loadingLabel} />
-      </RootShell>
-    );
-  }
-
-  if (welcomeScreenOpenReason) {
-    return (
-      <RootShell>
-        {rootModelSelectionErrorNode}
-        {remoteConnectionDialog}
-        {directoryBrowserDialog}
-        <Suspense fallback={null}>
-          <WelcomeScreen onComplete={handleWelcomeScreenComplete} />
-        </Suspense>
       </RootShell>
     );
   }
@@ -987,9 +854,6 @@ function RootInner({
             remoteWorkspaceSessions={remoteWorkspaceSessions}
             allowRemoteWorkspace={allowRemoteWorkspace}
             handleBackFromSettings={handleBackFromSettings}
-            handleLogout={user ? handleLogout : undefined}
-            onLogin={!user ? handleOpenLoginEntry : undefined}
-            user={user}
             reconnectingRemoteWorkspaceKeys={reconnectingRemoteWorkspaceKeys}
             remoteWorkspaceErrorByWorkspaceKey={remoteWorkspaceErrorByWorkspaceKey}
             reconnectingRemoteWorkspaceLogsByWorkspaceKey={

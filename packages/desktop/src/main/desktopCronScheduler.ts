@@ -5,7 +5,6 @@ import { utilityProcess as electronUtilityProcess } from "electron";
 import type { UtilityProcess as ElectronUtilityProcess } from "electron";
 import { HostMessageTypes } from "@zcode/shared";
 import { buildHostProcessEnv, schedulerModulePath } from "./desktopRuntimeEnv.js";
-import { ingestSchedulerSelfResourceSample } from "./processResourceSelfHeapSource.js";
 import { registerSchedulerProcess, unregisterSchedulerProcess } from "./resourceManagerWindow.js";
 import type {
   MainToSchedulerMessage,
@@ -99,7 +98,6 @@ export function spawnCronScheduler(deps: CronSchedulerDeps): CronSchedulerHandle
     // scheduler 自采的 60 秒样本：main 只取 heap 作 scheduler 角色事件的 heap 维度，
     // 非法样本在入口按 schema 丢弃。
     if (msg.type === "scheduler-resource-sample") {
-      ingestSchedulerSelfResourceSample(msg.sample);
       return;
     }
 

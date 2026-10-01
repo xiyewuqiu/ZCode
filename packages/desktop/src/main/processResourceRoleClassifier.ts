@@ -3,7 +3,6 @@
  * 纯函数、零 Electron 运行时依赖，便于单测；pid 集合由 resourceManagerWindow 的注册表提供。
  */
 
-import type { ProcessResourceRole } from "@zcode/shared";
 import {
   addAppResourceTotals,
   createEmptyAppResourceTotals,
@@ -20,7 +19,7 @@ const CHROMIUM_PROCESS_RESOURCE_ROLES = [
   "chromium_other",
   "host",
   "scheduler",
-] as const satisfies readonly ProcessResourceRole[];
+] as const;
 
 type ChromiumProcessResourceRole = (typeof CHROMIUM_PROCESS_RESOURCE_ROLES)[number];
 

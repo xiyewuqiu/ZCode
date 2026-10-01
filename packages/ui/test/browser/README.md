@@ -11,6 +11,18 @@ corepack pnpm exec tsx --tsconfig packages/ui/tsconfig.json --test packages/ui/t
 
 使用本机 Edge、5,100 条合成记录和真实目录组件 / 查询 hook，覆盖虚拟挂载上限、20Hz 无关投影更新隔离、滚动锚点、键盘首尾与打开、焦点保留、分页重试和跨 scope 在途隔离。测试包含亮暗主题、手机宽度、20px UI 字号和 reduced-motion；截图及帧采样位于 `node_modules/.cache/subagent-directory/`。此 fixture 不启动真实 Agent、Host 或远程连接。
 
+## 会话永久删除
+
+保持 Vite 测试服务运行后，从仓库根目录执行：
+
+```powershell
+node packages/ui/test/browser/run-task-storage.mjs
+node packages/ui/test/browser/run-task-delete-entry.mjs
+corepack pnpm exec tsx --tsconfig packages/ui/tsconfig.json --test packages/ui/test/taskStorageDialogStore.test.ts
+```
+
+第一个脚本覆盖预检弹窗本身的确认、阻塞、重试与迟到结果隔离；第二个脚本挂载真实 `TaskActionMenuContent` 与 app 级弹窗 host，验证任务右键菜单里的「删除会话…」能打开预检弹窗、确认前不可删除、确认后提交清理、中文文案以及只读 workspace 下入口被禁用。fixture 使用合成 service，不连接真实 Host 或删除真实历史。
+
 ## 会话目录功能回归
 
 保持下述 Vite 测试服务运行后，从仓库根目录执行：

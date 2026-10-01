@@ -19,6 +19,7 @@ export function TaskListItemContextMenu({
   onOpenInSplitPane,
   openInSplitPaneDisabled,
   onOpenTaskFeedback,
+  onDeleteSession,
   onOpenTaskPathInFileManager,
   onCopyWorkspacePath,
   onCopyTaskPath,
@@ -49,6 +50,8 @@ export function TaskListItemContextMenu({
   /** 叶子数达上限且该 session 未在任何 pane 时禁用。 */
   openInSplitPaneDisabled?: boolean;
   onOpenTaskFeedback: () => void;
+  /** 「删除会话」入口（打开存储预检与永久删除弹窗）。 */
+  onDeleteSession?: () => void;
   onOpenTaskPathInFileManager: () => void;
   onCopyWorkspacePath: () => void;
   onCopyTaskPath: () => void;
@@ -76,6 +79,7 @@ export function TaskListItemContextMenu({
         onOpenInSplitPane={onOpenInSplitPane}
         openInSplitPaneDisabled={openInSplitPaneDisabled}
         onOpenTaskFeedback={onOpenTaskFeedback}
+        onDeleteSession={onDeleteSession}
         onOpenTaskPathInFileManager={onOpenTaskPathInFileManager}
         onCopyWorkspacePath={onCopyWorkspacePath}
         onCopyTaskPath={onCopyTaskPath}

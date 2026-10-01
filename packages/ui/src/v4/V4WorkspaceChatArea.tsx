@@ -28,12 +28,12 @@ import {
   effectiveFocusedPaneId,
   MAX_WORKBENCH_PANES,
   paneWorkspaceKey,
-  PRIMARY_LEAF,
   usePaneLayoutStore,
   V4_PRIMARY_PANE_ID,
   type PaneSplitSide,
   type PaneWorkspaceScope,
 } from "@/v4/paneLayoutStore.js";
+
 import { collectWorkbenchLayout, dividerStyle, SPLIT_VAR_PREFIX } from "@/v4/workbenchLayout.js";
 import { WorkbenchLeafPane, type WorkbenchShellBinding } from "@/v4/WorkbenchPane.js";
 import { WorkbenchSplitDivider } from "@/v4/WorkbenchSplitDivider.js";

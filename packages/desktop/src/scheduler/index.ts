@@ -24,10 +24,6 @@ import {
 import type { MainToSchedulerMessage, SchedulerToMainMessage } from "./schedulerProtocol.js";
 import { settleManualClaimForDispatchResult } from "./manualClaimRelease.js";
 import { settleOffPeakDispatchResult } from "./offPeakDispatchSettlement.js";
-import {
-  startSchedulerResourceTelemetry,
-  type SchedulerResourceTelemetry,
-} from "./schedulerResourceTelemetry.js";
 
 /** 轮询间隔：cron 最小粒度是分钟，20s 轮询足以按时命中且开销低。 */
 const POLL_INTERVAL_MS = 20_000;

@@ -125,8 +125,6 @@ export { createFileWatcherService } from "./fileWatcher/fileWatcherService.js";
 export { OAuthCredentialRepo } from "./oauth/repo/oauthCredentialRepo.js";
 export { ensureDeviceMid } from "./device/deviceMid.js";
 export type { EnsureDeviceMidOptions } from "./device/deviceMid.js";
-export { createTelemetryCore, ensureTelemetryDeviceMid } from "./telemetry/telemetryCore.js";
-export type { EnsureTelemetryDeviceMidOptions } from "./telemetry/telemetryCore.js";
 export type { AccountRequestAuthResolver } from "./model-provider/accountProviderRequestAuthService.js";
 export { createAccountProviderCredentialStore } from "./model-provider/accountProviderCredentialStore.js";
 export type {
@@ -295,6 +293,7 @@ import { IZCodeTaskService } from "./session/zcodeTaskService.js";
 import { IZCodeAgentService } from "./zcode-agent/zcodeAgent.js";
 import type { CuaOperationStateReporter } from "./zcode-agent/cuaOperationTurnTracker.js";
 import { IZCodeSessionService } from "./zcode-session/zcodeSession.js";
+import { IFileWatcherService } from "./fileWatcher/fileWatcher.js";
 import {
   createUnsupportedConversationShareService,
   IConversationShareService,
@@ -306,7 +305,6 @@ import {
 } from "./conversation-share/conversationShareService.js";
 import { createLocalConversationShareArtifactSource } from "./conversation-share/conversationShareArtifactSource.js";
 import { ConversationShareHttpClient } from "./conversation-share/conversationShareHttpClient.js";
-import { IFileWatcherService } from "./fileWatcher/fileWatcher.js";
 import { IUsageStatsService } from "./usage-stats/usageStats.js";
 import { ICodingPlanSubscriptionService } from "./coding-plan-subscription/codingPlanSubscription.js";
 import { IClientScenesService } from "./client-scenes/clientScenes.js";
@@ -492,7 +490,6 @@ import {
   DEFAULT_ZCODE_MODEL_CONTEXT_BUDGET_STRATEGY,
   resolveSafeEndpointHostname,
   formatLogPrefix,
-  isCredentialDecryptError,
   isStartPlanModelProviderId,
   OFF_PEAK_PROVIDER_IDS,
   BIGMODEL_PROVIDER_ID,
@@ -514,7 +511,6 @@ import {
   zcodeAccountAccessSchema,
   zcodeProviderAccountAccessSchema,
   ZCODE_VERSION,
-  ZCODE_ENV,
   buildRuntimeZCodeApiUrl,
 } from "@zcode/shared";
 
@@ -1635,11 +1631,6 @@ export function createLocalServices(options: {
       return new Set(view.providers.map((provider) => provider.providerId));
     },
   });
-  const commandsService = createCommandsService({ isDesktopRuntime: true });
-  const hooksService = createHooksService({
-    grantWorkspaceHookTrust: (params) => zcodeAgentService.grantWorkspaceHookTrust(params),
-  });
-  const memoryService = createMemoryService();
   // 只要当前进程已经装配 Provider Runtime，就由该 Environment 自己的 Selection View
   // 决定执行就绪状态。Desktop-attached remote 也读取远端自己的 Config/Account Facts。
   const modelSelectionReadinessSource = providerRuntime.modelSelection;
@@ -2355,6 +2346,7 @@ export function createLocalServices(options: {
     authorizeLocalMediaPreviewPath: options?.authorizeLocalMediaPreviewPath,
     createLocalMediaPreviewUrl: buildLocalMediaPreviewUrl,
   });
+  // 注册链上的懒工厂（如 OffPeak）会各自创建 tasks-index sqlite repo；先收集到本数组，
   const conversationShareClient = new ConversationShareHttpClient({
     // 分享运行时始终走真实 API；测试/Mock 场景应在 service 单测或 Web fixture 中显式注入，
     // 不能让开发环境默认生成仅存在于进程内存的 mock-share 链接。
@@ -2379,7 +2371,6 @@ export function createLocalServices(options: {
         client: conversationShareClient,
         artifactSource: createLocalConversationShareArtifactSource(),
       });
-  // 注册链上的懒工厂（如 OffPeak）会各自创建 tasks-index sqlite repo；先收集到本数组，
   // services 集合建好后在 return 前统一登记进 sharedSqliteRepos 侧表
   const sqliteReposToClose: Array<{ close(): void }> = [];
   const services = new ServiceCollection()
@@ -2396,10 +2387,10 @@ export function createLocalServices(options: {
     .register(IZCodeTaskService, zcodeTaskService)
     .register(IZCodeAgentService, zcodeAgentService)
     .register(IZCodeSessionService, zcodeSessionService)
+    .register(IConversationShareService, conversationShareService)
     .register(ICuaPermissionService, cuaPermissionService)
     .register(ICuaPipSessionService, cuaPipSessionService)
-    .register(IConversationShareService, conversationShareService)
-    .register(IFileWatcherService, createFileWatcherService())
+        .register(IFileWatcherService, createFileWatcherService())
     .register(
       IUsageStatsService,
       // BigModel 用量 monitor / entitlement 链路已随官方供应商下线移除；
@@ -2596,84 +2587,6 @@ export function createLocalServices(options: {
   sqliteReposToClose.push(taskIndexRepo);
   sharedSqliteRepos.set(services, sqliteReposToClose);
   return services;
-}
-
-export function createTelemetryUserIdLoader(
-  credentialService: Pick<ICredentialService, "load">,
-): () => Promise<string> {
-  const log = createServiceLogger("telemetry-user-id");
-  return async () => {
-    try {
-      const activeProvider = (await credentialService.load("oauth:active_provider"))?.trim() ?? "";
-      if (!activeProvider) {
-        return "";
-      }
-
-      const rawUserInfo = await credentialService.load(`oauth:${activeProvider}:user_info`);
-      return readTelemetryOAuthUserId(rawUserInfo);
-    } catch (error) {
-      if (!isCredentialDecryptError(error)) {
-        throw error;
-      }
-
-      // Bugfix: telemetry 只是只读 userId 上报入口，不能抢在凭据仓储的损坏恢复前
-      // 对损坏凭据做半套清理；否则会漏掉派生模型 provider key 的 logout 收口。
-      log.warn(undefined, "skip telemetry user id: OAuth credential decrypt failed", error);
-      return "";
-    }
-  };
-}
-
-/** 仅给同一事件账号返回当前 ZCode JWT；不缓存、不修改登录凭据。 */
-export function createTelemetryAuthorizationLoader(
-  credentialService: Pick<ICredentialService, "load">,
-): (userId: string) => Promise<string | null> {
-  return async (userId) => {
-    if (!userId) return null;
-    try {
-      const provider = (await credentialService.load("oauth:active_provider"))?.trim();
-      if (provider !== "zai" && provider !== "bigmodel") return null;
-      const readUserId = async () =>
-        readTelemetryOAuthUserId(await credentialService.load(`oauth:${provider}:user_info`));
-      if ((await readUserId()) !== userId) return null;
-      const jwt = (await credentialService.load("zcodejwttoken"))?.trim();
-      // 退出/切账号可能发生在异步读取期间；禁止将旧身份的 token 附到其他账号事件上。
-      if (
-        (await credentialService.load("oauth:active_provider"))?.trim() !== provider ||
-        (await readUserId()) !== userId
-      )
-        return null;
-      return jwt && /^[\x21-\x7e]+$/.test(jwt) ? `Bearer ${jwt}` : null;
-    } catch {
-      return null;
-    }
-  };
-}
-
-export function createTelemetryMarketingParamsLoader(
-  credentialService: ICredentialService,
-): () => Promise<import("@zcode/shared").OAuthLoginAttribution | null> {
-  // 恢复原因：固定返回 null 会丢掉已保存的渠道归因，数仓应读取 OAuth 的同一份事实。
-  const repo = new OAuthCredentialRepo(credentialService);
-  return () => repo.loadLoginAttribution();
-}
-
-function readTelemetryOAuthUserId(rawUserInfo: string | null): string {
-  if (!rawUserInfo) {
-    return "";
-  }
-
-  try {
-    const parsed = JSON.parse(rawUserInfo) as {
-      id?: unknown;
-      user_id?: unknown;
-    };
-    const id = typeof parsed.id === "string" ? parsed.id : "";
-    const userId = typeof parsed.user_id === "string" ? parsed.user_id : "";
-    return id.trim() || userId.trim();
-  } catch {
-    return "";
-  }
 }
 
 export function disposeServiceResources(services: ServiceCollection): void {
