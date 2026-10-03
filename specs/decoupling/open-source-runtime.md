@@ -107,7 +107,7 @@ sequenceDiagram
 1. **会话分享入口**：`WorkspaceHeaderActionSection` 用 `user` 判断"分享发布接口依赖登录态；未登录时隐藏入口"。账号移除后 `user` 恒为 undefined，分享入口**永久隐藏**，属死分支。需要在 P4 决定：改为本地导出 / GitHub Gist，还是删除该入口与 `conversation-share` 服务。本轮未动。
 2. **i18n 孤儿文案**：`login.*`、`app.login`、`app.logout`、`logout.confirm.*`、`quickPick.command.login|logout` 等键已无消费方，待 i18n 统一清理时删除。
 3. **预热空实现**：`SessionPane` 的 `reportDraftCreated` 是上报链路移除后留下的空回调，仍被 3 处调用与一处透传引用；为避免改动预热 API 契约，本轮只把入参加 `_` 前缀，待预热链路收口时一并删除。
-4. **账号 Provider / Coding Plan / 闲时 / 用量 / 权益 / `oauth:*` 凭据仓储**：属 P3，尚未开始。
+4. **账号 Provider / Coding Plan / 用量 / 权益 / `oauth:*` 凭据仓储**：属 P3，尚未开始。
 
 ### 2026-10-02 P2/P3 批（账号体系与厂商特性整体移除）
 

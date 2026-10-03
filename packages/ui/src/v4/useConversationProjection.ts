@@ -1,4 +1,5 @@
 import { useCallback, useSyncExternalStore } from "react";
+import { useLayerActivity } from "@/lib/layerActivity.js";
 import type { ConversationStoreState } from "@/v4/conversationProjectionStore.js";
 import type { SessionLease } from "@/v4/sessionDataLayer.js";
 import { subscribeToVisibleProjection } from "@/v4/visibleProjectionSubscription.js";
@@ -29,11 +30,14 @@ export function useConversationProjectionSelector<T>(
   selector: (state: ConversationStoreState) => T,
 ): T {
   const store = lease?.store ?? null;
+  // 隐藏层（设置页覆盖、主视图切走）不接收通知，但订阅与 store 归约保持；
+  // 重新激活时补一次最新快照。
+  const activity = useLayerActivity();
   // 流式更新使父组件高频渲染；稳定函数身份避免每次提交都退订再订阅同一 store。
   const subscribe = useCallback(
     (listener: () => void) =>
-      store ? subscribeToVisibleProjection(store, listener, document) : () => {},
-    [store],
+      store ? subscribeToVisibleProjection(store, listener, document, activity) : () => {},
+    [activity, store],
   );
   const getSnapshot = useCallback(
     () => selector(store?.getState() ?? CLOSED_STATE),

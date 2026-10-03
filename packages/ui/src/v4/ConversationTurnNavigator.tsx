@@ -20,13 +20,19 @@ import {
   type ConversationTurnNavigatorHydrationResult,
 } from "@/v4/conversationTurnNavigatorHelpers.js";
 import type { ConversationTurnRenderUnit } from "@/v4/conversationTurnRenderUnits.js";
+import {
+  useTimelineViewportSelector,
+  type TimelineViewportProbe,
+} from "@/v4/timelineViewportProbe.js";
 
 interface ConversationTurnNavigatorProps {
   renderUnits: readonly ConversationTurnRenderUnit[];
-  scrollOffsetPx: number;
-  viewportHeightPx: number;
   virtualItems: readonly ConversationTurnNavigatorVirtualItem[];
-  activeQueryRowId?: number;
+  /**
+   * 视口度量探针：rail 是唯一受滚动驱动的视觉，直接订阅探针而不是让
+   * Timeline 每帧重渲染；探针也是 scrollOffset/viewportHeight 的唯一来源。
+   */
+  viewportProbe: TimelineViewportProbe;
   isHydratingDirectory?: boolean;
   canLoadOlder?: boolean;
   onLoadAllOlder?: () => Promise<ConversationTurnNavigatorHydrationResult>;
@@ -35,10 +41,8 @@ interface ConversationTurnNavigatorProps {
 
 function ConversationTurnNavigatorImpl({
   renderUnits,
-  scrollOffsetPx,
-  viewportHeightPx,
   virtualItems,
-  activeQueryRowId,
+  viewportProbe,
   isHydratingDirectory = false,
   canLoadOlder = false,
   onLoadAllOlder,
@@ -64,16 +68,6 @@ function ConversationTurnNavigatorImpl({
     [intl, renderUnits, projectNavigatorItems],
   );
 
-  const activeUnitIndex = useMemo(
-    () =>
-      resolveConversationTurnNavigatorActiveUnitIndex({
-        items,
-        scrollOffsetPx,
-        viewportHeightPx,
-        virtualItems,
-      }),
-    [items, scrollOffsetPx, viewportHeightPx, virtualItems],
-  );
   const itemIndexes = useMemo(() => {
     const byRowId = new Map<number, number>();
     const firstByUnitIndex = new Map<number, number>();
@@ -85,12 +79,26 @@ function ConversationTurnNavigatorImpl({
     });
     return { byRowId, firstByUnitIndex };
   }, [items]);
-  const activeItemIndex =
-    (activeQueryRowId === undefined ? undefined : itemIndexes.byRowId.get(activeQueryRowId)) ??
-    (activeUnitIndex === undefined
-      ? undefined
-      : itemIndexes.firstByUnitIndex.get(activeUnitIndex)) ??
-    -1;
+  // 滚动度量经 getSnapshot 在渲染期读取，输入经 ref 保持最新：同一轮次内滚动的每一帧
+  // 都只更新缓存值，React 不向下传播重渲染；跨轮次时才产生一次真实提交。
+  const viewportInputsRef = useRef({ items, itemIndexes, virtualItems });
+  viewportInputsRef.current = { items, itemIndexes, virtualItems };
+  const activeItemIndex = useTimelineViewportSelector(viewportProbe, (metrics) => {
+    const inputs = viewportInputsRef.current;
+    const unitIndex = resolveConversationTurnNavigatorActiveUnitIndex({
+      items: inputs.items,
+      scrollOffsetPx: metrics.scrollOffsetPx,
+      viewportHeightPx: metrics.viewportHeightPx,
+      virtualItems: inputs.virtualItems,
+    });
+    return (
+      (metrics.activeQueryRowId === undefined
+        ? undefined
+        : inputs.itemIndexes.byRowId.get(metrics.activeQueryRowId)) ??
+      (unitIndex === undefined ? undefined : inputs.itemIndexes.firstByUnitIndex.get(unitIndex)) ??
+      -1
+    );
+  });
   const visualFocusItemIndex = resolveConversationTurnNavigatorVisualFocusItemIndex({
     activeItemIndex,
     interactionItemIndex,

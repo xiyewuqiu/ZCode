@@ -21,7 +21,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu.js";
 import { ControlHintTooltip } from "@/ControlHintTooltip.js";
-import { CRON_DEFAULT_GROUP_ID, OFF_PEAK_DEFAULT_GROUP_ID } from "@zcode/shared";
+import { CRON_DEFAULT_GROUP_ID } from "@zcode/shared";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { getTaskGroupDisplayTitle } from "@/workspace-grouped-tasks/group-title.js";
 import {
@@ -51,15 +51,13 @@ export function StickyGroupHeader({
 }) {
   const { intl } = useZCodeIntl();
   const taskCount = node.tasks.length;
-  // 系统分组（cron / 闲时）标题按语言环境本地化展示，与 GroupItem 保持一致。
+  // 系统分组（cron）标题按语言环境本地化展示，与 GroupItem 保持一致。
   const displayTitle = getTaskGroupDisplayTitle(node.group, {
     cron: intl.formatMessage({ id: "taskGroup.cronGroupName" }),
-    offPeak: intl.formatMessage({ id: "offPeak.sidebar.groupTitle" }),
   });
   // sticky header 的右键菜单要和 GroupItem 一样裁剪系统分组的“解散”项，
-  // 否则 cron/闲时组滚动吸顶时可被误解散。系统分组一律不提供解散入口。
-  const isSystemGroup =
-    node.group.id === CRON_DEFAULT_GROUP_ID || node.group.id === OFF_PEAK_DEFAULT_GROUP_ID;
+  // 否则 cron 组滚动吸顶时可被误解散。系统分组一律不提供解散入口。
+  const isSystemGroup = node.group.id === CRON_DEFAULT_GROUP_ID;
   const handleToggle = () => onToggleCollapsed(node.group.id);
   const handleGroupColorChange = (color: string) => {
     onUpdateGroupColor(node.group.id, color as ZCodeTaskGroupColor);

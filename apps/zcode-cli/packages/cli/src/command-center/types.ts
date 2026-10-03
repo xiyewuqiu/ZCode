@@ -130,10 +130,6 @@ export type CommandCenterTarget = {
   };
 };
 
-export type CommandCenterLogoutResult = {
-  credentialsPath: string;
-};
-
 export type CommandCenterApp = {
   readonly sessionId: string;
   readonly traceId: string;
@@ -263,7 +259,6 @@ export type CommandCenterDeps = {
   resumeApp(sessionId?: string): Promise<CommandCenterApp>;
   /** 用户主动切换成功后保存完整默认选择；恢复会话与自动初始化不调用。 */
   saveDefaultModelSelection?: (selection: ModelSelection) => Promise<void>;
-  logout?: () => Promise<CommandCenterLogoutResult>;
   setLocale?: (locale: UiLocale) => Promise<CommandCenterLocaleResult> | CommandCenterLocaleResult;
   setMode?: (mode: SwitchableCommandCenterMode) => Promise<CommandCenterMode> | CommandCenterMode;
 };

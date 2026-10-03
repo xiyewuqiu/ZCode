@@ -132,8 +132,6 @@ export interface ToolExecutionContext {
   telemetry?: ToolExecutionSpanWriter;
   /** 当前工具调用是否属于 automation 派发轮；写工具 handler 用它做最终权限校验。 */
   automationTurn?: boolean;
-  /** 当前工具调用是否属于闲时任务派发轮；OffPeakCreate handler 用它做最终拒绝。 */
-  offPeakTurn?: boolean;
   traceContext?: TraceContext;
   traceId: TraceId;
   spanId?: string;

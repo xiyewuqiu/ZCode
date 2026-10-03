@@ -1062,9 +1062,21 @@ function ConversationTurnGroupImpl({
     (unit.isRunning ||
       latestAssistantTextRow?.state === "complete" ||
       latestAssistantTextRow?.state === "interrupted");
+  // 整轮复制文本只在终态被消费：轮尾工具栏要求 latestAssistantTextRow.state === "complete"，
+  // 行内动作栏（ConversationAssistantTextActions）也只对 complete 行渲染。流式期间每帧拼接
+  // 整轮正文（含 ExitPlanMode 计划正文提取）与随后的 code-comment 投影都是纯派生浪费，
+  // 且成本与整轮文本总量成正比。这里按终态门控，让流式热路径不再做整轮字符串拼接。
+  // 流式正文自身的 code-comment 过滤由行级 AssistantTextRowView 完成，不依赖本值。
+  const assistantCopyTextFinalized =
+    latestAssistantTextRow?.state === "complete" || latestAssistantTextRow?.state === "interrupted";
   const assistantRawCopyText = useMemo(
-    () => resolveAssistantCopyText(unit),
-    [unit.assistantTextRows, unit.assistantWorkRows, unit.latestAssistantTextRow],
+    () => (assistantCopyTextFinalized ? resolveAssistantCopyText(unit) : undefined),
+    [
+      assistantCopyTextFinalized,
+      unit.assistantTextRows,
+      unit.assistantWorkRows,
+      unit.latestAssistantTextRow,
+    ],
   );
   const assistantCopyText = useMemo(
     () =>
@@ -1163,7 +1175,6 @@ function ConversationTurnGroupImpl({
   // workflow 通知卡开头的轮去掉轮顶 padding：卡片只贴上一轮 pb-5 的常规流内间距。
   const startsWithWorkflowNotificationCard =
     backgroundResultTitle !== undefined && resolveWorkflowNotification(unit) !== undefined;
-
 
   return (
     <section

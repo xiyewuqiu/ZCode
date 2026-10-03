@@ -4,18 +4,15 @@ import { BrowserWindow, MessageChannelMain } from "electron";
 import type { MessagePortMain, UtilityProcess as ElectronUtilityProcess } from "electron";
 import {
   buildRemoteWorkspaceIdentity,
-  buildRemoteEnvironmentKey,
   HostMessageTypes,
   HostResponseTypes,
   hostResponseMessageSchema,
   InternalChannels,
   PlatformChannels,
   type RemoteTarget,
-  type ProviderProvisioningTrigger,
   type WindowHostRemoteWorkspaceDescriptor,
 } from "@zcode/shared";
 import type { RemoteAssetDirs } from "./desktopRuntimeEnv.js";
-import { ProviderProvisioningEnvironmentCoordinator } from "./providerProvisioningEnvironmentCoordinator.js";
 
 interface RemoteWorkspaceSessionContext {
   workspacePath: string;
@@ -48,15 +45,6 @@ interface RemoteAttachmentRoute {
   connectedAtMonotonicMs: number;
   connectFinalized: boolean;
   remoteUsageTelemetryEligible: boolean;
-  providerProvisioningDispose?: () => void;
-}
-
-interface PendingProviderProvisioningExecution {
-  readonly child: ElectronUtilityProcess;
-  readonly trigger: ProviderProvisioningTrigger;
-  readonly startedAtMonotonicMs: number;
-  readonly resolve: () => void;
-  readonly reject: (error: Error) => void;
 }
 
 function closeMessagePort(port: MessagePortMain | undefined): void {
@@ -82,17 +70,10 @@ export function createRemoteWorkspaceSessionManager(options: {
   createMessageChannel?: () => { port1: MessagePortMain; port2: MessagePortMain };
   rendererAttachmentReadyTimeoutMs?: number;
   monotonicNowMs?: () => number;
-  providerProvisioningCoordinator?: ProviderProvisioningEnvironmentCoordinator;
 }) {
   const pendingByRequestKey = new Map<string, PendingConnect>();
   const routesBySessionId = new Map<string, RemoteAttachmentRoute>();
   const listenedHosts = new WeakSet<ElectronUtilityProcess>();
-  const pendingProviderProvisioningExecutions = new Map<
-    string,
-    PendingProviderProvisioningExecution
-  >();
-  const providerProvisioningCoordinator =
-    options.providerProvisioningCoordinator ?? new ProviderProvisioningEnvironmentCoordinator();
   let appShutdownStarted = false;
   const monotonicNowMs = options.monotonicNowMs ?? (() => performance.now());
 
@@ -328,16 +309,7 @@ export function createRemoteWorkspaceSessionManager(options: {
       remoteUsageTelemetryEligible: pending.remoteUsageTelemetryEligible,
     };
     routesBySessionId.set(descriptor.remoteSessionId, route);
-    const environmentKey = buildRemoteEnvironmentKey(descriptor.target);
-    const registration = providerProvisioningCoordinator.register(
-      environmentKey,
-      descriptor.remoteSessionId,
-      (trigger) =>
-        executeProviderProvisioning(child, descriptor.remoteSessionId, environmentKey, trigger),
-    );
-    route.providerProvisioningDispose = registration.dispose;
-    void registration.initialSync
-      .then(() => attachRendererPort(pending.win, route, "connect"))
+    void attachRendererPort(pending.win, route, "connect")
       .then(() => {
         emitConnectionLog(pending.win, {
           requestId,
@@ -348,7 +320,6 @@ export function createRemoteWorkspaceSessionManager(options: {
         pending.resolve(descriptor.remoteSessionId);
       })
       .catch((error: unknown) => {
-        route.providerProvisioningDispose?.();
         routesBySessionId.delete(descriptor.remoteSessionId);
         child.postMessage({
           type: HostMessageTypes.DisposeRemoteWorkspaceSession,
@@ -357,36 +328,6 @@ export function createRemoteWorkspaceSessionManager(options: {
         });
         pending.reject(error instanceof Error ? error : new Error(String(error)));
       });
-  }
-
-  function executeProviderProvisioning(
-    child: ElectronUtilityProcess,
-    remoteSessionId: string,
-    environmentKey: string,
-    trigger: ProviderProvisioningTrigger,
-  ): Promise<void> {
-    const requestId = randomUUID();
-    return new Promise<void>((resolve, reject) => {
-      pendingProviderProvisioningExecutions.set(requestId, {
-        child,
-        trigger,
-        startedAtMonotonicMs: monotonicNowMs(),
-        resolve,
-        reject,
-      });
-      try {
-        child.postMessage({
-          type: HostMessageTypes.ProviderProvisioningExecute,
-          requestId,
-          environmentKey,
-          remoteSessionId,
-          trigger,
-        });
-      } catch (error) {
-        pendingProviderProvisioningExecutions.delete(requestId);
-        reject(error instanceof Error ? error : new Error(String(error)));
-      }
-    });
   }
 
   function detachRouteAttachments(
@@ -433,7 +374,6 @@ export function createRemoteWorkspaceSessionManager(options: {
     const route = routesBySessionId.get(event.remoteSessionId);
     if (!route || route.webContentsId !== webContentsId) return;
     if (event.reason !== "connection-closed") {
-      route.providerProvisioningDispose?.();
       retireActiveRoute(route, "disposed", () => {
         routesBySessionId.delete(event.remoteSessionId);
       });
@@ -447,7 +387,6 @@ export function createRemoteWorkspaceSessionManager(options: {
     retireActiveRoute(route, "connection-closed", () => {
       route.attachmentState = "closed";
     });
-    route.providerProvisioningDispose?.();
     // 连接断开只把 route 标成 closed，已暴露的 desktop attachment 仍留在窗口 Host；
     // sessionId 换代后 Main 又会删除 route，导致旧 ChannelServer 永久失去回收入口。
     detachRouteAttachments(
@@ -491,34 +430,6 @@ export function createRemoteWorkspaceSessionManager(options: {
         });
         return;
       }
-      if (parsed.data.type === HostResponseTypes.ProviderProvisioningSourceChanged) {
-        void providerProvisioningCoordinator.requestAll(parsed.data.trigger);
-        return;
-      }
-      if (parsed.data.type === HostResponseTypes.ProviderProvisioningExecutionResult) {
-        const pending = pendingProviderProvisioningExecutions.get(parsed.data.requestId);
-        if (!pending || pending.child !== child) return;
-        pendingProviderProvisioningExecutions.delete(parsed.data.requestId);
-        const logContext = {
-          environmentKey: parsed.data.environmentKey,
-          trigger: pending.trigger,
-          status: parsed.data.status,
-          durationMs: Math.max(0, monotonicNowMs() - pending.startedAtMonotonicMs),
-        };
-        if (parsed.data.status !== "applied" && parsed.data.status !== "already-applied") {
-          if (pending.trigger === "environment-online") {
-            pending.reject(new Error(`Provider Provisioning 首次同步失败 (${parsed.data.status})`));
-            return;
-          }
-          // Target 错误可能来自任意远端实现并携带请求材料；过渡期只记录可定位的状态事实，
-          // 不转抄不可证明已脱敏的自由文本，避免 Provisioning 日志成为凭据泄露入口。
-          options.logger.warn("[provider-provisioning] Environment sync did not apply", logContext);
-        } else {
-          options.logger.info("[provider-provisioning] Environment sync completed", logContext);
-        }
-        pending.resolve();
-        return;
-      }
       if (parsed.data.type === HostResponseTypes.RemoteWorkspaceConnected) {
         handleConnected(child, webContentsId, parsed.data.requestId, parsed.data.descriptor);
         return;
@@ -542,11 +453,6 @@ export function createRemoteWorkspaceSessionManager(options: {
     });
     child.once("exit", () => {
       const error = new Error("窗口 Local Host 已退出");
-      for (const [requestId, pendingExecution] of pendingProviderProvisioningExecutions) {
-        if (pendingExecution.child !== child) continue;
-        pendingProviderProvisioningExecutions.delete(requestId);
-        pendingExecution.reject(error);
-      }
       for (const [key, pending] of Array.from(pendingByRequestKey)) {
         if (pending.webContentsId === webContentsId) {
           pendingByRequestKey.delete(key);
@@ -555,7 +461,6 @@ export function createRemoteWorkspaceSessionManager(options: {
       }
       for (const [sessionId, route] of Array.from(routesBySessionId)) {
         if (route.webContentsId !== webContentsId) continue;
-        route.providerProvisioningDispose?.();
         retireActiveRoute(route, "host-exit", () => {
           routesBySessionId.delete(sessionId);
         });
@@ -682,7 +587,6 @@ export function createRemoteWorkspaceSessionManager(options: {
     retireActiveRoute(route, "disposed", () => {
       routesBySessionId.delete(sessionId);
     });
-    route.providerProvisioningDispose?.();
     const child = options.windowHostProcessMap.get(route.webContentsId);
     if (route.pendingRendererAttachment) {
       const pending = route.pendingRendererAttachment;
@@ -711,7 +615,6 @@ export function createRemoteWorkspaceSessionManager(options: {
       retireActiveRoute(route, "window-closed", () => {
         routesBySessionId.delete(sessionId);
       });
-      route.providerProvisioningDispose?.();
       if (route.pendingRendererAttachment) {
         clearTimeout(route.pendingRendererAttachment.timeout);
         route.pendingRendererAttachment.reject(new Error("窗口已关闭，attachment 已取消"));
@@ -823,7 +726,6 @@ export function createRemoteWorkspaceSessionManager(options: {
         retireActiveRoute(route, "app-shutdown", () => {
           routesBySessionId.delete(sessionId);
         });
-        route.providerProvisioningDispose?.();
         if (!route.pendingRendererAttachment) continue;
         clearTimeout(route.pendingRendererAttachment.timeout);
         route.pendingRendererAttachment.reject(error);

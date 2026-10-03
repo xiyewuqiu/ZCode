@@ -19,7 +19,7 @@ import type {
   DropAnimation,
 } from "@dnd-kit/core";
 import type { ZCodeGroupedTaskView, ZCodeTaskGroupColor } from "@zcode/services";
-import { OFF_PEAK_DEFAULT_GROUP_ID, type ZCodeTaskMeta } from "@zcode/shared";
+import { type ZCodeTaskMeta } from "@zcode/shared";
 import { createPortal } from "react-dom";
 import { cn } from "@/components/lib/utils.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
@@ -532,7 +532,6 @@ export function WorkspaceGroupedTasksSection({
   onGroupedTaskGroupIdsChange,
   onCollapsedGroupIdsChange,
   onStickyGroupHeaderChange,
-  onOpenAutomations,
 }: {
   workspaceTabs: WorkspaceTabState[];
   activeWorkspacePath: string;
@@ -552,8 +551,6 @@ export function WorkspaceGroupedTasksSection({
   onGroupedTaskGroupIdsChange?: (groupIds: string[]) => void;
   onCollapsedGroupIdsChange: (updater: (currentGroupIds: Set<string>) => Set<string>) => void;
   onStickyGroupHeaderChange?: (node: ReactNode | null) => void;
-  /** 闲时系统分组的「+」/右键新建路由到 Automations 主视图。 */
-  onOpenAutomations?: () => void;
 }) {
   const { intl } = useZCodeIntl();
   const baseServices = useBaseWorkspaceServices();
@@ -1494,11 +1491,7 @@ export function WorkspaceGroupedTasksSection({
         node={stickyGroupNode}
         collapsed={collapsedGroupIds.has(stickyGroupNode.group.id)}
         tooltipsDisabled={groupedTooltipsDisabled}
-        onCreateTask={() =>
-          stickyGroupNode.group.id === OFF_PEAK_DEFAULT_GROUP_ID
-            ? onOpenAutomations?.()
-            : handleCreateGroupDraftTask(stickyGroupNode.group.id)
-        }
+        onCreateTask={() => handleCreateGroupDraftTask(stickyGroupNode.group.id)}
         onToggleCollapsed={handleToggleGroupCollapsed}
         onUpdateGroupColor={handleUpdateGroupColor}
         onUngroupGroup={handleUngroupGroup}
@@ -1509,7 +1502,6 @@ export function WorkspaceGroupedTasksSection({
     collapsedGroupIds,
     groupedTooltipsDisabled,
     handleCreateGroupDraftTask,
-    onOpenAutomations,
     handleToggleGroupCollapsed,
     handleUngroupGroup,
     handleUpdateGroupColor,
@@ -1532,11 +1524,7 @@ export function WorkspaceGroupedTasksSection({
             onSelectTask={onSelectTask}
             onCloseTask={handleCloseTask}
             onOpenFileTree={onOpenFileTree ? handleOpenTaskFileTree : undefined}
-            onCreateTask={() =>
-              node.group.id === OFF_PEAK_DEFAULT_GROUP_ID
-                ? onOpenAutomations?.()
-                : handleCreateGroupDraftTask(node.group.id)
-            }
+            onCreateTask={() => handleCreateGroupDraftTask(node.group.id)}
             hasDraftTask={
               groupedDraftTask?.placement.type === "group" &&
               groupedDraftTask.placement.groupId === node.group.id
@@ -1601,7 +1589,6 @@ export function WorkspaceGroupedTasksSection({
       handleCloseGroupedDraftTask,
       handleCloseTask,
       handleCreateGroupDraftTask,
-      onOpenAutomations,
       handleMoveTaskToGroup,
       handleMoveTaskToTop,
       handleNewGroupSetupStarted,

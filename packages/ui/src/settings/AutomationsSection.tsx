@@ -156,10 +156,14 @@ interface AutomationDraft {
 type AutomationsView =
   | { mode: "list" }
   | { mode: "create"; draft: AutomationDraft | null }
-  | { mode: "edit"; automation: ZCodeAutomation }
+  | { mode: "edit"; automation: ZCodeAutomation };
 
-/** 主视图标签页：闲时下线后仅保留 Scheduled；不设 All 混排视图。 */
+/** 主视图标签页：仅保留 Scheduled；不设 All 混排视图。 */
 type AutomationsTab = "scheduled";
+
+const AUTOMATION_TAB_LABEL_ID: Record<AutomationsTab, string> = {
+  scheduled: "automations.tabs.scheduled",
+};
 
 const SCHEDULED_ONLY_AUTOMATION_TABS: readonly AutomationsTab[] = ["scheduled"];
 
@@ -922,7 +926,7 @@ export function AutomationsSection({
     <div data-automations-content className={cn(SETTINGS_FRAME_CONTENT_CLASSNAME, "flex flex-col")}>
       {pageHeader}
 
-      {/* Tab：仅 Scheduled（闲时下线后不再提供 Idle / All 混排视图）。
+      {/* Tab：仅 Scheduled，不提供 Idle / All 混排视图。
          有任务时右上对齐创建；空态创建入口在大卡内，不重复顶栏按钮。 */}
       {visibleTabs.length > 0 ? (
         <div className="mt-8 flex items-center justify-between">
@@ -941,7 +945,7 @@ export function AutomationsSection({
                 )}
                 onClick={() => setTab(key)}
               >
-                {intl.formatMessage({ id: `offPeak.tabs.${key}` })}
+                {intl.formatMessage({ id: AUTOMATION_TAB_LABEL_ID[key] })}
               </button>
             ))}
           </div>
@@ -1028,7 +1032,7 @@ export function AutomationsSection({
             {/* 去掉 All 混排视图后两类任务不再共用统一 grid；保留该锚点标记任务区起点。 */}
             <div data-automations-task-grid className="contents">
               {/* Task created：当前项目已创建的真实定时任务(全部)。点整张卡片进编辑。
- */}
+               */}
               {automations.length > 0 ? (
                 <section className="flex w-full flex-col gap-4">
                   <div className="flex items-center justify-between">

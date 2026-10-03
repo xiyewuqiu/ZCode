@@ -16,6 +16,10 @@
     "./conversationPreview.test.ts",
     "./conversationOutline.test.ts",
     "./visibleProjection.test.ts",
+    "./frameNotificationScheduler.test.ts",
+    "./layerActivityProjection.test.ts",
+    "./timelineViewportProbe.test.ts",
+    "./timelineScrollAnchor.test.ts",
     "./browser/**/*.tsx"
   ],
   "references": [

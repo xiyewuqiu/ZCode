@@ -13,7 +13,6 @@ import {
   zcodeTaskMetaSchema,
   resolveWorkspaceKey,
   CRON_DEFAULT_GROUP_ID,
-  OFF_PEAK_DEFAULT_GROUP_ID,
   type ZCodeProvider,
   type ZCodeTaskMeta,
 } from "@zcode/shared";
@@ -66,7 +65,6 @@ interface TaskIndexRow {
   migration_source: string | null;
   forked_from_task_id: string | null;
   cron_automation_id: string | null;
-  off_peak_task_id: string | null;
   created_at: number;
   updated_at: number;
   unread_at: number | null;
@@ -220,8 +218,6 @@ function rowToMeta(row: TaskIndexRow): ZCodeTaskMeta {
         // cron 身份以 meta_json 为准；cron_automation_id 列是索引投影，仅作兜底：
         // 历史行 meta_json 里可能还没有该字段，回退读列，下次写入会自动回填进 meta_json。
         cronAutomationId: parsed.data.cronAutomationId ?? row.cron_automation_id ?? undefined,
-        // off-peak 身份同款策略：meta_json 为准、列兜底——存量迁移只写列即可生效。
-        offPeakTaskId: parsed.data.offPeakTaskId ?? row.off_peak_task_id ?? undefined,
         titleOverridden: row.title_overridden === 1,
       };
     }
@@ -249,7 +245,6 @@ function rowToMeta(row: TaskIndexRow): ZCodeTaskMeta {
     migrationSource: (row.migration_source as ZCodeTaskMeta["migrationSource"]) ?? undefined,
     forkedFromTaskId: row.forked_from_task_id ?? undefined,
     cronAutomationId: row.cron_automation_id ?? undefined,
-    offPeakTaskId: row.off_peak_task_id ?? undefined,
     unreadAt: row.unread_at ?? undefined,
     status: (row.task_status as ZCodeTaskMeta["status"]) ?? undefined,
   };
@@ -532,72 +527,7 @@ export class TaskIndexRepo {
     // Worker 已完成该路径的原始准备，业务连接不再重复全表修复。
     if (isTasksStoragePrepared(path, this.db)) return;
     if (!isTasksStorageMigrated(path, this.db)) runTasksDatabaseMigrations(this.db);
-    this.backfillOffPeakTaskMarkers();
-    this.backfillOffPeakGroupMemberships();
     this.cleanupDeletedTaskGroupingReferences();
-  }
-
-  /**
-   * 存量回填（幂等，每次 bootstrap 自愈）：打点上线前产生的 off-peak 会话行没有
-   * offPeakTaskId。off_peak_tasks 与 tasks 同库（tasks-index.sqlite），按 session 绑定
-   * join 只补投影列——rowToMeta 以列兜底即可生效，下次 syncTaskMeta 会自动回填 meta_json。
-   * 全新安装时 off_peak_tasks 可能尚未由 OffPeakTaskRepo 建表，需 guard。
-   */
-  private backfillOffPeakTaskMarkers(): void {
-    const database = this.getDatabase();
-    const hasOffPeakTable = database
-      .prepare(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'off_peak_tasks'`)
-      .get();
-    if (!hasOffPeakTable) {
-      return;
-    }
-    database
-      .prepare(
-        `UPDATE tasks SET off_peak_task_id = (
-          SELECT o.off_peak_task_id FROM off_peak_tasks o
-          WHERE o.session_id = tasks.task_id AND o.workspace_key = tasks.workspace_key
-        )
-        WHERE off_peak_task_id IS NULL
-          AND EXISTS (
-            SELECT 1 FROM off_peak_tasks o
-            WHERE o.session_id = tasks.task_id AND o.workspace_key = tasks.workspace_key
-          )`,
-      )
-      .run();
-  }
-
-  /**
-   * 成员关系回填（幂等，每次 bootstrap 自愈）：历史回填只补了 off_peak_task_id
-   * 投影列，syncTaskMeta 的"首次获得标记"钩子对这些存量永远不会再触发（existing 已带
-   * 标记），必须在 bootstrap 里补一次系统分组归属。OR IGNORE 保证用户手动整理不被覆盖，
-   * 也保证重复执行零副作用；无标记行时不创建空组（从未用过闲时的用户不会看到组）。
-   */
-  private backfillOffPeakGroupMemberships(): void {
-    const database = this.getDatabase();
-    const rows = database
-      .prepare(
-        `SELECT workspace_key, workspace_path, workspace_identity, task_id FROM tasks
-         WHERE off_peak_task_id IS NOT NULL AND deleted = 0`,
-      )
-      .all() as Array<{
-      workspace_key: string;
-      workspace_path: string;
-      workspace_identity: string | null;
-      task_id: string;
-    }>;
-    for (const row of rows) {
-      // 闲时任务暂不支持远程 workspace：远程存量行不归组。历史行的 workspace_identity
-      // 列可能缺失，remote 判定必须看主键 workspace_key——否则 ensureSystemGroupMembership
-      // 会用 workspacePath 重算出本地 key，把成员关系串写到同路径本地 workspace 上。
-      if (isRemoteWorkspaceIdentity(row.workspace_key)) {
-        continue;
-      }
-      this.ensureOffPeakGroupMembership({
-        workspacePath: row.workspace_path,
-        workspaceIdentity: row.workspace_identity ?? undefined,
-        taskId: row.task_id,
-      });
-    }
   }
 
   private deleteTaskGroupingReferencesReady(workspaceKeyValue: string, taskId: string): void {
@@ -698,7 +628,6 @@ export class TaskIndexRepo {
           migration_source,
           forked_from_task_id,
           cron_automation_id,
-          off_peak_task_id,
           created_at,
           updated_at,
           unread_at,
@@ -906,7 +835,6 @@ export class TaskIndexRepo {
           migration_source,
           forked_from_task_id,
           cron_automation_id,
-          off_peak_task_id,
           created_at,
           updated_at,
           unread_at,
@@ -1168,7 +1096,6 @@ export class TaskIndexRepo {
           migration_source,
           forked_from_task_id,
           cron_automation_id,
-          off_peak_task_id,
           created_at,
           updated_at,
           unread_at,
@@ -1192,7 +1119,6 @@ export class TaskIndexRepo {
           @migration_source,
           @forked_from_task_id,
           @cron_automation_id,
-          @off_peak_task_id,
           @created_at,
           @updated_at,
           @unread_at,
@@ -1215,7 +1141,6 @@ export class TaskIndexRepo {
           migration_source = excluded.migration_source,
           forked_from_task_id = excluded.forked_from_task_id,
           cron_automation_id = excluded.cron_automation_id,
-          off_peak_task_id = excluded.off_peak_task_id,
           created_at = excluded.created_at,
           updated_at = excluded.updated_at,
           unread_at = CASE
@@ -1248,8 +1173,6 @@ export class TaskIndexRepo {
         forked_from_task_id: record.meta.forkedFromTaskId ?? null,
         // cron automation 身份从 meta 投影到索引列（meta_json 里也保留一份，见 serializeMetaJson）。
         cron_automation_id: record.meta.cronAutomationId ?? null,
-        // off-peak 身份同款投影。
-        off_peak_task_id: record.meta.offPeakTaskId ?? null,
         created_at: record.meta.createdAt,
         updated_at: record.meta.updatedAt,
         unread_at: record.meta.unreadAt ?? null,
@@ -1346,8 +1269,6 @@ export class TaskIndexRepo {
           // 同步运行态快照时保留已有 cron automation 身份：运行态 protocol snapshot 的 meta 不带 cron 标记，
           // 不用已存值兜底会在后续 sync 时把 cron 身份冲掉，导致 icon / 分组 / 关联查询失效。
           cronAutomationId: params.meta.cronAutomationId ?? existingMeta?.cronAutomationId,
-          // off-peak 身份同款兜底：快照不带标记时保全既有归属。
-          offPeakTaskId: params.meta.offPeakTaskId ?? existingMeta?.offPeakTaskId,
           updatedAt,
           unreadAt: params.meta.unreadAt ?? existingMeta?.unreadAt,
         };
@@ -1364,10 +1285,6 @@ export class TaskIndexRepo {
         // INSERT OR IGNORE 不覆盖已有成员关系——用户后续把它拖出 cron 组后不会被自动拖回。
         if (meta.cronAutomationId && !existingMeta?.cronAutomationId) {
           this.ensureCronGroupMembership(meta);
-        }
-        // 闲时会话首次获得 offPeakTaskId 时归入固定闲时系统分组（机制同 cron）。
-        if (meta.offPeakTaskId && !existingMeta?.offPeakTaskId) {
-          this.ensureOffPeakGroupMembership(meta);
         }
         // root draft 首发过去先提交 task row，再另一次写 sort_order；
         // sessions-index 在两次写之间公开 task 时，Renderer 会把缺序节点补到末尾。
@@ -1393,25 +1310,6 @@ export class TaskIndexRepo {
       groupId: CRON_DEFAULT_GROUP_ID,
       title: "cron",
       color: "blue",
-    });
-  }
-
-  /**
-   * 把一条闲时会话归入固定的闲时系统分组（见 OFF_PEAK_DEFAULT_GROUP_ID）。
-   * 机制与 cron 完全同构；仅在首次获得 offPeakTaskId 时由 syncTaskMeta 调用，
-   * 或由 bootstrap 为存量回填补齐。
-   */
-  private ensureOffPeakGroupMembership(
-    meta: Pick<ZCodeTaskMeta, "workspacePath" | "workspaceIdentity" | "taskId">,
-  ): void {
-    // 闲时任务暂不支持远程 workspace：远程会话即使带标记也不归入闲时系统分组。
-    if (meta.workspaceIdentity && isRemoteWorkspaceIdentity(meta.workspaceIdentity)) {
-      return;
-    }
-    this.ensureSystemGroupMembership(meta, {
-      groupId: OFF_PEAK_DEFAULT_GROUP_ID,
-      title: "off-peak",
-      color: "purple",
     });
   }
 
@@ -1539,7 +1437,6 @@ export class TaskIndexRepo {
     return [
       "SELECT 1 FROM automations WHERE workspace_key=? AND target_task_id=? LIMIT 1",
       "SELECT 1 FROM automation_runs WHERE workspace_key=? AND session_id=? LIMIT 1",
-      "SELECT 1 FROM off_peak_tasks WHERE workspace_key=? AND session_id=? LIMIT 1",
     ].some((sql) => Boolean(database.prepare(sql).get(workspaceKey(params), params.taskId)));
   }
 
@@ -1768,7 +1665,6 @@ export class TaskIndexRepo {
           migration_source,
           forked_from_task_id,
           cron_automation_id,
-          off_peak_task_id,
           created_at,
           updated_at,
           unread_at,
@@ -1850,7 +1746,6 @@ export class TaskIndexRepo {
           migration_source,
           forked_from_task_id,
           cron_automation_id,
-          off_peak_task_id,
           created_at,
           updated_at,
           unread_at,
@@ -1932,7 +1827,6 @@ export class TaskIndexRepo {
           migration_source,
           forked_from_task_id,
           cron_automation_id,
-          off_peak_task_id,
           created_at,
           updated_at,
           unread_at,

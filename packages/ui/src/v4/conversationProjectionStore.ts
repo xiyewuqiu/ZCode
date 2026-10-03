@@ -18,6 +18,10 @@ import {
   type TopicFrameDeliveryKind,
 } from "@zcode/shared/zcode-protocol-v4";
 import { logger } from "@/logger.js";
+import {
+  appFrameNotificationScheduler,
+  type FrameNotificationScheduler,
+} from "@/lib/frameNotificationScheduler.js";
 import type { ConversationTurnNavigatorHydrationResult } from "@/v4/conversationTurnNavigatorHelpers.js";
 import type { ConversationTransport } from "@/v4/transport.js";
 import { uiMemoryDiagnosticsRegistry } from "@/lib/memoryDiagnostics.js";
@@ -326,11 +330,15 @@ export class ConversationProjectionStore {
       > & { directoryRevision: number })
     | null = null;
   private closed = false;
+  /** 帧内通知合并；测试可注入手动调度器验证合并与可见性语义。 */
+  private readonly scheduler: FrameNotificationScheduler;
 
   constructor(
     readonly topic: string,
     private readonly transport: ConversationTransport,
+    options: { scheduler?: FrameNotificationScheduler } = {},
   ) {
+    this.scheduler = options.scheduler ?? appFrameNotificationScheduler;
     liveProjectionStores.add(this);
     this.offAssemblyFault = transport.onAssemblyFault((fault) => {
       if (fault.topic === this.topic) {
@@ -380,10 +388,21 @@ export class ConversationProjectionStore {
     return () => this.modelTransitionListeners.delete(listener);
   }
 
+  /**
+   * 状态立即更新，React 通知合并到每帧一次。
+   *
+   * 流式 burst 内多个 delta 帧常落在同一动画帧里；过去每个帧都同步通知一次，同一组件
+   * 会在一帧内被渲染多次，主线程被重复 render/commit 占满，滚动与切换因此卡顿。
+   * 读取路径（getState / 快照水位 / 命令 ACK 判定）不受影响，仍是最新事实。
+   */
   private setState(patch: Partial<ConversationStoreState>): void {
     this.state = { ...this.state, ...patch };
-    for (const listener of this.listeners) listener();
+    this.scheduler.schedule(this.notifyListeners);
   }
+
+  private readonly notifyListeners = (): void => {
+    for (const listener of this.listeners) listener();
+  };
 
   /**
    * 发起/重发订阅。base 取自当前 snapshot 水位（水位不变量：仅当真持有该时刻
@@ -1327,6 +1346,8 @@ export class ConversationProjectionStore {
     this.generation++;
     const { subscriptionId } = this.state;
     this.setState({ status: "closed", subscriptionId: null });
+    // 终结态不能停留在挂起帧里：释放订阅前把最终状态同步交给订阅者。
+    this.scheduler.flush();
     if (subscriptionId) {
       try {
         await this.transport.unsubscribe(subscriptionId);

@@ -1079,9 +1079,6 @@ export const zcodeTaskMetaSchema = z.object({
   // cron_automation_id 索引列，供按 automation 反查 session。runId 属于 automation_runs /
   // 投递 metadata，不属于 task 表。
   cronAutomationId: nonEmptyStringSchema.optional(),
-  // off-peak 身份：与 cron 同款持久化策略——meta_json 单一来源 + tasks 表
-  // off_peak_task_id 索引投影列（兜底/反查）。
-  offPeakTaskId: nonEmptyStringSchema.optional(),
   unreadAt: z.number().int().nonnegative().optional(),
   status: zcodeTaskPersistStatusSchema.optional(),
   lastError: z

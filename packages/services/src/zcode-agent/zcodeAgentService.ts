@@ -8,10 +8,7 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { Emitter } from "@zcode/rpc";
 import type { IDisposable } from "@zcode/rpc";
-import type {
-  ModelSelectionView,
-  ProviderSource,
-} from "@zcode/provider";
+import type { ModelSelectionView, ProviderSource } from "@zcode/provider";
 import { completeNewModelSelection } from "@zcode/provider";
 import {
   ZCODE_SESSION_RUNTIME_PREFERENCES_REQUEST_TIMEOUT_MS,
@@ -101,9 +98,7 @@ import {
   type ZCodeTaskMode,
 } from "@zcode/shared";
 import { createServiceLogger } from "#src/logger/serviceLogger.js";
-import {
-  mergeAutomationMutationToolDenylist,
-} from "#src/zcode-agent/automationToolPolicy.js";
+import { mergeAutomationMutationToolDenylist } from "#src/zcode-agent/automationToolPolicy.js";
 import { ZCODE_AGENT_RUNTIME_UNAVAILABLE_CODE } from "./zcodeAgent.js";
 import type {
   ZCodeProtocolRequestId,
@@ -337,10 +332,7 @@ type SessionResumeCompatField =
   | "toolAllowlist"
   | "toolDenylist"
   | "dynamicWorkflowEnabled";
-type SessionSendCompatField =
-  | "browserAmbientContext"
-  | "automationId"
-  | "toolDenylist";
+type SessionSendCompatField = "browserAmbientContext" | "automationId" | "toolDenylist";
 
 const SESSION_CREATE_OPTIONAL_COMPAT_FIELDS = new Set<SessionCreateCompatField>([
   "persistence",
@@ -350,9 +342,8 @@ const SESSION_CREATE_OPTIONAL_COMPAT_FIELDS = new Set<SessionCreateCompatField>(
   // 的 .strict() schema 不认，需可降级重试而不是整个 createSession 硬失败。
   "toolAllowlist",
   "toolDenylist",
-  // Off-Peak 工具面 flag 同为可降级字段；旧 app-server 不认时省略重试（工具随之不注册，fail-closed）。
-  // 动态工作流灰度 flag 同理：旧 CLI 不认时
-  // 省略重试，工作流工具簇随之不注册，绝不让整个 create 硬失败。
+  // 动态工作流灰度 flag：旧 CLI 不认时省略重试，工作流工具簇随之不注册，
+  // 绝不让整个 create 硬失败。
   "dynamicWorkflowEnabled",
 ]);
 const SESSION_RESUME_OPTIONAL_COMPAT_FIELDS = new Set<SessionResumeCompatField>([
@@ -617,7 +608,6 @@ function buildSessionCreateParams(
     // 那样在旧协议兼容重试里省略，否则会创建一个可切模型但没有历史内容的空 session。
     ...(params.importedHistory !== undefined ? { importedHistory: params.importedHistory } : {}),
     // 只在灰度命中时下发 true（缺省不发字段）；旧 CLI strict schema 不认时经 compat 省略。
-    // 动态工作流灰度：同 Off-Peak 的下发形状，
     // 关闭时不写字段——CLI 的缺省就是不注册那九个工具。
     ...(params.dynamicWorkflowEnabled === true && !omittedFields.has("dynamicWorkflowEnabled")
       ? { dynamicWorkflowEnabled: true }
@@ -649,8 +639,7 @@ function buildSessionResumeParams(
     ...(params.toolDenylist !== undefined && !omittedFields.has("toolDenylist")
       ? { toolDenylist: params.toolDenylist }
       : {}),
-    // resume 不带该 flag 会让冷恢复丢 Off-Peak 工具面（与 toolAllowlist 同因）。
-    // 同因：resume 不带该 flag 会让冷恢复丢掉工作流工具簇。
+    // resume 不带该 flag 会让冷恢复丢掉工作流工具簇（与 toolAllowlist 同因）。
     ...(params.dynamicWorkflowEnabled === true && !omittedFields.has("dynamicWorkflowEnabled")
       ? { dynamicWorkflowEnabled: true }
       : {}),
@@ -1007,10 +996,10 @@ export function createZCodeAgentService(
     }
     waitingWorkspaceStartups.clear();
   }
-const sessionTraceIdBySessionKey = new Map<string, TraceId>();
-const modelSelectionReadinessSource = options?.modelSelectionReadinessSource;
-const sessionRuntimePreferencesAuthority = options?.sessionRuntimePreferencesAuthority ?? "local";
-const resolveSessionRuntimePreferences = options?.resolveSessionRuntimePreferences;
+  const sessionTraceIdBySessionKey = new Map<string, TraceId>();
+  const modelSelectionReadinessSource = options?.modelSelectionReadinessSource;
+  const sessionRuntimePreferencesAuthority = options?.sessionRuntimePreferencesAuthority ?? "local";
+  const resolveSessionRuntimePreferences = options?.resolveSessionRuntimePreferences;
 
   function invalidateWorkspaceClient(workspaceKey: string, client: ZCodeProtocolClient): void {
     for (const [key, pending] of pendingPermissions) {
@@ -2351,13 +2340,10 @@ const resolveSessionRuntimePreferences = options?.resolveSessionRuntimePreferenc
         appliedSnapshot = snapshot;
       }
     })();
-    // Off-Peak 本地支持能力是 workspace 级事实，在允许任何 session 工作前同步到 CLI，
-    // 让 v4 冷恢复（没有 per-request flag 通道）也能拿到工具面。旧 CLI method-not-found 降级忽略。
+    // 动态工作流灰度门禁是 workspace 级事实，在允许任何 session 工作前同步给 CLI，
+    // v4 冷恢复（没有 per-request flag 通道）也才拿得到工具面。旧 CLI method-not-found 降级忽略。
     // CLI 缺省即 false，且每个 agent 进程只服务一个 workspace，门禁关闭时不发请求（对未实现该
     // 方法的旧 CLI/测试假客户端零打扰）。
-    // 动态工作流灰度门禁：与 Off-Peak 同一
-    // 模式的 workspace 级事实，在允许任何 session 工作前同步给 CLI，v4 冷恢复也才拿得到工具面。
-    // 关闭时不发请求（CLI 缺省即 false，对旧 CLI/测试假客户端零打扰）。
     const dynamicWorkflowPolicyReady = (async () => {
       if (!(await resolveDynamicWorkflowGate())) return;
       try {
@@ -2367,8 +2353,8 @@ const resolveSessionRuntimePreferences = options?.resolveSessionRuntimePreferenc
           zcodeWorkspaceUpdateDynamicWorkflowPolicyResultSchema,
         );
       } catch (error) {
-        // 与 Off-Peak 同判据：-32601 是旧 CLI 的正常降级（其 z.object 也会丢掉 session flag，
-        // 整体退回 disabled）；其它错误只记 warn，不阻断客户端就绪。
+        // -32601 是旧 CLI 的正常降级（其 z.object 也会丢掉 session flag，整体退回 disabled）；
+        // 其它错误只记 warn，不阻断客户端就绪。
         if (!isProtocolMethodNotFoundError(error)) {
           logger.warn(undefined, "动态工作流策略同步失败，CLI 维持缺省关闭", {
             workspaceKey,
@@ -2605,7 +2591,7 @@ const resolveSessionRuntimePreferences = options?.resolveSessionRuntimePreferenc
   }
 
   // 3.12.2：远端灰度读取不能放进客户端就绪与创建命令：失败时串行重试会阻塞普通聊天。
-  // 注册只判断本地支持能力；灰度、套餐与模型准入仍由 offPeak/create handler 在取号前校验。
+  // 注册只判断本地支持能力；灰度与模型准入仍由 create handler 在取号前校验。
   /**
    * 动态工作流灰度门：Host 判定一次并在本
    * 进程内固定。三点理由：
@@ -2614,7 +2600,7 @@ const resolveSessionRuntimePreferences = options?.resolveSessionRuntimePreferenc
    *   2. 判定落在 client 就绪路径上，不能每次建会话都等远端——3.12.2 已因此回归过一次；
    *   3. 读取失败 fail-closed 且不再重试，避免离线时每条 create 都赔上一次请求超时；
    *      服务端翻转灰度按设计在下一个 Host 进程生效（provider 侧另有 1h 快照与 forceRefresh）。
-   * 与 Off-Peak 不同：远程 workspace 同样可用，所以这里不看 workspaceIdentity / remoteSessionId。
+   * 动态工作流不限本地：远程 workspace 同样可用，所以这里不看 workspaceIdentity / remoteSessionId。
    */
   function resolveDynamicWorkflowGate(): Promise<boolean> {
     const resolve = options?.resolveDynamicWorkflowClientConfig;
@@ -2821,10 +2807,7 @@ const resolveSessionRuntimePreferences = options?.resolveSessionRuntimePreferenc
         // 可选字段降级重试，避免 thoughtLevel/persistence 版本差阻塞首发创建。
         const snapshot = await client.request(
           zcodeProtocolMethods.sessionCreate,
-          buildSessionCreateParams(
-            { ...params, dynamicWorkflowEnabled },
-            new Set(compatFields),
-          ),
+          buildSessionCreateParams({ ...params, dynamicWorkflowEnabled }, new Set(compatFields)),
           zcodeSessionStateSnapshotSchema,
           sessionTraceId ? { trace: { traceId: sessionTraceId } } : undefined,
         );
@@ -2923,10 +2906,7 @@ const resolveSessionRuntimePreferences = options?.resolveSessionRuntimePreferenc
         });
         const snapshot = await client.request(
           zcodeProtocolMethods.sessionResume,
-          buildSessionResumeParams(
-            { ...params, dynamicWorkflowEnabled },
-            new Set(compatFields),
-          ),
+          buildSessionResumeParams({ ...params, dynamicWorkflowEnabled }, new Set(compatFields)),
           zcodeSessionStateSnapshotSchema,
         );
         const sessionTraceId = rememberSessionTrace(params, snapshot) ?? cachedTraceId;

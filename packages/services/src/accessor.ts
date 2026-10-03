@@ -69,7 +69,6 @@ export interface IServiceAccessor {
   readonly usageStatsService: IUsageStatsService;
   readonly clientConfigService: IClientConfigService;
   readonly clientScenesService: IClientScenesService;
-  /** 闲时任务管理（独立服务面）。 */
   readonly skillsService: ISkillsService;
   readonly skillSyncService: ISkillSyncService;
   readonly mcpSyncService: IMcpSyncService;

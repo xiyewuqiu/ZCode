@@ -14,7 +14,7 @@ import {
   type TouchEvent as ReactTouchEvent,
   type WheelEvent as ReactWheelEvent,
 } from "react";
-import { useVirtualizer } from "@tanstack/react-virtual";
+import { useVirtualizer, type VirtualItem } from "@tanstack/react-virtual";
 import { ArrowDownIcon } from "lucide-react";
 import { TID_V4_TIMELINE, TID_V4_TIMELINE_BOTTOM } from "@zcode/shared";
 import type {
@@ -46,17 +46,17 @@ import {
   type ConversationTurnRenderUnit,
 } from "@/v4/conversationTurnRenderUnits.js";
 import {
-  resolveConversationTurnNavigatorActiveQueryRowId,
   resolveConversationTurnNavigatorHydrationRetryDelayMs,
   shouldHydrateConversationTurnNavigatorDirectory,
   type ConversationTurnNavigatorHydrationResult,
-  type ConversationTurnNavigatorQueryPosition,
   type ConversationTurnNavigatorVirtualItem,
 } from "@/v4/conversationTurnNavigatorHelpers.js";
 import {
-  DEFAULT_ROW_HEIGHT_ESTIMATE_PX,
-  TimelineRowHeightCache,
-} from "@/v4/timelineRowHeightCache.js";
+  createTimelineViewportProbe,
+  type TimelineViewportProbe,
+} from "@/v4/timelineViewportProbe.js";
+import { DEFAULT_ROW_HEIGHT_ESTIMATE_PX } from "@/v4/timelineRowHeightCache.js";
+import { acquireTimelineSessionCache } from "@/v4/timelineSessionCaches.js";
 import {
   readChatSessionScrollMemoryState,
   resolveChatSessionScrollRestoreTop,
@@ -69,13 +69,14 @@ import type {
 } from "@/v4/legacyChatViewTypes.js";
 import {
   anchorActionAfterContentChange,
+  countNewMessageRowsSince,
   historyPrefetchTriggerPx,
   initialFollowing,
-  isAtBottom,
   prependScrollAdjustment,
   prependVirtualAnchorAdjustment,
   reconcileFollowingForContentAnchor,
   resolveFollowingAfterScroll,
+  resolveScrollOwnership,
   shouldAdjustVirtualizerForItemSizeChange,
   shouldShowBackToBottom,
   shouldTriggerLoadOlder,
@@ -83,6 +84,7 @@ import {
   timelineTouchScrollIntent,
   timelineWheelScrollIntent,
   type PrependVirtualAnchor,
+  type TimelineScrollOwnership,
   type TimelineUserScrollIntent,
 } from "@/v4/timelineScrollAnchor.js";
 import { useConversationTimelineFind } from "@/v4/useConversationTimelineFind.js";
@@ -95,8 +97,8 @@ const EMPTY_PENDING_GUIDES: readonly QueueItem[] = [];
 
 const ROW_OVERSCAN = 8;
 const RUNNING_WORK_DURATION_TICK_MS = 1000;
-const COMPOSER_MESSAGE_MASK_FADE_PX = 24;
-const COMPOSER_MESSAGE_MASK_TRANSPARENT_HEIGHT_PX = 96;
+/** 导航 rail 的容器查询断点：与 ConversationTurnNavigator 的 @min-[864px] 一致。 */
+const TURN_NAVIGATOR_RAIL_MIN_WIDTH_PX = 864;
 const USER_SCROLL_INTENT_TTL_MS = 1200;
 const LAYOUT_SCROLL_GUARD_MS = 250;
 const CONTENT_WIDTH_RESIZE_SETTLE_MS = 120;
@@ -122,28 +124,85 @@ function isEditableScrollTarget(target: EventTarget | null): boolean {
   );
 }
 
+/** 渲染单元列表逐项身份比较：内容未变时复用旧数组，避免下游派生被身份抖动放大。 */
+function areRenderUnitListsEqual(
+  previous: readonly ConversationTurnRenderUnit[],
+  next: readonly ConversationTurnRenderUnit[],
+): boolean {
+  if (previous === next) return true;
+  if (previous.length !== next.length) return false;
+  for (let index = 0; index < next.length; index++) {
+    if (previous[index] !== next[index]) return false;
+  }
+  return true;
+}
+
+/** 虚拟项逐值比较：范围未变时复用旧数组，保持 memo 组件边界不被滚动事件击穿。 */
+function stabilizeVirtualRows(
+  holder: { current: VirtualItem[] | null },
+  next: VirtualItem[],
+): VirtualItem[] {
+  const previous = holder.current;
+  if (previous && previous.length === next.length) {
+    let same = true;
+    for (let index = 0; index < next.length; index++) {
+      const before = previous[index]!;
+      const after = next[index]!;
+      if (
+        before.index !== after.index ||
+        before.key !== after.key ||
+        before.start !== after.start ||
+        before.size !== after.size
+      ) {
+        same = false;
+        break;
+      }
+    }
+    if (same) return previous;
+  }
+  holder.current = next;
+  return next;
+}
+
 // v4 时间线重写滚动控件时把可访问名称误做成了可见文字，偏离旧版
 // 的圆形下箭头样式；这里集中渲染图标按钮，避免两个定位分支再次产生视觉差异。
 function ConversationBackToBottomButton({
   className,
   label,
+  count = 0,
+  countLabel,
   onClick,
 }: {
   className: string;
   label: string;
+  /** 解锁后新增的消息数：>0 时按钮扩成「N + 下箭头」胶囊。 */
+  count?: number;
+  /** 含数量的可访问名称（无计数时退回 label）。 */
+  countLabel?: string;
   onClick: () => void;
 }) {
+  const showCount = count > 0;
+  const resolvedLabel = showCount && countLabel ? countLabel : label;
   return (
     <Button
-      aria-label={label}
-      title={label}
+      aria-label={resolvedLabel}
+      title={resolvedLabel}
       type="button"
-      size="icon"
+      size={showCount ? "sm" : "icon"}
       variant="outline"
-      className={cn("rounded-full bg-card hover:bg-card-selected", className)}
+      className={cn(
+        "gap-1.5 rounded-full bg-card hover:bg-card-selected",
+        showCount && "px-2.5",
+        className,
+      )}
       data-testid={TID_V4_TIMELINE_BOTTOM}
       onClick={() => onClick()}
     >
+      {showCount ? (
+        <span data-v4-new-message-count={count} className="text-ui-sm font-medium tabular-nums">
+          {count}
+        </span>
+      ) : null}
       <ArrowDownIcon className="size-4" />
     </Button>
   );
@@ -400,23 +459,41 @@ function ConversationTimelineImpl({
     return () => observer.disconnect();
   }, [hasHeaderSlot]);
   const [liveNowMs, setLiveNowMs] = useState(() => Date.now());
-  const renderTurns = useMemo(
-    () => createConversationTurnRenderer(),
-    [sessionKey, rowContext.logEpoch],
+  // 物化缓存与行高缓存按「会话 + logEpoch」跨挂载复用：切走再切回不重新物化整轮、
+  // 不重新逐行估计高度，首帧即恢复真实滚动几何。
+  const timelineSessionCacheKey = `${sessionKey}::${rowContext.logEpoch ?? ""}`;
+  const timelineSessionCache = useMemo(
+    () => acquireTimelineSessionCache(timelineSessionCacheKey),
+    [timelineSessionCacheKey],
   );
-  const renderUnits = useMemo(
-    () =>
-      renderTurns(rows, {
-        nowMs: liveNowMs,
-        sessionPhase,
-      }),
-    [liveNowMs, rows, sessionPhase, renderTurns],
-  );
+  const renderTurns = timelineSessionCache.renderer;
+  const renderUnitsRef = useRef<readonly ConversationTurnRenderUnit[] | null>(null);
+  const renderUnits = useMemo(() => {
+    const next = renderTurns(rows, {
+      nowMs: liveNowMs,
+      sessionPhase,
+    });
+    // 计时 tick 与同内容重建不应改变数组身份：下游目录集合、虚拟项、挂载键与
+    // 导航 props 都以身份判断是否重算，身份抖动会把「无变化」放大成一串派生计算。
+    const previous = renderUnitsRef.current;
+    if (previous && areRenderUnitListsEqual(previous, next)) {
+      return previous;
+    }
+    renderUnitsRef.current = next;
+    return next;
+  }, [liveNowMs, rows, sessionPhase, renderTurns]);
   const { virtualizedUnits, liveUnit, liveUnitIndex } = useMemo(
     () => splitConversationTimelineLiveTail(renderUnits),
     [renderUnits],
   );
   const hasRunningUnit = useMemo(() => renderUnits.some((unit) => unit.isRunning), [renderUnits]);
+  const hasMessageLayer = renderUnits.length > 0 || hasHeaderSlot;
+  const viewportProbeRef = useRef<TimelineViewportProbe | null>(null);
+  if (viewportProbeRef.current === null) {
+    viewportProbeRef.current = createTimelineViewportProbe();
+  }
+  const viewportProbe = viewportProbeRef.current;
+  const stableVirtualRowsRef = useRef<VirtualItem[] | null>(null);
   const turnNavigatorQueryRowIds = useMemo(
     () =>
       new Set(
@@ -426,8 +503,6 @@ function ConversationTimelineImpl({
       ),
     [renderUnits],
   );
-  const turnNavigatorQueryRowIdsRef = useRef(turnNavigatorQueryRowIds);
-  turnNavigatorQueryRowIdsRef.current = turnNavigatorQueryRowIds;
   const centeredEmptyLayout = centerEmptyStateWithDock && renderUnits.length === 0;
   const responsiveCenteredEmptyLayout = centeredEmptyLayout && !compactEmptyStateWithDock;
   // 高频值经 ref 供稳定回调读取（不进依赖数组）。
@@ -482,16 +557,16 @@ function ConversationTimelineImpl({
     totalSize: number;
   }>({ firstRowId: null, totalSize: 0 });
   const pendingPrependVirtualAnchorRef = useRef<PrependVirtualAnchor | null>(null);
-  const heightCacheRef = useRef<TimelineRowHeightCache | null>(null);
-  if (heightCacheRef.current === null) {
-    heightCacheRef.current = new TimelineRowHeightCache();
-  }
+  const heightCache = timelineSessionCache.heightCache;
   const [backToBottomVisible, setBackToBottomVisible] = useState(false);
-  const [turnNavigatorViewport, setTurnNavigatorViewport] = useState({
-    scrollOffsetPx: 0,
-    viewportHeightPx: 0,
-    activeQueryRowId: undefined as number | undefined,
-  });
+  // 滚动所有权显式三态（pinned / unlocked / jumping）：backToBottomVisible 仍是
+  // 「解锁且存在内容」的展示条件，这里额外暴露状态本身与解锁基线，供计数与诊断。
+  const [scrollOwnership, setScrollOwnership] = useState<TimelineScrollOwnership>("pinned");
+  const [unlockedAnchorRowId, setUnlockedAnchorRowId] = useState<number | null>(null);
+  const jumpInFlightRef = useRef(false);
+  // 计数读原始行：render unit 只为渲染服务，不能反推「新增了几条消息」。
+  const rowsForCountRef = useRef(rows);
+  rowsForCountRef.current = rows;
   const [turnNavigatorContainerWidthPx, setTurnNavigatorContainerWidthPx] = useState(0);
   const turnNavigatorJumpFrameRef = useRef<number | null>(null);
   const turnNavigatorHydrationAttemptRef = useRef<{
@@ -642,13 +717,16 @@ function ConversationTimelineImpl({
     (index: number) => virtualizedUnitsRef.current[index]?.key ?? index,
     [],
   );
-  // 测高缓存兜底：行卸载重挂（甚至 virtualizer 重建）时用上次真实测量代替固定估计。
+  // 测高缓存兜底：行卸载重挂（甚至 virtualizer 重建、会话切走再切回）时用上次真实测量
+  // 代替固定估计；缓存按会话作用域隔离，切回同一会话直接命中真实高度。
+  const heightCacheRef = useRef(heightCache);
+  heightCacheRef.current = heightCache;
   const estimateSize = useCallback(
     (index: number) =>
-      heightCacheRef.current?.estimate(
+      heightCacheRef.current.estimate(
         getUnitHeightCacheKey(virtualizedUnitsRef.current[index]),
         DEFAULT_ROW_HEIGHT_ESTIMATE_PX,
-      ) ?? DEFAULT_ROW_HEIGHT_ESTIMATE_PX,
+      ),
     [],
   );
   // 动态测高：virtualizer 对窗口内元素挂 ResizeObserver，流式行长高即回调此处；
@@ -659,7 +737,7 @@ function ConversationTimelineImpl({
     const unit = indexAttr === null ? undefined : virtualizedUnitsRef.current[Number(indexAttr)];
     const cacheKey = getUnitHeightCacheKey(unit);
     if (cacheKey !== undefined) {
-      heightCacheRef.current?.set(cacheKey, height);
+      heightCacheRef.current.set(cacheKey, height);
     }
     return height;
   }, []);
@@ -685,7 +763,7 @@ function ConversationTimelineImpl({
       scrollTop: scrollRef.current?.scrollTop ?? 0,
     });
   };
-  const virtualRows = virtualizer.getVirtualItems();
+  const virtualRows = stabilizeVirtualRows(stableVirtualRowsRef, virtualizer.getVirtualItems());
   const totalSize = virtualizer.getTotalSize();
   const turnNavigatorVirtualItems: ConversationTurnNavigatorVirtualItem[] = useMemo(() => {
     const historyItems = virtualRows.map((row) => ({
@@ -726,6 +804,24 @@ function ConversationTimelineImpl({
     if (followingRef.current === following) return;
     followingRef.current = following;
     setBackToBottomVisible(shouldShowBackToBottom(following, unitsRef.current.length));
+    // 解锁瞬间的时间线末尾行即「已读基线」：其后新增的正文/用户输入计入「N 条新消息」。
+    setUnlockedAnchorRowId(following ? null : (rowsForCountRef.current.at(-1)?.rowId ?? null));
+    // 跳转在途时所有权由 jumping 持有，跳转的首个 scroll 事件到达才落到 unlocked。
+    if (!jumpInFlightRef.current) {
+      setScrollOwnership(resolveScrollOwnership({ following, jumping: false }));
+    }
+  }, []);
+
+  /** 程序化跳转在途：期间用户滚动只更新几何账目，不显示新消息计数。 */
+  const beginTimelineJump = useCallback(() => {
+    jumpInFlightRef.current = true;
+    setScrollOwnership("jumping");
+  }, []);
+
+  const endTimelineJump = useCallback(() => {
+    if (!jumpInFlightRef.current) return;
+    jumpInFlightRef.current = false;
+    setScrollOwnership(resolveScrollOwnership({ following: followingRef.current, jumping: false }));
   }, []);
 
   const clearUserScrollIntent = useCallback(() => {
@@ -819,96 +915,62 @@ function ConversationTimelineImpl({
     }
   }, []);
 
-  const syncMessageLayerMask = useCallback((element: HTMLDivElement) => {
-    const messageLayer = messageLayerRef.current;
-    if (!messageLayer) return;
+  // 选中时间线正文 = 用户在读历史：拖选期间流式撑高不得把选区拽走（与上滑解锁同源）。
+  // 只认落在滚动区内的选区，composer / 侧栏里选字不能拿走滚动权。
+  useEffect(() => {
+    const handleSelectionChange = () => {
+      const element = scrollRef.current;
+      if (!element) return;
+      const selection = document.getSelection();
+      if (!selection || selection.isCollapsed || selection.rangeCount === 0) return;
+      const range = selection.getRangeAt(0);
+      // 跨容器选区（例如整页 Cmd+A）也覆盖时间线：intersectsNode 对它同样成立。
+      if (!range.intersectsNode(element)) return;
+      markUserScrollIntent("awayFromBottom");
+    };
+    document.addEventListener("selectionchange", handleSelectionChange);
+    return () => document.removeEventListener("selectionchange", handleSelectionChange);
+  }, [markUserScrollIntent]);
 
-    if (
-      isAtBottom({
-        scrollTop: element.scrollTop,
-        viewportHeight: element.clientHeight,
-        contentHeight: element.scrollHeight,
-      })
-    ) {
-      // 贴底时消息已经位于正常文档流末尾，不会经过 sticky composer；
-      // 继续保留 mask 会无意义地淡出最后一条消息，只有离底滚动时才需要遮罩。
-      messageLayer.style.maskImage = "none";
-      messageLayer.style.webkitMaskImage = "none";
-      return;
-    }
-
-    const viewportHeight = element.clientHeight;
-    const transparentStart = Math.max(
-      0,
-      viewportHeight - COMPOSER_MESSAGE_MASK_TRANSPARENT_HEIGHT_PX,
-    );
-    const opaqueEnd = Math.max(0, transparentStart - COMPOSER_MESSAGE_MASK_FADE_PX);
-    const viewportTopInLayer = Math.max(0, element.scrollTop - messageLayer.offsetTop);
-    const maskImage = `linear-gradient(to bottom, black 0, black ${opaqueEnd}px, transparent ${transparentStart}px, transparent 100%)`;
-
-    // dock 的透明 padding 能保留分屏 focus ring，但消息会从留白透出；
-    // mask 必须随 scroll viewport 对齐且只裁消息层，不能裁掉 sticky composer 与按钮。
-    messageLayer.style.maskImage = maskImage;
-    messageLayer.style.webkitMaskImage = maskImage;
-    messageLayer.style.maskPosition = `0 ${viewportTopInLayer}px`;
-    messageLayer.style.webkitMaskPosition = `0 ${viewportTopInLayer}px`;
-    messageLayer.style.maskSize = `100% ${viewportHeight}px`;
-    messageLayer.style.webkitMaskSize = `100% ${viewportHeight}px`;
-  }, []);
-
-  const syncTurnNavigatorViewport = useCallback(
-    (element: HTMLDivElement) => {
-      syncMessageLayerMask(element);
-      const viewportRect = element.getBoundingClientRect();
-      const queryPositions: ConversationTurnNavigatorQueryPosition[] = [];
-      for (const rowElement of element.querySelectorAll<HTMLElement>("[data-row-id]")) {
-        const rowId = Number(rowElement.dataset.rowId);
-        if (!Number.isSafeInteger(rowId) || !turnNavigatorQueryRowIdsRef.current.has(rowId)) {
-          continue;
-        }
-        const rowRect = rowElement.getBoundingClientRect();
-        const start = element.scrollTop + rowRect.top - viewportRect.top;
-        queryPositions.push({ rowId, start, end: start + rowRect.height });
-      }
-      const nextViewport = {
-        scrollOffsetPx: element.scrollTop,
-        viewportHeightPx: element.clientHeight,
-        // turn 级 active 只能命中同 turn 的第一条 query。这里从已挂载
-        // 的稳定 row anchor 推导当前 query；虚拟 turn 尚未挂载时组件再回退 unit。
-        activeQueryRowId: resolveConversationTurnNavigatorActiveQueryRowId({
-          positions: queryPositions,
-          scrollOffsetPx: element.scrollTop,
-          viewportHeightPx: element.clientHeight,
-        }),
-      };
-      setTurnNavigatorViewport((current) =>
-        current.scrollOffsetPx === nextViewport.scrollOffsetPx &&
-        current.viewportHeightPx === nextViewport.viewportHeightPx &&
-        current.activeQueryRowId === nextViewport.activeQueryRowId
-          ? current
-          : nextViewport,
-      );
-    },
-    [syncMessageLayerMask],
-  );
-
+  // 视口度量、消息层遮罩与活动 query 一律走探针：滚动只登记失效，
+  // 度量按帧合并，滚动驱动的重渲染只发生在订阅探针的导航组件里。
   useLayoutEffect(() => {
     const scrollElement = scrollRef.current;
     const messageLayer = messageLayerRef.current;
-    if (!scrollElement || !messageLayer) return;
+    viewportProbe.attach(scrollElement, messageLayer);
+    if (!scrollElement || !messageLayer) {
+      return () => viewportProbe.attach(null, null);
+    }
 
-    const sync = () => syncMessageLayerMask(scrollElement);
+    const sync = () => viewportProbe.flush();
     sync();
     if (typeof ResizeObserver !== "undefined") {
       const observer = new ResizeObserver(sync);
       observer.observe(scrollElement);
       observer.observe(messageLayer);
-      return () => observer.disconnect();
+      return () => {
+        observer.disconnect();
+        viewportProbe.attach(null, null);
+      };
     }
 
     window.addEventListener("resize", sync);
-    return () => window.removeEventListener("resize", sync);
-  }, [syncMessageLayerMask, renderUnits.length === 0]);
+    return () => {
+      window.removeEventListener("resize", sync);
+      viewportProbe.attach(null, null);
+    };
+  }, [hasMessageLayer, sessionKey, viewportProbe]);
+
+  // 可导航 query 只在这些行上做 DOM 测量；rail 关闭或容器过窄时无需活动项。
+  useLayoutEffect(() => {
+    viewportProbe.setQueryRowIds(turnNavigatorQueryRowIds);
+    viewportProbe.setQueryTrackingEnabled(
+      !hideTurnNavigator &&
+        turnNavigatorQueryRowIds.size >= 2 &&
+        turnNavigatorContainerWidthPx >= TURN_NAVIGATOR_RAIL_MIN_WIDTH_PX,
+    );
+    viewportProbe.flush();
+  }, [hideTurnNavigator, turnNavigatorContainerWidthPx, turnNavigatorQueryRowIds, viewportProbe]);
 
   const buildCurrentScrollMemoryState = useCallback(
     (element: HTMLDivElement): ChatSessionScrollMemoryState => {
@@ -988,7 +1050,7 @@ function ConversationTimelineImpl({
     element.scrollTop = responsiveCenteredEmptyLayout ? 0 : element.scrollHeight;
     // 回读取钳制后的落点入账（浏览器会把赋值钳到最大可滚动距离）。
     lastObservedScrollTopRef.current = element.scrollTop;
-    syncTurnNavigatorViewport(element);
+    viewportProbe.flush();
     userAdjustedScrollSinceRestoreRef.current = false;
     cacheCurrentScrollMemoryState(element);
     notifyScrollObserversAfterCommit(element);
@@ -997,7 +1059,7 @@ function ConversationTimelineImpl({
     responsiveCenteredEmptyLayout,
     markProgrammaticScroll,
     notifyScrollObserversAfterCommit,
-    syncTurnNavigatorViewport,
+    viewportProbe,
   ]);
 
   useLayoutEffect(() => {
@@ -1043,7 +1105,7 @@ function ConversationTimelineImpl({
 
     const cacheHeight = (entry?: ResizeObserverEntry) => {
       const height = measureRowHeight(element, entry);
-      heightCacheRef.current?.set(cacheKey, height);
+      heightCacheRef.current.set(cacheKey, height);
       return height;
     };
     let observedHeight = cacheHeight();
@@ -1113,16 +1175,11 @@ function ConversationTimelineImpl({
       lastObservedScrollTopRef.current = element.scrollTop;
       followingRef.current = false;
       setBackToBottomVisible(shouldShowBackToBottom(false, unitsRef.current.length));
-      syncTurnNavigatorViewport(element);
+      viewportProbe.flush();
       userAdjustedScrollSinceRestoreRef.current = false;
       cacheCurrentScrollMemoryState(element);
     },
-    [
-      cacheCurrentScrollMemoryState,
-      clearUserScrollIntent,
-      markProgrammaticScroll,
-      syncTurnNavigatorViewport,
-    ],
+    [cacheCurrentScrollMemoryState, clearUserScrollIntent, markProgrammaticScroll, viewportProbe],
   );
 
   const handleScroll = useCallback(() => {
@@ -1147,8 +1204,11 @@ function ConversationTimelineImpl({
     if (scrollSource !== "layout") {
       suppressVirtualizerAdjustmentDuringRestoreRef.current = false;
     }
+    // 跳转在途窗口到此结束：跳转引起的 scroll 已交付，所有权落到 unlocked / pinned。
+    endTimelineJump();
     lastObservedScrollTopRef.current = element.scrollTop;
-    syncTurnNavigatorViewport(element);
+    // 滚动只登记失效：度量与遮罩合并到本帧，Timeline 自身不因滚动重渲染。
+    viewportProbe.invalidate();
     const following = resolveFollowingAfterScroll({
       following: followingRef.current,
       source: scrollSource,
@@ -1198,9 +1258,10 @@ function ConversationTimelineImpl({
     }
   }, [
     commitFollowing,
+    endTimelineJump,
     getActiveUserScrollIntent,
     saveCurrentScrollMemory,
-    syncTurnNavigatorViewport,
+    viewportProbe,
     virtualizer,
   ]);
 
@@ -1228,6 +1289,7 @@ function ConversationTimelineImpl({
   const scrollToQuery = useCallback(
     (target: { unitIndex: number; rowId: number }, behavior: ScrollBehavior = "auto") => {
       clearUserScrollIntent();
+      beginTimelineJump();
       commitFollowing(false);
       if (turnNavigatorJumpFrameRef.current !== null) {
         window.cancelAnimationFrame(turnNavigatorJumpFrameRef.current);
@@ -1247,7 +1309,7 @@ function ConversationTimelineImpl({
           element.scrollTo({ top: targetTop, behavior });
         }
         lastObservedScrollTopRef.current = element.scrollTop;
-        syncTurnNavigatorViewport(element);
+        viewportProbe.flush();
         logger.debug("[v4-turn-navigator] 定位用户 query", {
           behavior,
           rowId: target.rowId,
@@ -1293,7 +1355,14 @@ function ConversationTimelineImpl({
       };
       turnNavigatorJumpFrameRef.current = window.requestAnimationFrame(alignMountedQuery);
     },
-    [clearUserScrollIntent, commitFollowing, liveUnitIndex, syncTurnNavigatorViewport, virtualizer],
+    [
+      beginTimelineJump,
+      clearUserScrollIntent,
+      commitFollowing,
+      liveUnitIndex,
+      viewportProbe,
+      virtualizer,
+    ],
   );
 
   useLayoutEffect(() => {
@@ -1322,6 +1391,7 @@ function ConversationTimelineImpl({
   const scrollToUnit = useCallback(
     (unitIndex: number, behavior: ScrollBehavior = "auto") => {
       clearUserScrollIntent();
+      beginTimelineJump();
       commitFollowing(false);
       if (unitIndex === liveUnitIndex) {
         const element = scrollRef.current;
@@ -1337,12 +1407,19 @@ function ConversationTimelineImpl({
           element.scrollTo({ top: targetTop, behavior });
         }
         lastObservedScrollTopRef.current = element.scrollTop;
-        syncTurnNavigatorViewport(element);
+        viewportProbe.flush();
         return;
       }
       virtualizer.scrollToIndex(unitIndex, { align: "start", behavior });
     },
-    [clearUserScrollIntent, commitFollowing, liveUnitIndex, syncTurnNavigatorViewport, virtualizer],
+    [
+      beginTimelineJump,
+      clearUserScrollIntent,
+      commitFollowing,
+      liveUnitIndex,
+      viewportProbe,
+      virtualizer,
+    ],
   );
 
   const findRowId = useConversationTimelineFind({
@@ -1374,15 +1451,22 @@ function ConversationTimelineImpl({
   }, []);
 
   const rowCount = renderUnits.length;
+  // 「N 条新消息」只在解锁态计算：跳转在途不显示，避免跳转途中出现误导计数。
+  const newMessageCount = useMemo(
+    () =>
+      scrollOwnership === "unlocked" ? countNewMessageRowsSince(rows, unlockedAnchorRowId) : 0,
+    [rows, scrollOwnership, unlockedAnchorRowId],
+  );
   const rowWindowKey = `${rows.length}:${rows[0]?.rowId ?? "none"}:${rows[rows.length - 1]?.rowId ?? "none"}`;
   const pendingGuideKey = pendingGuides.map((item) => item.queueItemId).join(":");
 
   // V4 迁移删除旧 ChatView 滚动 hook 后，sessionKey effect 仍固定滚到底部，
-  // 导致残留的 renderer-local 记忆模块彻底断线。这里在清测高并重新 measure 后按 scope
+  // 导致残留的 renderer-local 记忆模块彻底断线。这里在重新 measure 后按 scope
   // 恢复；首个 layout 立即写入防闪动，下一帧再校正异步测高，但必须把滚动权让给用户。
+  // 测高缓存不再按会话清空：缓存本身按「会话 + logEpoch」隔离，切回同一会话必须命中
+  // 真实高度，否则滚动条会先跳到估计值再被逐行纠正。
   useLayoutEffect(() => {
     clearUserScrollIntent();
-    heightCacheRef.current?.clear();
     // prepend 锚定基线一并重置：rowId 跨会话可重复，禁止拿旧会话首行比较。
     prependAnchorRef.current = { firstRowId: null, totalSize: 0 };
     pendingPrependVirtualAnchorRef.current = null;
@@ -1544,7 +1628,7 @@ function ConversationTimelineImpl({
       element.scrollTop += adjustment;
       // 程序化平移同样入账，避免被下方贴底对账误读为「未观察滚动」。
       lastObservedScrollTopRef.current = element.scrollTop;
-      syncTurnNavigatorViewport(element);
+      viewportProbe.flush();
       cacheCurrentScrollMemoryState(element);
       // 一次前插数千行时，measurement cache 与 scrollTop 会在同一 commit
       // 更新，Chromium 可能合并掉原生 scroll 通知，virtualizer 仍按旧 offset 挂载首屏，
@@ -1602,9 +1686,9 @@ function ConversationTimelineImpl({
 
   useLayoutEffect(() => {
     if (scrollRef.current) {
-      syncTurnNavigatorViewport(scrollRef.current);
+      viewportProbe.flush();
     }
-  }, [pendingGuideKey, rowCount, syncTurnNavigatorViewport, totalSize]);
+  }, [pendingGuideKey, rowCount, viewportProbe, totalSize]);
 
   // 行清空（如 editUserQuery 大范围 rewind）：重置为跟随并收起按钮，
   // 后续重新出现的行走上面的锚定 effect 贴底。
@@ -1665,12 +1749,8 @@ function ConversationTimelineImpl({
             canLoadOlder={canLoadOlder}
             onLoadAllOlder={onLoadAllOlder}
             isHydratingDirectory={loadingOlder}
-            scrollOffsetPx={virtualizer.scrollOffset ?? turnNavigatorViewport.scrollOffsetPx}
-            viewportHeightPx={
-              virtualizer.scrollRect?.height ?? turnNavigatorViewport.viewportHeightPx
-            }
             virtualItems={turnNavigatorVirtualItems}
-            activeQueryRowId={turnNavigatorViewport.activeQueryRowId}
+            viewportProbe={viewportProbe}
             onJumpToQuery={scrollToQuery}
           />
         )}
@@ -1685,6 +1765,8 @@ function ConversationTimelineImpl({
           data-render-unit-count={renderUnits.length}
           data-total-row-count={totalCount}
           data-following={backToBottomVisible ? "false" : "true"}
+          data-scroll-ownership={scrollOwnership}
+          data-new-message-count={newMessageCount > 0 ? String(newMessageCount) : undefined}
           data-loading-older={loadingOlder ? "true" : "false"}
           onKeyDownCapture={handleKeyDownCapture}
           onPointerCancelCapture={handlePointerEndCapture}
@@ -1803,7 +1885,7 @@ function ConversationTimelineImpl({
                           onRetry={onRetry}
                           onFeedbackChange={onFeedbackChange}
                           onEdit={onEdit}
-                                    />
+                        />
                       </div>
                     );
                   })}
@@ -1832,7 +1914,7 @@ function ConversationTimelineImpl({
                       onRetry={onRetry}
                       onFeedbackChange={onFeedbackChange}
                       onEdit={onEdit}
-                            />
+                    />
                   </div>
                 ) : null}
                 {pendingGuides.length > 0 ? (
@@ -1894,6 +1976,15 @@ function ConversationTimelineImpl({
                         // 它是"按钮点得动"唯一可断言的契约。
                         className="pointer-events-auto absolute bottom-full left-1/2 z-30 mb-2 -translate-x-1/2 shadow-sm"
                         label={intl.formatMessage({ id: "chat.scrollToBottom" })}
+                        count={newMessageCount}
+                        countLabel={
+                          newMessageCount > 0
+                            ? intl.formatMessage(
+                                { id: "chat.newMessagesSince" },
+                                { count: String(newMessageCount) },
+                              )
+                            : undefined
+                        }
                         onClick={handleBackToBottom}
                       />
                     ) : null}
@@ -1908,6 +1999,15 @@ function ConversationTimelineImpl({
           <ConversationBackToBottomButton
             className="absolute bottom-3 left-1/2 -translate-x-1/2 shadow-sm"
             label={intl.formatMessage({ id: "chat.scrollToBottom" })}
+            count={newMessageCount}
+            countLabel={
+              newMessageCount > 0
+                ? intl.formatMessage(
+                    { id: "chat.newMessagesSince" },
+                    { count: String(newMessageCount) },
+                  )
+                : undefined
+            }
             onClick={handleBackToBottom}
           />
         ) : null}

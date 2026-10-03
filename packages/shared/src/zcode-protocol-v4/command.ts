@@ -55,11 +55,7 @@ export const commandPayloadSchemas = {
     config: createSessionRequestedConfigSchema.optional(),
     // MCP 是 runtime 启动期配置，必须随 create 一次性进入 record，不能在首发后补写。
     mcpServers: z.array(zcodeProtocolMcpServerSchema).optional(),
-    // Off-Peak 工具面 flag，与 legacy session/create 等价——V4 createSession 是桌面
-    // 新会话的实际创建路径，不透传则 OffPeakCreate/OffPeakList 永不注册。additive，
-    // 旧 CLI 的 z.object 会静默丢弃该键（fail-closed）。
-    offPeakToolEnabled: z.boolean().optional(),
-    // 动态工作流灰度 flag，与 offPeakToolEnabled 同一模式。
+    // 动态工作流灰度 flag：host 裁决后下发，缺省不下发 = 不注册工作流工具簇（fail-closed）。
     dynamicWorkflowEnabled: z.boolean().optional(),
   }),
   // 父会话由 envelope.sessionId 指定；服务端从父 record 派生完整运行配置。
@@ -100,26 +96,11 @@ export const commandPayloadSchemas = {
       // 仅 idle startNow 接受，防止 Secret/Ticket 进入普通 CommandInbox。
       modelExecution: modelExecutionSchema.optional(),
       automationId: z.string().min(1).optional(),
-      offPeakTaskId: z.string().min(1).optional(),
-      offPeakRunType: z.enum(["init", "resume"]).optional(),
       // 定时任务会话的后续用户输入也必须保持 turn-scoped 工具面隔离；不能借用
       // automationId，否则会把普通用户输入误标成一次 automation 派发。
       toolDisallowlist: z.array(z.string().min(1)).optional(),
     })
     .superRefine((payload, context) => {
-      if (payload.automationId && payload.offPeakTaskId) {
-        context.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: "automationId and offPeakTaskId are mutually exclusive",
-        });
-      }
-      if (payload.offPeakRunType && !payload.offPeakTaskId) {
-        context.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: "offPeakRunType requires offPeakTaskId",
-          path: ["offPeakRunType"],
-        });
-      }
       if (payload.modelExecution && !payload.modelSelection) {
         context.addIssue({
           code: z.ZodIssueCode.custom,

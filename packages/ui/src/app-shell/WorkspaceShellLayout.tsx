@@ -87,6 +87,7 @@ import { toast } from "@/components/ui/toast.js";
 import { getGitDirtyFileCount } from "@/git-branch-switcher/display.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { useBaseWorkspaceServices } from "@/hooks/useWorkspaceServices.js";
+import { LayerSurface } from "@/lib/layerActivity.js";
 import { getPathLeaf, toFileUrl } from "@/lib/path.js";
 import { shouldOpenAssistantHtmlInBrowser } from "@/lib/assistantPreviewCards.js";
 import { setWorkspaceSidebarResizeActive } from "@/lib/workspaceSidebarResizeState.js";
@@ -372,6 +373,15 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
     null,
   );
   const [isSidebarFileTreeOpen, setIsSidebarFileTreeOpen] = useState(false);
+  // 主视图 lazy keep-alive（spec「界面切换与聊天滚动性能」规则 6）：automations 首次进入后保持
+  // 挂载，返回时保留页签/列表/滚动状态，不再重新 initialize。它不是默认视图，启动即挂载会白白
+  // 发起一次数据加载，因此只在首次进入后才常驻；首次进入当帧即挂载，不产生空帧。
+  // plugin-store 保持既有「每次进入重新挂载」语义（目录自动刷新的节流依赖重挂载，见
+  // settings/officialMarketplaceAutoRefresh），不纳入 keep-alive。
+  const [automationsVisited, setAutomationsVisited] = useState(false);
+  useEffect(() => {
+    if (workspaceMainView === "automations" && !automationsVisited) setAutomationsVisited(true);
+  }, [automationsVisited, workspaceMainView]);
   const workspaceKey = workspaceIdentity?.trim() || workspaceAbsPath;
   const screenshotSurfaceRequest = useBrowserScreenshotSurfaceRequest(sidePaneState?.tabs ?? []);
   const screenshotSurfaceTab = screenshotSurfaceRequest
@@ -1752,69 +1762,72 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
                         />
                       </ScopedErrorBoundary>
                     ) : null}
-                    <div className="min-h-0 flex-1 overflow-hidden">
-                      {workspaceMainView === "automations" ? (
-                        <main
-                          id={AUTOMATIONS_TOAST_ANCHOR_ID}
-                          className="flex h-full min-h-0 flex-1 flex-col bg-background"
-                        >
-                          <AutomationsMainBreadcrumbFrame
-                            isDesktop={Boolean(isDesktop)}
-                            sectionLabel={intl.formatMessage({
-                              id: "settings.automations.title",
-                            })}
-                            ariaLabel={intl.formatMessage({
-                              id: "automations.breadcrumbLabel",
-                            })}
+                    <div className="relative min-h-0 flex-1 overflow-hidden">
+                      {workspaceMainView === "automations" || automationsVisited ? (
+                        <LayerSurface active={workspaceMainView === "automations"}>
+                          <main
+                            id={AUTOMATIONS_TOAST_ANCHOR_ID}
+                            className="flex h-full min-h-0 flex-1 flex-col bg-background"
                           >
-                            <div
-                              // 不同 Automations tab 的内容高度不同，滚动条出现/消失会改变
-                              // mx-auto 内容列的可用宽度，造成整页左右弹动；预留稳定槽位保持居中基准不变。
-                              className="min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]"
+                            <AutomationsMainBreadcrumbFrame
+                              isDesktop={Boolean(isDesktop)}
+                              sectionLabel={intl.formatMessage({
+                                id: "settings.automations.title",
+                              })}
+                              ariaLabel={intl.formatMessage({
+                                id: "automations.breadcrumbLabel",
+                              })}
                             >
-                              <ScopedErrorBoundary
-                                scope="automations-main"
-                                resetKeys={workspaceOnlyResetKeys}
-                                variant="panel"
-                                className="min-h-full"
+                              <div
+                                // 不同 Automations tab 的内容高度不同，滚动条出现/消失会改变
+                                // mx-auto 内容列的可用宽度，造成整页左右弹动；预留稳定槽位保持居中基准不变。
+                                className="min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]"
                               >
-                                <div className="mx-auto flex w-full max-w-5xl flex-col px-4 py-4 md:px-6 md:py-6">
-                                  <Suspense
-                                    fallback={
-                                      <div className="p-3 text-ui-base text-foreground-subtle">
-                                        {intl.formatMessage({ id: "common.loading" })}
-                                      </div>
-                                    }
-                                  >
-                                    <AutomationsSection
-                                      workspacePath={workspaceAbsPath}
-                                      workspaceIdentity={workspaceIdentity}
-                                      onCreateViaChat={handleCreateAutomationInChat}
-                                      onNavigateToLaunchedRun={handleNavigateToLaunchedRun}
-                                      onOpenWorkflowRun={handleOpenSavedWorkflowRun}
-                                      onOpenWorkflowArtifact={handleOpenSavedWorkflowArtifact}
-                                      openAutomationId={openAutomationId}
-                                      openAutomationTab={openAutomationTab}
-                                      onOpenAutomationConsumed={onOpenAutomationConsumed}
-                                      onOpenSession={({
-                                        sessionId,
-                                        workspacePath,
-                                        workspaceIdentity,
-                                      }) =>
-                                        handleSelectTaskInChat(
-                                          workspacePath,
-                                          sessionId,
-                                          workspaceIdentity,
-                                        )
+                                <ScopedErrorBoundary
+                                  scope="automations-main"
+                                  resetKeys={workspaceOnlyResetKeys}
+                                  variant="panel"
+                                  className="min-h-full"
+                                >
+                                  <div className="mx-auto flex w-full max-w-5xl flex-col px-4 py-4 md:px-6 md:py-6">
+                                    <Suspense
+                                      fallback={
+                                        <div className="p-3 text-ui-base text-foreground-subtle">
+                                          {intl.formatMessage({ id: "common.loading" })}
+                                        </div>
                                       }
-                                    />
-                                  </Suspense>
-                                </div>
-                              </ScopedErrorBoundary>
-                            </div>
-                          </AutomationsMainBreadcrumbFrame>
-                        </main>
-                      ) : workspaceMainView === "plugin-store" ? (
+                                    >
+                                      <AutomationsSection
+                                        workspacePath={workspaceAbsPath}
+                                        workspaceIdentity={workspaceIdentity}
+                                        onCreateViaChat={handleCreateAutomationInChat}
+                                        onNavigateToLaunchedRun={handleNavigateToLaunchedRun}
+                                        onOpenWorkflowRun={handleOpenSavedWorkflowRun}
+                                        onOpenWorkflowArtifact={handleOpenSavedWorkflowArtifact}
+                                        openAutomationId={openAutomationId}
+                                        openAutomationTab={openAutomationTab}
+                                        onOpenAutomationConsumed={onOpenAutomationConsumed}
+                                        onOpenSession={({
+                                          sessionId,
+                                          workspacePath,
+                                          workspaceIdentity,
+                                        }) =>
+                                          handleSelectTaskInChat(
+                                            workspacePath,
+                                            sessionId,
+                                            workspaceIdentity,
+                                          )
+                                        }
+                                      />
+                                    </Suspense>
+                                  </div>
+                                </ScopedErrorBoundary>
+                              </div>
+                            </AutomationsMainBreadcrumbFrame>
+                          </main>
+                        </LayerSurface>
+                      ) : null}
+                      {workspaceMainView === "plugin-store" ? (
                         <main className="flex h-full min-h-0 flex-1 flex-col bg-background">
                           <AutomationsMainBreadcrumbFrame
                             isDesktop={Boolean(isDesktop)}
@@ -1846,7 +1859,11 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
                             </div>
                           </AutomationsMainBreadcrumbFrame>
                         </main>
-                      ) : (
+                      ) : null}
+                      {/* chat 层常驻挂载：切到 automations / plugin-store 只隐藏不卸载，
+                          返回时保留滚动位置、虚拟窗口、测高缓存与订阅，不重建整树。
+                          非活动层保留下布局（invisible 而非 display:none），动态测高不会归零。 */}
+                      <LayerSurface active={workspaceMainView === "chat"}>
                         <main className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden">
                           {renderChatFindDialog()}
                           <ScopedErrorBoundary
@@ -1863,7 +1880,9 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
                                   绑定语义与 testid 契约（paneId=workspace-main）不变。 */}
                             <V4WorkspaceChatArea
                               readOnly={Boolean(workspaceReadOnlyReason)}
-                              foregroundEnabled={isWorkspaceVisible}
+                              // 主视图切到 automations / plugin-store 时 chat 层不可交互：
+                              // 可见性并入 focus，隐藏的 Pane 不能消费一次性 Composer 请求。
+                              foregroundEnabled={isWorkspaceVisible && workspaceMainView === "chat"}
                               workspacePath={workspaceAbsPath}
                               workspaceIdentity={workspaceIdentity}
                               isDesktop={isDesktop === true}
@@ -1920,7 +1939,7 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
                             />
                           </ScopedErrorBoundary>
                         </main>
-                      )}
+                      </LayerSurface>
                     </div>
                   </section>
                 </ResizablePanel>

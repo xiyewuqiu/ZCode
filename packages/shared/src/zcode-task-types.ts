@@ -45,9 +45,6 @@ export function createQueryId(): QueryId {
 /** cron 定时任务生成的 session 默认归入的系统分组固定 id。 */
 export const CRON_DEFAULT_GROUP_ID = "zcode-default-group-cron";
 
-/** 闲时任务已派发会话默认归入的系统分组固定 id（与 cron 分组同构）。 */
-export const OFF_PEAK_DEFAULT_GROUP_ID = "zcode-default-group-off-peak";
-
 type CronTaskIdentity = Pick<ZCodeTaskMeta, "cronAutomationId"> & {
   automationId?: string;
 };
@@ -57,11 +54,6 @@ export function isCronTask(task: CronTaskIdentity): boolean {
   // 持久化 task meta 使用 cronAutomationId；但运行态派发/旧链路里字段名是 automationId。
   // UI 只看前者会让新创建或刚恢复的定时任务暂时没有 icon。
   return Boolean(task.cronAutomationId || task.automationId);
-}
-
-/** 判断一个 task/幻影行是否属于闲时任务（只看持久 meta 标记，UI 不反查 off-peak store）。 */
-export function isOffPeakTask(task: Pick<ZCodeTaskMeta, "offPeakTaskId">): boolean {
-  return Boolean(task.offPeakTaskId);
 }
 
 // ---- ZCode Provider ----

@@ -141,7 +141,6 @@ export async function* runStreamText(input: {
     let emittedRetryBoundaryEvent = false;
     let emittedError = false;
     let retryScheduledFromStreamChunk = false;
-    let offPeakQueueHoldFromStreamChunk = false;
     const pendingRetrySafeEvents: ModelStreamEvent[] = [];
     const diagnostics = createStreamDiagnostics();
     const attemptAbortController = createLinkedAbortController(input.request.abortSignal);
@@ -419,7 +418,6 @@ export async function* runStreamText(input: {
           attemptFailed = true;
           awaitIteratorClose = true;
           retryScheduledFromStreamChunk = true;
-          offPeakQueueHoldFromStreamChunk = event.offPeakQueueHold;
           break;
         }
         if (event.terminalError) {
@@ -436,10 +434,6 @@ export async function* runStreamText(input: {
       }
 
       if (retryScheduledFromStreamChunk) {
-        if (offPeakQueueHoldFromStreamChunk) {
-          // 排队等待不消耗重试预算：回退计数让 for 自增后原地重试。
-          attempt -= 1;
-        }
         continue;
       }
 
@@ -983,8 +977,6 @@ async function handleStreamChunk(input: {
   emittedEvent: boolean;
   emittedRetryBoundaryEvent: boolean;
   retryScheduled: boolean;
-  /** off-peak 排队重试：外层 for 冻结 attempt 预算。 */
-  offPeakQueueHold: boolean;
   terminalError?: TerminalStreamChunkError;
   visibleEvents: ModelStreamEvent[];
 }> {
@@ -1299,7 +1291,6 @@ async function handleStreamErrorEvent(
   return streamChunkResult({
     emittedError: true,
     retryScheduled: true,
-    offPeakQueueHold: false,
   });
 }
 
@@ -1488,8 +1479,6 @@ function streamChunkResult(
     emittedEvent: boolean;
     emittedRetryBoundaryEvent: boolean;
     retryScheduled: boolean;
-    /** off-peak 排队重试：外层 for 冻结 attempt 预算。 */
-    offPeakQueueHold: boolean;
     terminalError?: TerminalStreamChunkError;
     visibleEvents: ModelStreamEvent[];
   }> = {},
@@ -1499,7 +1488,6 @@ function streamChunkResult(
     emittedEvent: false,
     emittedRetryBoundaryEvent: false,
     retryScheduled: false,
-    offPeakQueueHold: false,
     visibleEvents: [],
     ...overrides,
   };

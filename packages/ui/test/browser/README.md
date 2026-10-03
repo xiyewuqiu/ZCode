@@ -38,6 +38,16 @@ corepack pnpm exec tsx --tsconfig packages/ui/tsconfig.json --test packages/ui/t
 
 使用本机 Edge、5,100 条合成记录和真实目录组件 / 查询 hook，覆盖虚拟挂载上限、20Hz 无关投影更新隔离、滚动锚点、键盘首尾与打开、焦点保留、分页重试和跨 scope 在途隔离。测试包含亮暗主题、手机宽度、20px UI 字号和 reduced-motion；截图及帧采样位于 `node_modules/.cache/subagent-directory/`。此 fixture 不启动真实 Agent、Host 或远程连接。
 
+## 层活动门控与隐藏层渲染
+
+保持下述 Vite 测试服务运行后执行：
+
+```powershell
+node packages/ui/test/browser/run-layer-activity.mjs
+```
+
+挂载真实的 `LayerSurface` 与 `subscribeToVisibleProjection`，验证：两个层只挂载一次；活动层逐次接收通知；失活层在 30 次更新期间零重渲染且仍保留 DOM（`inert`、`aria-hidden`、`visibility:hidden`）；切回时一次渲染读到最新状态。fixture 使用合成 store，不连接真实 Host。
+
 ## 会话永久删除
 
 保持 Vite 测试服务运行后，从仓库根目录执行：
@@ -110,7 +120,7 @@ corepack pnpm exec tsc -p packages/ui/test/tsconfig.long-conversation.json
 
 ## 会话派生模型与桌面布局
 
-`shellPerformance.html` 复用 SessionPane 的实际分享/订阅 hooks、窗控、Panel 动画和设置加载壳，使用合成 store 和平台服务，不需要真实 Host。
+`shellPerformance.html` 复用会话投影订阅 hook、窗控、Panel 动画和设置加载壳，使用合成 store 和平台服务，不需要真实 Host。
 
 ```powershell
 npx --yes agent-browser --session shell-performance open http://127.0.0.1:5199/packages/ui/test/browser/shellPerformance.html
@@ -127,7 +137,7 @@ Get-Content packages/ui/test/browser/verifyShell.js -Raw | npx --yes agent-brows
 npx --yes agent-browser --session shell-performance close
 ```
 
-断言包含关闭分享时零历史读取、持续更新不重复订阅、换 store/卸载清理、候选 scope 隔离、原生窗控避让区缩放、Panel 收放、设置页加载返回。测试页不调用分享发布接口。
+断言包含持续更新不重复订阅、换 store/卸载清理、原生窗控避让区缩放、Panel 收放、设置页加载返回。
 
 ## 大规模分享目录
 

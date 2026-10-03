@@ -20,7 +20,6 @@ function GroupDragOverlay({
   // 导致拖动时从“定时任务”闪回内部值。三种 header 统一走同一个标题格式化入口。
   const displayTitle = getTaskGroupDisplayTitle(node.group, {
     cron: intl.formatMessage({ id: "taskGroup.cronGroupName" }),
-    offPeak: intl.formatMessage({ id: "offPeak.sidebar.groupTitle" }),
   });
 
   return (

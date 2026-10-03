@@ -92,8 +92,6 @@ export const ServiceChannels = {
   ProviderSettings: "provider-settings",
   /** 新 Provider Registry 的模型选择 Facade */
   ModelSelection: "model-selection",
-  /** 远端 Environment 内部 Provider Provisioning target */
-  ProviderProvisioningTarget: "provider-provisioning-target",
   /** 本地 usage 统计服务 */
   UsageStats: "usage-stats",
   /** Coding Plan 客户端灰度配置服务（闲时任务、动态工作流快照；购买闭环已下线） */
@@ -127,8 +125,6 @@ export const ServiceChannels = {
   Feedback: "feedback",
   /** Composer 附件在 host-local 与 remote runtime 之间的预传服务 */
   PromptAttachmentTransfer: "prompt-attachment-transfer",
-  /** 闲时任务管理服务（与 automation 服务面独立） */
-  OffPeakTask: "off-peak-task",
   /** Onboarding 完成记录服务（本地持久化，后续上传服务器） */
   OnboardingRecord: "onboarding-record",
 } as const;
@@ -461,16 +457,12 @@ export const HostMessageTypes = {
   FeedbackLogArchiveResult: "feedback-log-archive-result",
   /** main → host：定时任务到点派发；会话内 cron 复用 targetTaskId，历史未绑定任务才建 session */
   CronRun: "cron-run",
-  /** main → host：闲时任务派发；首跑 createTask 新建 session，续跑带 conversationId/sessionId resume */
-  OffPeakRun: "off-peak-run",
   /** main → host：browser-use 命令执行结果（CDP 执行完回传，按 requestId 关联） */
   BrowserExecuteResult: "browser-execute-result",
   /** main → host：本地视频 canonical path 授权结果 */
   LocalMediaPreviewPathAuthorizeResult: "local-media-preview-path-authorize-result",
   /** Main → Host：全局前台 ZCode 窗口派生的 producer focus fact。 */
   CuaPipFocusChanged: "cua-pip-focus-changed",
-  /** main → host：要求 Host 现读本地 Source，并同步指定 Remote Environment。 */
-  ProviderProvisioningExecute: "provider-provisioning-execute",
   /** main → host：资源管理器请求 Host 采样其后代进程（Agent / MCP / 终端）的 CPU 与内存 */
   ResourceUsageSnapshotRequest: "resource-usage-snapshot-request",
   ResourceUsageSnapshotCancel: "resource-usage-snapshot-cancel",
@@ -548,22 +540,12 @@ export const HostResponseTypes = {
   FeedbackLogArchiveRequest: "feedback-log-archive-request",
   /** host → main：定时任务派发结果（成功回填 taskId/sessionId，失败带 transient/permanent） */
   CronRunResult: "cron-run-result",
-  /** host → main：闲时任务派发结果（成功回填 conversationId/sessionId，失败带 transient/permanent） */
-  OffPeakRunResult: "off-peak-run-result",
   /** host → main：manual run 已落库，请立即唤醒 scheduler 认领派发 */
   CronSchedulerWakeRequest: "cron-scheduler-wake-request",
-  /** host → main：闲时任务翻 schedulable，请立即唤醒 scheduler 认领派发（与 cron 消息独立） */
-  OffPeakSchedulerWakeRequest: "off-peak-scheduler-wake-request",
   /** host → main：执行一条 browser-use 命令（main 用 WebContentsView+CDP 执行，按 requestId 关联） */
   BrowserExecuteRequest: "browser-execute-request",
   /** host → main：请求授权 Agent 已精确校验的本地视频路径 */
   LocalMediaPreviewPathAuthorizeRequest: "local-media-preview-path-authorize-request",
-  /** host → main：RPC 网络遥测批次（channel.command 成功率/耗时） */
-  NetworkTelemetryBatch: "network-telemetry-batch",
-  /** host → main：本地 Provisioning Source 成功持久化。 */
-  ProviderProvisioningSourceChanged: "provider-provisioning-source-changed",
-  /** host → main：一次 Remote Environment 同步执行完毕。 */
-  ProviderProvisioningExecutionResult: "provider-provisioning-execution-result",
 } as const;
 
 // ============================================================================

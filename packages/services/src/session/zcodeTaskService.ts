@@ -228,8 +228,6 @@ export interface IZCodeTaskService {
     mcpServers?: ZCodeAgentMcpServer[];
     /** 定时任务派发时标记所属 automation，落 tasks-index 的 cron_automation_id 并归入 cron 分组。 */
     automationId?: string;
-    /** 闲时任务派发时标记所属 off-peak 任务，落 tasks-index 的 off_peak_task_id。 */
-    offPeakTaskId?: string;
     /**
      * 无界面派发会先创建空 session，再立即发送首条 V4 输入。此时使用 deferred，
      * 让输入 admission 在写 session_input 外键账本前先统一持久化 session 主记录。
@@ -252,7 +250,7 @@ export interface IZCodeTaskService {
       clientMode?: ZCodeTaskClientMode;
       /** 当前 turn 额外隐藏的工具；与 session/automation 自带的工具隔离规则合并。 */
       toolDenylist?: string[];
-      /** 标准模型选择；闲时任务同样经 Registry / ModelFactory 创建 Model。 */
+      /** 标准模型选择，经 Registry / ModelFactory 创建 Model。 */
       modelSelection?: CommandPayloadMap["sendText"]["modelSelection"];
       /** 单次执行约束与动态鉴权；仅 idle start-now 接受，不进入普通队列。 */
       modelExecution?: CommandPayloadMap["sendText"]["modelExecution"];
@@ -366,8 +364,6 @@ export interface IZCodeTaskService {
     thoughtLevel?: string;
     /** 定时任务派发时恢复已有 targetTaskId，沿用 automation 工具面隔离。 */
     automationId?: string;
-    /** 闲时续跑恢复 pre-会话时补写 off-peak 标记（新会话在 createTask 已盖章）。 */
-    offPeakTaskId?: string;
     mcpServers?: ZCodeAgentMcpServer[];
   }): Promise<ZCodeTaskMeta>;
 

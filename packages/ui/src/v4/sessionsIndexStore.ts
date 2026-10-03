@@ -11,6 +11,10 @@ import {
 import { isZCodeFileLockTimeoutError } from "@zcode/shared";
 import { ZCODE_AGENT_RUNTIME_UNAVAILABLE_CODE } from "@zcode/services";
 import { logger } from "@/logger.js";
+import {
+  appFrameNotificationScheduler,
+  type FrameNotificationScheduler,
+} from "@/lib/frameNotificationScheduler.js";
 import type { SessionsIndexTransport } from "@/v4/agentSessionsIndexTransport.js";
 
 interface SessionsIndexState {
@@ -169,6 +173,8 @@ export class SessionsIndexStore {
   private subscribeRetryTimer: ReturnType<typeof setTimeout> | null = null;
   private errorRecoveryRetryTimer: ReturnType<typeof setTimeout> | null = null;
   private errorRecoveryRetryAttempt = 0;
+  /** 帧内通知合并；与投影 store 共用同一调度器，同一帧合并为一次 React 渲染。 */
+  private readonly scheduler: FrameNotificationScheduler = appFrameNotificationScheduler;
 
   subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener);
@@ -733,7 +739,16 @@ export class SessionsIndexStore {
     return this.cachedList;
   }
 
+  /**
+   * 通知合并到每帧一次：流式期间会话列表会随多次帧更新（标题、状态、耗时）反复到达，
+   * 逐个同步通知会让订阅者在同一帧里重复渲染。状态本身已在 emit 前写入，
+   * `getState()`/`getSessions()` 始终是最新事实。
+   */
   private emit(): void {
-    for (const listener of this.listeners) listener();
+    this.scheduler.schedule(this.notifyListeners);
   }
+
+  private readonly notifyListeners = (): void => {
+    for (const listener of this.listeners) listener();
+  };
 }

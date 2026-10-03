@@ -74,27 +74,6 @@ export function createCommandCenter(deps: CommandCenterDeps): TuiSubmitPrompt {
         };
       }
 
-      if (command.name === "logout") {
-        if (command.args.length > 0) {
-          return {
-            mode: deps.getMode?.(),
-            response: "Usage: /logout",
-          };
-        }
-        if (!deps.logout) {
-          return {
-            mode: deps.getMode?.(),
-            response: "Logout is not available in this client.",
-          };
-        }
-
-        const result = await deps.logout();
-        return {
-          mode: deps.getMode?.(),
-          response: `Cleared stored account credentials: ${result.credentialsPath}`,
-        };
-      }
-
       if (command.name === "compact") {
         const app = await deps.getApp();
         const prompt = command.args ? `/compact ${command.args}` : "/compact";

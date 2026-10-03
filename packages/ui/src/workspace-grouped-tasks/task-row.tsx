@@ -3,8 +3,8 @@ import { memo, useState } from "react";
 import type { KeyboardEvent, MouseEvent } from "react";
 import { useDraggable, useDroppable } from "@dnd-kit/core";
 import type { UniqueIdentifier } from "@dnd-kit/core";
-import { isCronTask, isOffPeakTask, type ZCodeTaskMeta } from "@zcode/shared";
-import { ArrowUpToLine, Clock, Cloud, Folder, ListTree, LoaderIcon, Moon, X } from "lucide-react";
+import { isCronTask, type ZCodeTaskMeta } from "@zcode/shared";
+import { ArrowUpToLine, Clock, Cloud, Folder, ListTree, LoaderIcon, X } from "lucide-react";
 import { cn } from "@/components/lib/utils.js";
 import { Badge } from "@/components/ui/badge.js";
 import { toast } from "@/components/ui/toast.js";
@@ -128,9 +128,6 @@ function GroupedTaskRowComponent({
   const taskChangeParts = formatGroupedTaskHoverChangeParts(getTaskChangeSummary(task));
   const taskTimeLabel = formatTaskRelativeTime(task.updatedAt, intl);
   const isTaskCron = isCronTask(task);
-  // 月亮身份改为持久 meta 标记判断；off-peak store 反查在任务被删除后会丢失
-  // 会话溯源，且让每一行多背一个全局 store 订阅。
-  const isTaskOffPeak = isOffPeakTask(task);
   const isActive =
     buildTaskWorkspaceKey(activeWorkspacePath, activeWorkspaceIdentity) === workspaceKey &&
     activeTaskId === task.taskId;
@@ -218,12 +215,6 @@ function GroupedTaskRowComponent({
               <Clock
                 data-cron-task-icon="true"
                 aria-label={intl.formatMessage({ id: "taskList.cronTaskLabel" })}
-                className="size-3.5 shrink-0"
-              />
-            ) : !hasPendingInteraction && isTaskOffPeak ? (
-              <Moon
-                data-off-peak-task-icon="true"
-                aria-label={intl.formatMessage({ id: "taskList.offPeakTaskLabel" })}
                 className="size-3.5 shrink-0"
               />
             ) : null}
@@ -347,7 +338,7 @@ function GroupedTaskRowComponent({
   const shouldMountHoverActions =
     !task.pendingInteraction &&
     (taskRowHovered || taskRowFocusWithin || isHoverNone || isMobileActive);
-  // 触屏端 isHoverNone 只负责常驻 action；时间、状态点和 cron/off-peak 元信息
+  // 触屏端 isHoverNone 只负责常驻 action；时间、状态点和 cron 元信息
   // 仍应保留，仅在真实 hover / focus 交互时让位，避免手机端永久丢失任务状态。
   const shouldSuppressTaskMetadata = taskRowHovered || taskRowFocusWithin;
 
@@ -413,12 +404,6 @@ function GroupedTaskRowComponent({
                 <Clock
                   data-cron-task-icon="true"
                   aria-label={intl.formatMessage({ id: "taskList.cronTaskLabel" })}
-                  className="size-3.5 shrink-0"
-                />
-              ) : !hasPendingInteraction && isTaskOffPeak ? (
-                <Moon
-                  data-off-peak-task-icon="true"
-                  aria-label={intl.formatMessage({ id: "taskList.offPeakTaskLabel" })}
                   className="size-3.5 shrink-0"
                 />
               ) : null}

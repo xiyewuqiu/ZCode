@@ -182,6 +182,57 @@ export function initialFollowing(): boolean {
   return true;
 }
 
+/**
+ * 滚动所有权：`following`（是否跟随底部）的显式三态投影。
+ *
+ * - `pinned`：用户处于底部，新内容（新行 / 流式 delta / 测高变化）自动贴底；
+ * - `unlocked`：用户正在读历史（上滑 / 选中文本 / 键盘 / 拖滚动条 / 搜索 / 跳转），
+ *   流式增量不得改变阅读位置，出现「回到底部 + N 条新消息」入口；
+ * - `jumping`：程序化跳转在途（查找命中 / outline / 引用定位），期间用户滚动输入
+ *   只更新几何账目，跳转结束后落到 `unlocked`（用户主动选择了位置）。
+ *
+ * `jumping` 只覆盖「跳转尚未稳定」的窗口；它不是第四种所有权，因此 UI 入口与
+ * 新消息计数只在 `unlocked` 下出现。
+ */
+export type TimelineScrollOwnership = "pinned" | "unlocked" | "jumping";
+
+export function resolveScrollOwnership(input: {
+  following: boolean;
+  jumping: boolean;
+}): TimelineScrollOwnership {
+  if (input.jumping) return "jumping";
+  return input.following ? "pinned" : "unlocked";
+}
+
+/** 解锁后新增的「消息行」：用户输入与助手正文，不含工具/推理等过程行。 */
+const NEW_MESSAGE_ROW_KINDS = new Set(["userInput", "assistantText"]);
+
+/**
+ * 解锁锚点到当前末尾之间新增的消息行数量（「N 条新消息」）。
+ *
+ * 锚点行被 rewind / 截断时返回 0：没有可比基线时宁可不显示计数，也不显示错数。
+ * 从末尾向前查找锚点，解锁期间增量通常只有个位数，代价与新增量成正比。
+ */
+export function countNewMessageRowsSince(
+  rows: readonly { rowId: number; kind: string }[],
+  anchorRowId: number | null | undefined,
+): number {
+  if (anchorRowId === null || anchorRowId === undefined) return 0;
+  let anchorIndex = -1;
+  for (let index = rows.length - 1; index >= 0; index -= 1) {
+    if (rows[index]!.rowId === anchorRowId) {
+      anchorIndex = index;
+      break;
+    }
+  }
+  if (anchorIndex < 0) return 0;
+  let count = 0;
+  for (let index = anchorIndex + 1; index < rows.length; index += 1) {
+    if (NEW_MESSAGE_ROW_KINDS.has(rows[index]!.kind)) count += 1;
+  }
+  return count;
+}
+
 // ── loadOlder：prepend 滚动锚定（虚拟滚动前插的经典坑）──
 //
 // 语义：向窗口顶部前插历史行时，用户正在读的行（锚点）在视口中的位置不得跳动。

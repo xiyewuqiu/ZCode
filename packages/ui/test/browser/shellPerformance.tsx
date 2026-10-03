@@ -2,19 +2,17 @@ import { useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Group, Panel } from "react-resizable-panels";
 import type { IPlatformService, WindowControlsOverlayMetrics } from "@zcode/shared";
-import type { ConversationRow } from "@zcode/shared/zcode-protocol-v4";
 import { PlatformProvider } from "../../src/hooks/usePlatform.js";
 import { ZCodeIntlProvider } from "../../src/i18n/IntlProvider.js";
 import { DesktopWindowControls } from "../../src/DesktopWindowControls.js";
 import { SettingsPageLoading } from "../../src/root/SettingsPageLoading.js";
 import { useAnimatedResizablePanel } from "../../src/app-shell/useAnimatedResizablePanel.js";
 import { useConversationProjection } from "../../src/v4/useConversationProjection.js";
-import { useConversationShareModel } from "../../src/v4/useConversationShareModel.js";
 import type { SessionLease } from "../../src/v4/sessionDataLayer.js";
 import type { ConversationStoreState } from "../../src/v4/conversationProjectionStore.js";
 import "../../src/styles.css";
 
-const counters = { rowReads: 0, subscribes: 0, unsubscribes: 0 };
+const counters = { subscribes: 0, unsubscribes: 0 };
 function makeLease(id: string) {
   let state: ConversationStoreState = {
     status: "live",
@@ -62,59 +60,9 @@ const platform = {
   },
 } as IPlatformService;
 
-function makeRows(text: string): ConversationRow[] {
-  const base = { turnId: "turn-1", productTurnId: "product-1", createdAt: 1, createdAtSeq: 1 };
-  return [
-    {
-      ...base,
-      rowId: 1,
-      kind: "turnHeader",
-      origin: "userInput",
-      state: "completedSuccess",
-      activeMs: 1,
-    },
-    { ...base, rowId: 2, kind: "userInput", origin: "realUser", text, attachments: [] },
-    { ...base, rowId: 3, kind: "assistantText", state: "complete", text: "Answer" },
-  ].map(
-    (row) =>
-      new Proxy(row as ConversationRow, {
-        get(target, property, receiver) {
-          counters.rowReads++;
-          return Reflect.get(target, property, receiver);
-        },
-      }),
-  );
-}
-
-function SessionFixture({ storeIndex }: { storeIndex: number }) {
+function ProjectionFixture({ storeIndex }: { storeIndex: number }) {
   const state = useConversationProjection(stores[storeIndex]!.lease);
-  const [active, setActive] = useState(false);
-  const [scope, setScope] = useState("first");
-  const [rows, setRows] = useState(() => makeRows("Question"));
-  const model = useConversationShareModel({ enabled: active, rows, scopeKey: scope });
-  return (
-    <section>
-      <button data-testid="share" onClick={() => setActive(!active)}>
-        Share
-      </button>
-      <button data-testid="row-update" onClick={() => setRows(makeRows("Updated"))}>
-        Stream update
-      </button>
-      <button
-        data-testid="scope"
-        onClick={() => {
-          setScope("second");
-          setRows(makeRows("Other workspace"));
-        }}
-      >
-        Scope
-      </button>
-      <output data-testid="candidates">
-        {model.items.map((item) => item.userPreview).join("|")}
-      </output>
-      <output data-testid="revision">{state.planDirectoryRevision}</output>
-    </section>
-  );
+  return <output data-testid="revision">{state.planDirectoryRevision}</output>;
 }
 
 function Fixture() {
@@ -160,7 +108,7 @@ function Fixture() {
           <button data-testid="panel" onClick={() => setOpen(!open)}>
             Panel
           </button>
-          {mounted ? <SessionFixture storeIndex={storeIndex} /> : null}
+          {mounted ? <ProjectionFixture storeIndex={storeIndex} /> : null}
           <div className="min-h-0 flex-1">
             <Group orientation="horizontal">
               <Panel id="main" defaultSize="100%">

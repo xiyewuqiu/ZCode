@@ -12,14 +12,6 @@ import {
 import type { ToolEntry, ToolHandler } from "../types.js";
 
 const MAX_SEND_MESSAGE_MODEL_BYTES = 4096;
-/**
- * SendMessage 续跑已完成子 Agent 走
- * resumeTerminalAgentInBackground，不携带闲时轮的 subagentModelOverride，子 Agent 按父会话
- * 常驻选择重建模型，请求全部计入用户 Coding Plan。闲时轮内子 Agent 均为前台同步完成，
- * SendMessage 唯一有意义的用途就是这条泄漏路径，因此直接拒绝。
- */
-const OFF_PEAK_SEND_MESSAGE_HINT =
-  "Spawn a new foreground Agent with the full context instead of resuming a completed one.";
 
 const SEND_MESSAGE_PROVIDER_DESCRIPTION = [
   "# SendMessage",

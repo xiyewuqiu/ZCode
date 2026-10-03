@@ -185,19 +185,8 @@ export function spawnHostProcess(
       error?: string;
       failureKind?: "transient" | "permanent";
     }) => void;
-    /** host → main：闲时任务派发结果，转交给 scheduler 结算（与 cron 独立）。 */
-    onOffPeakRunResult?: (result: {
-      offPeakTaskId: string;
-      ok: boolean;
-      conversationId?: string;
-      sessionId?: string;
-      error?: string;
-      failureKind?: "transient" | "permanent";
-    }) => void;
     /** host 中 manual run 落库后请求 main 立即唤醒 scheduler。 */
     onCronSchedulerWakeRequested?: (automationId: string) => void;
-    /** host 中闲时任务翻 schedulable 后请求 main 立即唤醒 scheduler。 */
-    onOffPeakSchedulerWakeRequested?: (offPeakTaskId?: string) => void;
     // browser-use：main 用 WebContentsView+CDP 执行一条命令。实现由宿主注入；缺省则 backend_unavailable。
     handleBrowserExecuteRequest?: (params: {
       win: BrowserWindow;
@@ -286,10 +275,6 @@ export function spawnHostProcess(
 
     if (result.data.type === HostResponseTypes.Log) {
       hostLogRelay.onStructuredLog(result.data);
-      return;
-    }
-
-    if (result.data.type === HostResponseTypes.NetworkTelemetryBatch) {
       return;
     }
 
@@ -476,25 +461,8 @@ export function spawnHostProcess(
       return;
     }
 
-    if (result.data.type === HostResponseTypes.OffPeakRunResult) {
-      dependencies.onOffPeakRunResult?.({
-        offPeakTaskId: result.data.offPeakTaskId,
-        ok: result.data.ok,
-        conversationId: result.data.conversationId,
-        sessionId: result.data.sessionId,
-        error: result.data.error,
-        failureKind: result.data.failureKind,
-      });
-      return;
-    }
-
     if (result.data.type === HostResponseTypes.CronSchedulerWakeRequest) {
       dependencies.onCronSchedulerWakeRequested?.(result.data.automationId);
-      return;
-    }
-
-    if (result.data.type === HostResponseTypes.OffPeakSchedulerWakeRequest) {
-      dependencies.onOffPeakSchedulerWakeRequested?.(result.data.offPeakTaskId);
       return;
     }
 

@@ -10,10 +10,7 @@ import {
   PERSONAL_PROVIDER_CONFIG_FILE_NAME,
 } from "@zcode/provider-node";
 import { getAppConfigDir as resolveAppConfigDir } from "./paths.js";
-import {
-  buildLocalMediaPreviewUrl,
-
-} from "@zcode/shared";
+import { buildLocalMediaPreviewUrl } from "@zcode/shared";
 
 export {
   materializeZCodeBuiltinProviderConfig,
@@ -200,7 +197,6 @@ export {
   computeRetryAt,
 } from "./session/automationRepo.js";
 export { AutomationService, InvalidCronExprError } from "./session/automationService.js";
-// 闲时任务与 automation 同库不同表；类型/常量全独立。
 // host 域终态回填 files_changed 复用现有 task diff 汇总。
 export { buildTaskChangeSummary } from "./session/taskChangeSummary.js";
 export { createServiceLogger } from "./logger/serviceLogger.js";
@@ -315,10 +311,7 @@ import {
 import { ensureAppCaCert } from "./runtime-tools/appCaCert.js";
 import { buildHelperOpenArgs, isCuaLocalDevelopmentRuntime } from "@zcode/zcode-cua/broker/server";
 import { createServiceLogger, type ServiceLogger } from "#src/logger/serviceLogger.js";
-import {
-
-
-} from "@zcode/shared";
+import {} from "@zcode/shared";
 import {
   BROKER_SOCKET_ENV,
   BROKER_UNAVAILABLE_ENV,
@@ -368,11 +361,7 @@ import { DEV_HELPER_APP_NAME, HELPER_APP_NAME } from "@zcode/zcode-cua/broker/he
 import { resolveBrokerSocketPath } from "@zcode/zcode-cua/broker/socketPath";
 import {
   DEFAULT_ZCODE_MODEL_CONTEXT_BUDGET_STRATEGY,
-  resolveSafeEndpointHostname,
   formatLogPrefix,
-  isStartPlanModelProviderId,
-  BIGMODEL_PROVIDER_ID,
-  type ProviderFamilyDomain,
   type ServiceAuthorityMode,
   resolveRuntimeZCodeEndpointOrigin,
   type BrowserBackendDescriptor,
@@ -385,9 +374,6 @@ import {
   type ZCodeAutomation,
   type ZCodeAutomationRun,
   ZCODE_DESKTOP_CONTEXT_PROMPT_ENABLED_ENV,
-  ZAI_PROVIDER_ID,
-  zcodeAccountAccessSchema,
-  zcodeProviderAccountAccessSchema,
   ZCODE_VERSION,
 } from "@zcode/shared";
 
@@ -1132,8 +1118,6 @@ export function createLocalServices(options: {
     automation: ZCodeAutomation;
     run: ZCodeAutomationRun;
   }) => Promise<void>;
-  /** 闲时任务翻 schedulable 后请求宿主立即唤醒 scheduler（desktop host 注入 parentPort 转发）。 */
-  onOffPeakSchedulerWakeRequested?: () => void;
   // 注入点：默认 resolver 已能覆盖 dev/桌面/SSH 远端三类形态；
   // 测试或特殊宿主想强制走自定义 binary/参数时从这里注入。
   zcodeAgentCommandResolver?: ZCodeAgentCommandResolver;
@@ -1714,8 +1698,7 @@ export function createLocalServices(options: {
   const zcodeAgentService = createZCodeAgentService({
     ...(modelSelectionReadinessSource ? { modelSelectionReadinessSource } : {}),
     authorizeLocalMediaPreviewPath: options?.authorizeLocalMediaPreviewPath,
-    // 动态工作流灰度：与 Off-Peak 不同，
-    // 这里不按 serviceAuthorityMode 裁剪——SSH/WSL/Docker 的 desktop-attached-remote Host
+    // 动态工作流灰度不按 serviceAuthorityMode 裁剪——SSH/WSL/Docker 的 desktop-attached-remote Host
     // 是它自己那些 workspace 的唯一裁决者，灰度开启时远程 workspace 同样提供工作流。
     commandResolver: options?.zcodeAgentCommandResolver,
     presentationSurface: resolveZCodeAgentPresentationSurface({
@@ -1942,7 +1925,7 @@ export function createLocalServices(options: {
     authorizeLocalMediaPreviewPath: options?.authorizeLocalMediaPreviewPath,
     createLocalMediaPreviewUrl: buildLocalMediaPreviewUrl,
   });
-  // 注册链上的懒工厂（如 OffPeak）会各自创建 tasks-index sqlite repo；先收集到本数组，
+  // 注册链上的懒工厂会各自创建 tasks-index sqlite repo；先收集到本数组，
   // services 集合建好后在 return 前统一登记进 sharedSqliteRepos 侧表
   const sqliteReposToClose: Array<{ close(): void }> = [];
   const services = new ServiceCollection()
@@ -1959,9 +1942,9 @@ export function createLocalServices(options: {
     .register(IZCodeTaskService, zcodeTaskService)
     .register(IZCodeAgentService, zcodeAgentService)
     .register(IZCodeSessionService, zcodeSessionService)
-        .register(ICuaPermissionService, cuaPermissionService)
+    .register(ICuaPermissionService, cuaPermissionService)
     .register(ICuaPipSessionService, cuaPipSessionService)
-        .register(IFileWatcherService, createFileWatcherService())
+    .register(IFileWatcherService, createFileWatcherService())
     .register(
       IUsageStatsService,
       // BigModel 用量 monitor / entitlement 链路已随官方供应商下线移除；

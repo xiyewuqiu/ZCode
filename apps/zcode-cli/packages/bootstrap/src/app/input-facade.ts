@@ -118,12 +118,7 @@ export function createInputFacade(deps: CreateInputFacadeDeps): InputFacade {
     const runtimePromptText = resolvedCommandPrompt ?? promptInput.text;
     const turnAttribution = options?.automationId
       ? { automationId: options.automationId }
-      : options?.offPeakTaskId
-        ? {
-            offPeakTaskId: options.offPeakTaskId,
-            ...(options.offPeakRunType ? { offPeakRunType: options.offPeakRunType } : {}),
-          }
-        : {};
+      : {};
     return await deps.runtime.executeTurn(runtimePromptText, storedAttachments, {
       abortSignal: options?.abortSignal,
       browserAmbientContext: options?.browserAmbientContext,

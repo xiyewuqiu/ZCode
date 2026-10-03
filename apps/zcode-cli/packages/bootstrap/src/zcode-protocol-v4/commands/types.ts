@@ -67,8 +67,6 @@ export interface V4SessionRecordView {
   residencyFinalizationCount?: number;
   /** 当前正在执行的 automation 派发 turn；只在 turn 运行期间存在。 */
   activeAutomationId?: string;
-  /** 当前正在执行的闲时派发 turn；只在 turn 运行期间存在。 */
-  activeOffPeakTaskId?: string;
   /** 恢复失败告警：存在时拒绝新 turn（历史损坏不能静默续写）。 */
   restoreWarning?: { message: string; type: string };
   taskType?: SessionTaskType;
@@ -229,8 +227,6 @@ export interface V4CommandCoreHost {
   createSessionRecord?(params: {
     workspaceId: string;
     mcpServers?: CommandPayloadMap["createSession"]["mcpServers"];
-    /** host 判定的 Off-Peak 工具面门禁；缺省不注册工具。 */
-    offPeakToolEnabled?: boolean;
     /**
      * host 判定的动态工作流灰度门；
      * 缺省回落到进程级 workspace 结论，仍是 fail-closed。

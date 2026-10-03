@@ -18,7 +18,6 @@ Commands:
   app-server Run the ZCode Protocol stdio app server
   commands   List custom slash commands (\`commands list\`)
   doctor     Inspect runtime and packaging assumptions
-  logout     Remove the shared Z.AI login credentials
   plugins    Manage plugins and marketplaces (\`plugins list|install|uninstall|enable|disable|update|validate|marketplace ...\`; alias: plugin)
   skills     List local skills (\`skills list\`)
   tui        Open the terminal UI
@@ -51,7 +50,6 @@ Options:
 
 Slash Commands:
   /help [command]       Show slash command help
-  /logout               Remove the shared Z.AI login credentials
   /compact [instructions]  Compact the current conversation
   /expert [status|resume|stop|<task>]  Run or manage the expert workflow
   /dwf [list|cancel|resume]  List, cancel, or resume dynamic workflow runs

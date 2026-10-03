@@ -1,16 +1,7 @@
 /* eslint-disable max-lines -- task item 同时承载默认列表和 timeline 两行布局的共享交互，先保持动作链路集中避免归档/置顶回归。 */
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  Archive,
-  Clock,
-  CloudUpload,
-  ListTree,
-  LoaderIcon,
-  Moon,
-  Pin,
-  Smartphone,
-} from "lucide-react";
-import { isCronTask, isOffPeakTask, type ZCodeTaskMeta } from "@zcode/shared";
+import { Archive, Clock, CloudUpload, ListTree, LoaderIcon, Pin, Smartphone } from "lucide-react";
+import { isCronTask, type ZCodeTaskMeta } from "@zcode/shared";
 import { TID_TASK_ARCHIVE, TID_TASK_ITEM, testId } from "@zcode/shared";
 import { Badge } from "@/components/ui/badge.js";
 import { Button } from "@/components/ui/button.js";
@@ -348,9 +339,6 @@ export const MemoTaskItem = memo(function TaskListItem({
     [task, taskActivity],
   );
   const isTaskCron = isCronTask(task);
-  // 月亮身份改为持久 meta 标记判断；off-peak store 反查在任务被删除后会丢失
-  // 会话溯源，且让每一行多背一个全局 store 订阅。
-  const isTaskOffPeak = isOffPeakTask(task);
   const showTimelineIdleIndicator =
     variant === "timeline" && leadingIndicator === "none" && !isPinned;
   // 手机远控标记和置顶状态共用左侧 leading 槽。
@@ -655,12 +643,6 @@ export const MemoTaskItem = memo(function TaskListItem({
                       })}
                       className="size-3.5 shrink-0"
                     />
-                  ) : isTaskOffPeak ? (
-                    <Moon
-                      data-off-peak-task-icon="true"
-                      aria-label={intl.formatMessage({ id: "taskList.offPeakTaskLabel" })}
-                      className="size-3.5 shrink-0"
-                    />
                   ) : null}
                   <span className="mr-1">{taskTimeLabel}</span>
                 </span>
@@ -744,12 +726,6 @@ export const MemoTaskItem = memo(function TaskListItem({
                     aria-label={intl.formatMessage({
                       id: "taskList.cronTaskLabel",
                     })}
-                    className="size-3.5 shrink-0"
-                  />
-                ) : isTaskOffPeak ? (
-                  <Moon
-                    data-off-peak-task-icon="true"
-                    aria-label={intl.formatMessage({ id: "taskList.offPeakTaskLabel" })}
                     className="size-3.5 shrink-0"
                   />
                 ) : null}

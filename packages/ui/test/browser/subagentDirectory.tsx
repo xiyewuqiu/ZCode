@@ -37,7 +37,7 @@ const running: RunningSubagentSummary[] = Array.from({ length: 100 }, (_, index)
 const emptyRunning: RunningSubagentSummary[] = [];
 let state = {
   snapshot: { subagents: { revision: 1, running, childSessionIds: [], endedTotal: 5000 } },
-} as ConversationStoreState;
+} as unknown as ConversationStoreState;
 const listeners = new Set<() => void>();
 const lease = {
   store: {
