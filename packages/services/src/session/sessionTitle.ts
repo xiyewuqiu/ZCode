@@ -1,8 +1,8 @@
-import type { ZCodePromptAttachment } from "@zcode/shared";
+import type { YCodePromptAttachment } from "@ycode/shared";
 
 export function deriveSessionTitle(
   content: string,
-  attachments: readonly ZCodePromptAttachment[],
+  attachments: readonly YCodePromptAttachment[],
 ): string {
   if (content.length > 0) {
     return content.slice(0, 50) + (content.length > 50 ? "..." : "");

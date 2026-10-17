@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useState } from "react";
-import type { SubagentProjectionState } from "@zcode/shared/zcode-protocol-v4";
+import type { SubagentProjectionState } from "@ycode/shared/ycode-protocol-v4";
 import { useSessionSubagents } from "@/hooks/useSessionSubagents.js";
 import type {
   OpenScopedSubagentSideTabRequest,

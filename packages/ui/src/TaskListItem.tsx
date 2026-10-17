@@ -1,8 +1,8 @@
 /* eslint-disable max-lines -- task item 同时承载默认列表和 timeline 两行布局的共享交互，先保持动作链路集中避免归档/置顶回归。 */
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Archive, Clock, CloudUpload, ListTree, LoaderIcon, Pin, Smartphone } from "lucide-react";
-import { isCronTask, type ZCodeTaskMeta } from "@zcode/shared";
-import { TID_TASK_ARCHIVE, TID_TASK_ITEM, testId } from "@zcode/shared";
+import { isCronTask, type YCodeTaskMeta } from "@ycode/shared";
+import { TID_TASK_ARCHIVE, TID_TASK_ITEM, testId } from "@ycode/shared";
 import { Badge } from "@/components/ui/badge.js";
 import { Button } from "@/components/ui/button.js";
 import { cn } from "@/components/lib/utils.js";
@@ -46,7 +46,7 @@ type TaskListItemIntl = {
 interface TaskListItemProps {
   workspacePath: string;
   remoteSessionId?: string;
-  task: ZCodeTaskMeta;
+  task: YCodeTaskMeta;
   isPinned: boolean;
   isActive: boolean;
   isMobileActive?: boolean;
@@ -59,7 +59,7 @@ interface TaskListItemProps {
   onArchiveTask: (taskId: string) => void;
   onMarkTaskAsUnread: (taskId: string) => void;
   onOpenTaskContextMenu?: (taskId: string) => void;
-  onOpenFileTree?: (task: ZCodeTaskMeta) => void;
+  onOpenFileTree?: (task: YCodeTaskMeta) => void;
   variant?: "default" | "timeline";
   showPinAction?: boolean;
   intl: TaskListItemIntl;
@@ -71,11 +71,11 @@ function areJsonFieldsEqual(left: unknown, right: unknown) {
   return JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
 }
 
-function getTaskAutomationIdentity(task: ZCodeTaskMeta): string | undefined {
-  return task.cronAutomationId ?? (task as ZCodeTaskMeta & { automationId?: string }).automationId;
+function getTaskAutomationIdentity(task: YCodeTaskMeta): string | undefined {
+  return task.cronAutomationId ?? (task as YCodeTaskMeta & { automationId?: string }).automationId;
 }
 
-function areTaskListItemTaskFieldsEqual(left: ZCodeTaskMeta, right: ZCodeTaskMeta) {
+function areTaskListItemTaskFieldsEqual(left: YCodeTaskMeta, right: YCodeTaskMeta) {
   if (left === right) {
     return true;
   }
@@ -249,7 +249,7 @@ export const MemoTaskItem = memo(function TaskListItem({
       }
       event.dataTransfer.effectAllowed = "copy";
       const payload = {
-        kind: "zcode/session" as const,
+        kind: "ycode/session" as const,
         workspacePath,
         ...(task.workspaceIdentity?.trim() ? { workspaceIdentity: task.workspaceIdentity } : {}),
         ...(remoteSessionId ? { remoteSessionId } : {}),
@@ -759,7 +759,7 @@ export function TaskListItemContextMenuContent({
 }: {
   workspacePath: string;
   remoteSessionId?: string;
-  task: ZCodeTaskMeta;
+  task: YCodeTaskMeta;
   isPinned: boolean;
   intl: TaskListItemIntl;
   onTogglePinTask: (taskId: string, pinned: boolean) => void;

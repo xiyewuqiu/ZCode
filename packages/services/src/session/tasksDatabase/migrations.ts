@@ -1,4 +1,4 @@
-import { databaseMigrationIdSchema, type DatabaseMigrationFacts } from "@zcode/shared";
+import { databaseMigrationIdSchema, type DatabaseMigrationFacts } from "@ycode/shared";
 import { createHash } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 import {

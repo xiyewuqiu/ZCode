@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ModelConfigObject, ModelConfigResolution } from "@zcode/provider";
+import type { ModelConfigObject, ModelConfigResolution } from "@ycode/provider";
 import type { ProviderSettingsFormModel } from "@/lib/providerSettingsFormTypes.js";
 import {
   createProviderModelDraftValues,

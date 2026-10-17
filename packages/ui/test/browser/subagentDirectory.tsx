@@ -1,16 +1,16 @@
 import { StrictMode, useCallback, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
-import type { IServiceAccessor } from "@zcode/services";
-import type { ZCodeSessionEndedSubagent } from "@zcode/shared";
+import type { IServiceAccessor } from "@ycode/services";
+import type { YCodeSessionEndedSubagent } from "@ycode/shared";
 import type {
   RunningSubagentSummary,
   SubagentProjectionState,
-} from "@zcode/shared/zcode-protocol-v4";
+} from "@ycode/shared/ycode-protocol-v4";
 import { SubagentDirectoryList } from "../../src/app-shell/SubagentDirectoryList.js";
 import type { SubagentDirectoryItem } from "../../src/app-shell/SubagentDirectoryRow.js";
 import { ServiceProvider } from "../../src/hooks/useServices.js";
 import { useSessionSubagents } from "../../src/hooks/useSessionSubagents.js";
-import { ZCodeIntlProvider } from "../../src/i18n/IntlProvider.js";
+import { YCodeIntlProvider } from "../../src/i18n/IntlProvider.js";
 import type { ConversationStoreState } from "../../src/v4/conversationProjectionStore.js";
 import type { SessionLease } from "../../src/v4/sessionDataLayer.js";
 import { useConversationProjectionSelector } from "../../src/v4/useConversationProjection.js";
@@ -19,7 +19,7 @@ import "../../src/styles.css";
 const params = new URLSearchParams(location.search);
 const metrics = { renders: 0, emissions: 0, calls: [] as unknown[] };
 Object.assign(window, { directoryMetrics: metrics });
-const initialEnded: ZCodeSessionEndedSubagent[] = Array.from({ length: 5000 }, (_, index) => ({
+const initialEnded: YCodeSessionEndedSubagent[] = Array.from({ length: 5000 }, (_, index) => ({
   childSessionId: `ended-${index}`,
   subagentType: "research",
   title: `Agent ${index} · 历史子智能体性能分析`,
@@ -101,7 +101,7 @@ const pending: (() => void)[] = [];
 window.addEventListener("finish-query", () => pending.splice(0).forEach((finish) => finish()));
 let attempts = 0;
 const services = {
-  zcodeAgentService: {
+  ycodeAgentService: {
     listSessionSubagents: async (input: {
       endedLimit: number;
       endedCursor?: string;
@@ -163,13 +163,13 @@ document.documentElement.classList.add(`theme-${params.get("theme") ?? "zai-ligh
 const root = createRoot(document.getElementById("root")!);
 root.render(
   <StrictMode>
-    <ZCodeIntlProvider initialLocale={params.get("locale") === "zh-CN" ? "zh-CN" : "en-US"}>
+    <YCodeIntlProvider initialLocale={params.get("locale") === "zh-CN" ? "zh-CN" : "en-US"}>
       <ServiceProvider services={services}>
         <main className="h-screen w-full bg-background text-foreground">
           {params.has("query") ? <QueryFixture /> : <PerformanceFixture />}
         </main>
       </ServiceProvider>
-    </ZCodeIntlProvider>
+    </YCodeIntlProvider>
   </StrictMode>,
 );
 import.meta.hot?.dispose(() => root.unmount());

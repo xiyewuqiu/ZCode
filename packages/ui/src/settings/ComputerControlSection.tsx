@@ -6,15 +6,15 @@
 //    方法缺失时按「当前环境未提供驱动状态接口」展示，不影响开关与权限模式的读写。
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Check, ListChecks, LoaderCircle, RefreshCw, ShieldAlert, ShieldCheck } from "lucide-react";
-import type { AppSettings } from "@zcode/shared";
-import type { IServiceAccessor } from "@zcode/services";
+import type { AppSettings } from "@ycode/shared";
+import type { IServiceAccessor } from "@ycode/services";
 import { Button } from "@/components/ui/button.js";
 import { Switch } from "@/components/ui/switch.js";
 import { toast } from "@/components/ui/toast.js";
 import { cn } from "@/components/lib/utils.js";
 import { useServices } from "@/hooks/useServices.js";
 import { useSettings } from "@/hooks/useSettingService.js";
-import { useZCodeIntl } from "@/i18n/IntlProvider.js";
+import { useYCodeIntl } from "@/i18n/IntlProvider.js";
 import { SettingsBadge, SettingsGroupCard, SettingsRow } from "@/settings/SettingsPageParts.js";
 import { StatusDot, type StatusDotTone } from "@/settings/StatusDot.js";
 
@@ -126,7 +126,7 @@ function resolveDriverView(status: unknown): DriverView {
 }
 
 export function ComputerControlSection({ isDesktop = false }: { isDesktop?: boolean }) {
-  const { intl } = useZCodeIntl();
+  const { intl } = useYCodeIntl();
   const services = useServices();
   const { settings, update } = useSettings();
 

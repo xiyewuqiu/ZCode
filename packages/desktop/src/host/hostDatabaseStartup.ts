@@ -1,9 +1,9 @@
 import {
   getTasksIndexDatabasePath,
   markTasksStoragePrepared,
-  resolveZCodeAgentSpawnCwd,
-} from "@zcode/services/storage-startup";
-import type { DatabaseStartupState } from "@zcode/shared";
+  resolveYCodeAgentSpawnCwd,
+} from "@ycode/services/storage-startup";
+import type { DatabaseStartupState } from "@ycode/shared";
 import { DatabaseStartupCoordinator } from "./databaseStartupCoordinator.js";
 import { prepareHostStorage, prepareSessionStorage } from "./storagePreparationProcesses.js";
 
@@ -44,7 +44,7 @@ export function createHostDatabaseStartup(options: {
           try {
             const directories = new Set<string>();
             for (const candidate of candidates) {
-              const { cwd } = await resolveZCodeAgentSpawnCwd({
+              const { cwd } = await resolveYCodeAgentSpawnCwd({
                 requestedCwd: candidate,
                 workspacePath: candidate,
                 spawnFallbackCwd: options.cwd,

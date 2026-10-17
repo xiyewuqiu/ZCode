@@ -137,7 +137,7 @@ const BASE_SETTINGS_SECTIONS: SettingsSectionDefinition[] = [
     titleId: "settings.computerControlTitle",
     groupId: "basics",
   },
-  // 旧「电脑控制」（zcode-cua 插件）入口已从设置导航隐藏，只保留分区定义与 SettingsPage 的渲染分支；
+  // 旧「电脑控制」（ycode-cua 插件）入口已从设置导航隐藏，只保留分区定义与 SettingsPage 的渲染分支；
   // 当前用户可见的电脑控制是上面的 computerControl（cua-driver）。
   {
     id: "computerUse",
@@ -152,7 +152,7 @@ const BASE_SETTINGS_SECTIONS: SettingsSectionDefinition[] = [
     titleId: "settings.shortcuts.title",
     groupId: "basics",
   },
-  // 工作区搜索范围（.zcodeignore）：面向所有用户的基础工作区行为配置，收在基础设置末尾。
+  // 工作区搜索范围（.ycodeignore）：面向所有用户的基础工作区行为配置，收在基础设置末尾。
   {
     id: "workspaceFileSearch",
     icon: FileSearch,

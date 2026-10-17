@@ -18,7 +18,7 @@ members = [
 # The vendored patch below is a build-environment shim, not a workspace member.
 exclude = ["vendor/msvc-spectre-libs"]
 
-# ZCode: `cua-driver-core` -> `regorus` -> `msvc_spectre_libs/error` fails the
+# YCode: `cua-driver-core` -> `regorus` -> `msvc_spectre_libs/error` fails the
 # build on Windows hosts without the optional Visual Studio "Spectre-mitigated
 # libs" component. The replacement crate has no build script; it removes a host
 # requirement without changing what is linked. See vendor/msvc-spectre-libs/.

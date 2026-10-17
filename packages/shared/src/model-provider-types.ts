@@ -2,7 +2,7 @@
  * Provider 身份的类型边界。
  *
  * `builtin:*` / `account:*` 与 `zai-api` / `bigmodel-api` 是**已发布数据的固定身份**，不再由任何
- * 配置声明：ZCode Built-in Config 的 `providerRules` 为空，Personal Provider 走
+ * 配置声明：YCode Built-in Config 的 `providerRules` 为空，Personal Provider 走
  * `standard-personal`，官方账号能力改为用户自建 Provider 的 `zhipu-account` Access。
  * 因此下面这些 ID 只允许出现在读取/迁移/归一旧数据的路径上（单向升级表、旧会话 SQL 迁移、
  * 旧遥测身份），不能用来判定或构造当前 Provider。

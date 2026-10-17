@@ -9,31 +9,31 @@ import { createRequire } from "node:module";
 import { dirname } from "node:path";
 import {
   isRemoteWorkspaceIdentity,
-  ZCODE_AGENT_PROVIDER,
-  zcodeTaskMetaSchema,
+  YCODE_AGENT_PROVIDER,
+  ycodeTaskMetaSchema,
   resolveWorkspaceKey,
   CRON_DEFAULT_GROUP_ID,
-  type ZCodeProvider,
-  type ZCodeTaskMeta,
-} from "@zcode/shared";
+  type YCodeProvider,
+  type YCodeTaskMeta,
+} from "@ycode/shared";
 import type {
-  ZCodeTaskListQuery,
-  ZCodeTaskListResult,
-  ZCodeTaskListItem,
-} from "#src/session/zcodeTaskListTypes.js";
+  YCodeTaskListQuery,
+  YCodeTaskListResult,
+  YCodeTaskListItem,
+} from "#src/session/ycodeTaskListTypes.js";
 import type {
-  ZCodeGroupedTaskRef,
-  ZCodeGroupedTaskView,
-  ZCodeGroupedTaskViewNode,
-  ZCodeGroupedTaskViewOrderInput,
-  ZCodeGroupedTaskViewQuery,
-  ZCodeGroupedTaskViewStructure,
-  ZCodeGroupedTaskViewStructureMember,
-  ZCodeGroupedTaskViewStructureTopOrder,
-  ZCodeGroupedTaskViewTopLevelNodeRef,
-  ZCodeTaskGroup,
-  ZCodeTaskGroupColor,
-} from "#src/session/zcodeTaskListTypes.js";
+  YCodeGroupedTaskRef,
+  YCodeGroupedTaskView,
+  YCodeGroupedTaskViewNode,
+  YCodeGroupedTaskViewOrderInput,
+  YCodeGroupedTaskViewQuery,
+  YCodeGroupedTaskViewStructure,
+  YCodeGroupedTaskViewStructureMember,
+  YCodeGroupedTaskViewStructureTopOrder,
+  YCodeGroupedTaskViewTopLevelNodeRef,
+  YCodeTaskGroup,
+  YCodeTaskGroupColor,
+} from "#src/session/ycodeTaskListTypes.js";
 import { createServiceLogger } from "#src/logger/serviceLogger.js";
 import { getTasksIndexDatabasePath } from "#src/paths.js";
 import { runTasksDatabaseMigrations } from "#src/session/tasksDatabase/migrations.js";
@@ -41,10 +41,10 @@ import { runTasksDatabaseMigrations } from "#src/session/tasksDatabase/migration
 const require = createRequire(import.meta.url);
 const { DatabaseSync } = require("node:sqlite") as typeof import("node:sqlite");
 
-function appendZCodeAgentIndexedProviderFilter(
+function appendYCodeAgentIndexedProviderFilter(
   where: string[],
   args: Array<string | number>,
-  provider: ZCodeProvider,
+  provider: YCodeProvider,
 ): void {
   // 列表按当前 runtime provider 过滤；历史导入来源不改变此边界。
   where.push("provider = ?");
@@ -117,7 +117,7 @@ interface WorkspaceBootstrapScope {
 }
 
 interface TaskIndexWriteRecord {
-  meta: ZCodeTaskMeta;
+  meta: YCodeTaskMeta;
   pinned: boolean;
   archived: boolean;
   deleted: boolean;
@@ -137,9 +137,9 @@ interface TaskIndexStatePatch {
   titleOverridden?: boolean;
   unreadAt?: number;
   model?: string;
-  status?: ZCodeTaskMeta["status"];
-  lastError?: ZCodeTaskMeta["lastError"];
-  target?: ZCodeTaskMeta["target"];
+  status?: YCodeTaskMeta["status"];
+  lastError?: YCodeTaskMeta["lastError"];
+  target?: YCodeTaskMeta["target"];
   updatedAt?: number;
 }
 
@@ -151,8 +151,8 @@ const TASK_SEARCH_SNIPPET_SUFFIX_RADIUS = 72;
 const TASK_SEARCH_SNIPPET_MAX_CHARS = 140;
 const TASK_SEARCH_SNIPPET_LIMIT = 4;
 const GROUPED_TASK_ORDER_STEP = 1000;
-const GROUPED_WORKSPACE_BOOTSTRAP_ONCE_KEY = "__zcode_internal_grouped_workspace_bootstrap_once__";
-const DEFAULT_TASK_GROUP_COLOR: ZCodeTaskGroupColor = "gray";
+const GROUPED_WORKSPACE_BOOTSTRAP_ONCE_KEY = "__ycode_internal_grouped_workspace_bootstrap_once__";
+const DEFAULT_TASK_GROUP_COLOR: YCodeTaskGroupColor = "gray";
 const WORKSPACE_BOOTSTRAP_TASK_GROUP_COLORS = [
   "red",
   "orange",
@@ -160,7 +160,7 @@ const WORKSPACE_BOOTSTRAP_TASK_GROUP_COLORS = [
   "green",
   "blue",
   "purple",
-] satisfies ZCodeTaskGroupColor[];
+] satisfies YCodeTaskGroupColor[];
 
 const logger = createServiceLogger("task-index-repo");
 
@@ -168,13 +168,13 @@ function workspaceKey(params: { workspacePath: string; workspaceIdentity?: strin
   return resolveWorkspaceKey(params);
 }
 
-function isTerminalTaskStatus(status: ZCodeTaskMeta["status"]): boolean {
+function isTerminalTaskStatus(status: YCodeTaskMeta["status"]): boolean {
   return status === "completed" || status === "error";
 }
 
 function shouldPreserveNewerTerminalStatus(
-  existingMeta: ZCodeTaskMeta | null,
-  incomingMeta: ZCodeTaskMeta,
+  existingMeta: YCodeTaskMeta | null,
+  incomingMeta: YCodeTaskMeta,
 ): boolean {
   if (!existingMeta || !isTerminalTaskStatus(existingMeta.status)) {
     return false;
@@ -200,13 +200,13 @@ function resolveTaskIndexRowWorkspaceIdentity(row: TaskIndexRow): string | undef
   return undefined;
 }
 
-function rowToMeta(row: TaskIndexRow): ZCodeTaskMeta {
+function rowToMeta(row: TaskIndexRow): YCodeTaskMeta {
   const workspaceIdentity = resolveTaskIndexRowWorkspaceIdentity(row);
   try {
-    const parsed = zcodeTaskMetaSchema.safeParse(JSON.parse(row.meta_json));
+    const parsed = ycodeTaskMetaSchema.safeParse(JSON.parse(row.meta_json));
     if (parsed.success) {
       return {
-        ...(parsed.data as ZCodeTaskMeta),
+        ...(parsed.data as YCodeTaskMeta),
         // SQLite 使用这些字段查询并隔离实体，旧 meta_json 里的 identity
         // 可能缺失或属于旧远端。读取时必须与行主键投影一致，sessions-index 才能
         // 按 workspaceKey + taskId 附加 running activity。
@@ -232,26 +232,26 @@ function rowToMeta(row: TaskIndexRow): ZCodeTaskMeta {
 
   return {
     taskId: row.task_id,
-    traceId: `zcode-${row.task_id}`,
+    traceId: `ycode-${row.task_id}`,
     title: row.title,
     titleOverridden: row.title_overridden === 1,
     workspacePath: row.workspace_path,
     workspaceIdentity,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
-    mode: row.mode as ZCodeTaskMeta["mode"],
+    mode: row.mode as YCodeTaskMeta["mode"],
     model: row.model ?? undefined,
-    provider: row.provider === ZCODE_AGENT_PROVIDER ? ZCODE_AGENT_PROVIDER : undefined,
-    migrationSource: (row.migration_source as ZCodeTaskMeta["migrationSource"]) ?? undefined,
+    provider: row.provider === YCODE_AGENT_PROVIDER ? YCODE_AGENT_PROVIDER : undefined,
+    migrationSource: (row.migration_source as YCodeTaskMeta["migrationSource"]) ?? undefined,
     forkedFromTaskId: row.forked_from_task_id ?? undefined,
     cronAutomationId: row.cron_automation_id ?? undefined,
     unreadAt: row.unread_at ?? undefined,
-    status: (row.task_status as ZCodeTaskMeta["status"]) ?? undefined,
+    status: (row.task_status as YCodeTaskMeta["status"]) ?? undefined,
   };
 }
 
 /** 序列化 meta 到 meta_json。cron 身份随 meta 一起写入（单一来源），另在 writeRecord 投影到 cron_automation_id 索引列。 */
-function serializeMetaJson(meta: ZCodeTaskMeta): string {
+function serializeMetaJson(meta: YCodeTaskMeta): string {
   return JSON.stringify(meta);
 }
 
@@ -273,7 +273,7 @@ function normalizeWorkspaceBootstrapScopes(
   scopes: Array<{
     workspacePath: string;
     workspaceIdentity?: string;
-    workspacePurpose?: import("@zcode/shared").WorkspacePurpose;
+    workspacePurpose?: import("@ycode/shared").WorkspacePurpose;
   }>,
 ): WorkspaceBootstrapScope[] {
   const seen = new Set<string>();
@@ -351,7 +351,7 @@ function buildSearchSnippets(searchableText: string, search: string | null): str
   return snippets;
 }
 
-function rowToTaskListItem(row: TaskIndexRow, search: string | null): ZCodeTaskListItem {
+function rowToTaskListItem(row: TaskIndexRow, search: string | null): YCodeTaskListItem {
   const meta = rowToMeta(row);
   const snippets = buildSearchSnippets(row.searchable_text, search);
   if (snippets.length === 0) {
@@ -360,7 +360,7 @@ function rowToTaskListItem(row: TaskIndexRow, search: string | null): ZCodeTaskL
   return { ...meta, searchSnippet: snippets[0], searchSnippets: snippets };
 }
 
-function isTaskGroupColor(value: string): value is ZCodeTaskGroupColor {
+function isTaskGroupColor(value: string): value is YCodeTaskGroupColor {
   return (
     value === "gray" ||
     value === "red" ||
@@ -372,7 +372,7 @@ function isTaskGroupColor(value: string): value is ZCodeTaskGroupColor {
   );
 }
 
-function rowToTaskGroup(row: TaskGroupRow): ZCodeTaskGroup {
+function rowToTaskGroup(row: TaskGroupRow): YCodeTaskGroup {
   return {
     id: row.group_id,
     title: row.title,
@@ -393,7 +393,7 @@ function workspaceGroupTitle(workspacePath: string): string {
   return leaf?.trim() || normalized.trim() || "Workspace";
 }
 
-function workspaceGroupColor(targetWorkspaceKey: string): ZCodeTaskGroupColor {
+function workspaceGroupColor(targetWorkspaceKey: string): YCodeTaskGroupColor {
   const hash = createHash("sha256").update(targetWorkspaceKey).digest();
   const colorIndex = hash.readUInt8(0) % WORKSPACE_BOOTSTRAP_TASK_GROUP_COLORS.length;
   return WORKSPACE_BOOTSTRAP_TASK_GROUP_COLORS[colorIndex] ?? DEFAULT_TASK_GROUP_COLOR;
@@ -417,7 +417,7 @@ function taskOrderNodeKey(params: {
   return JSON.stringify([workspaceKey(params), params.taskId]);
 }
 
-function groupedTopNodeOrderRef(node: ZCodeGroupedTaskViewNode): {
+function groupedTopNodeOrderRef(node: YCodeGroupedTaskViewNode): {
   nodeType: "group" | "task";
   nodeKey: string;
   mapKey: string;
@@ -438,8 +438,8 @@ function groupedTopNodeOrderRef(node: ZCodeGroupedTaskViewNode): {
 }
 
 function compareGroupedNodes(
-  left: ZCodeGroupedTaskViewNode,
-  right: ZCodeGroupedTaskViewNode,
+  left: YCodeGroupedTaskViewNode,
+  right: YCodeGroupedTaskViewNode,
 ): number {
   const leftOrder = left.sortOrder ?? 0;
   const rightOrder = right.sortOrder ?? 0;
@@ -449,7 +449,7 @@ function compareGroupedNodes(
   return groupedTopNodeOrderRef(left).mapKey.localeCompare(groupedTopNodeOrderRef(right).mapKey);
 }
 
-function compareCronGroupTasks(left: ZCodeTaskListItem, right: ZCodeTaskListItem): number {
+function compareCronGroupTasks(left: YCodeTaskListItem, right: YCodeTaskListItem): number {
   // cron 系统分组固定按创建时间倒序：最新的定时任务结果始终展示在最前面，
   // 不参与用户手动排序（sort_order），新 session 到达时天然排到组顶部。
   if (right.createdAt !== left.createdAt) {
@@ -459,8 +459,8 @@ function compareCronGroupTasks(left: ZCodeTaskListItem, right: ZCodeTaskListItem
 }
 
 function compareGroupTasks(
-  left: ZCodeTaskListItem,
-  right: ZCodeTaskListItem,
+  left: YCodeTaskListItem,
+  right: YCodeTaskListItem,
   memberByTaskKey: Map<string, TaskGroupMemberRow>,
 ): number {
   const leftMember = memberByTaskKey.get(taskNodeKey(left));
@@ -678,7 +678,7 @@ export class TaskIndexRepo {
   }
 
   private normalizeGroupedTopNodeOrders(
-    nodes: ZCodeGroupedTaskViewNode[],
+    nodes: YCodeGroupedTaskViewNode[],
     orderByNodeKey: Map<string, TaskGroupViewNodeOrderRow>,
   ): void {
     const missingNodes = nodes
@@ -738,7 +738,7 @@ export class TaskIndexRepo {
 
   private normalizeGroupMemberOrders(
     groupId: string,
-    tasks: ZCodeTaskListItem[],
+    tasks: YCodeTaskListItem[],
     memberByTaskKey: Map<string, TaskGroupMemberRow>,
   ): void {
     const missingTasks = tasks
@@ -802,8 +802,8 @@ export class TaskIndexRepo {
     workspacePath: string;
     workspaceIdentity?: string;
     olderThanDays: number;
-    provider?: ZCodeProvider;
-  }): Promise<ZCodeTaskMeta[]> {
+    provider?: YCodeProvider;
+  }): Promise<YCodeTaskMeta[]> {
     await this.ensureReady();
     const normalizedDays = Math.max(1, Math.floor(params.olderThanDays));
     const cutoff = Date.now() - normalizedDays * 24 * 60 * 60 * 1000;
@@ -818,7 +818,7 @@ export class TaskIndexRepo {
     ];
     const args: Array<string | number> = [workspaceKey(params), cutoff];
     if (params.provider) {
-      appendZCodeAgentIndexedProviderFilter(where, args, params.provider);
+      appendYCodeAgentIndexedProviderFilter(where, args, params.provider);
     }
     const rows = this.getDatabase()
       .prepare(
@@ -1066,7 +1066,7 @@ export class TaskIndexRepo {
     }
   }
 
-  private writeRecord(record: TaskIndexWriteRecord): ZCodeTaskMeta {
+  private writeRecord(record: TaskIndexWriteRecord): YCodeTaskMeta {
     // searchable_text 传 undefined 表示"不动现有值"。读一次 row 拿到当前值，
     // 否则 ON CONFLICT 时 excluded.searchable_text 会被赋成空字符串，把已索引正文清空。
     const existing =
@@ -1193,7 +1193,7 @@ export class TaskIndexRepo {
   }
 
   async syncTaskMeta(params: {
-    meta: ZCodeTaskMeta;
+    meta: YCodeTaskMeta;
     pinned?: boolean;
     archived?: boolean;
     deleted?: boolean;
@@ -1201,26 +1201,26 @@ export class TaskIndexRepo {
     // 调用方可以从 snapshot.messages 计算正文，传进来同步刷新 searchable_text。
     // 不传则保留 sqlite 已有的 searchable_text（在 writeRecord 里兜底）。
     searchableText?: string;
-  }): Promise<ZCodeTaskMeta> {
+  }): Promise<YCodeTaskMeta> {
     const result = await this.syncTaskMetaWithGroupedAdmission(params, false);
     return result.meta;
   }
 
   /** 首次公开 root task 时，原子提交 task row 与 grouped 顶层顺序。 */
   async syncTaskMetaAtGroupedTop(params: {
-    meta: ZCodeTaskMeta;
+    meta: YCodeTaskMeta;
     pinned?: boolean;
     archived?: boolean;
     deleted?: boolean;
     titleOverridden?: boolean;
     searchableText?: string;
-  }): Promise<{ meta: ZCodeTaskMeta; initializedGroupedOrder: boolean }> {
+  }): Promise<{ meta: YCodeTaskMeta; initializedGroupedOrder: boolean }> {
     return this.syncTaskMetaWithGroupedAdmission(params, true);
   }
 
   private async syncTaskMetaWithGroupedAdmission(
     params: {
-      meta: ZCodeTaskMeta;
+      meta: YCodeTaskMeta;
       pinned?: boolean;
       archived?: boolean;
       deleted?: boolean;
@@ -1228,7 +1228,7 @@ export class TaskIndexRepo {
       searchableText?: string;
     },
     initializeGroupedAtTop: boolean,
-  ): Promise<{ meta: ZCodeTaskMeta; initializedGroupedOrder: boolean }> {
+  ): Promise<{ meta: YCodeTaskMeta; initializedGroupedOrder: boolean }> {
     await this.ensureReady();
     return this.enqueueWrite(params.meta, () => {
       const database = this.getDatabase();
@@ -1246,7 +1246,7 @@ export class TaskIndexRepo {
           existingMeta,
           params.meta,
         );
-        const meta: ZCodeTaskMeta = {
+        const meta: YCodeTaskMeta = {
           ...params.meta,
           // agent 只负责 session 核心标题，用户手动重命名属于 app 侧 task 状态。
           // 同步 agent snapshot 时保留已覆盖标题，避免后台状态刷新把用户标题冲掉。
@@ -1262,9 +1262,9 @@ export class TaskIndexRepo {
           target: Object.prototype.hasOwnProperty.call(params.meta, "target")
             ? params.meta.target
             : existingMeta?.target,
-          // Claude Code 导入升级成真实 ZCode session 后，protocol snapshot
+          // Claude Code 导入升级成真实 YCode session 后，protocol snapshot
           // 本身不知道迁移来源。同步运行态快照时保留已有 migrationSource，避免
-          // 列表过滤和后续切模型把导入任务重新当成普通 ZCode 任务。
+          // 列表过滤和后续切模型把导入任务重新当成普通 YCode 任务。
           migrationSource: params.meta.migrationSource ?? existingMeta?.migrationSource,
           // 同步运行态快照时保留已有 cron automation 身份：运行态 protocol snapshot 的 meta 不带 cron 标记，
           // 不用已存值兜底会在后续 sync 时把 cron 身份冲掉，导致 icon / 分组 / 关联查询失效。
@@ -1305,7 +1305,7 @@ export class TaskIndexRepo {
    * 幂等：分组行、视图排序、成员关系都用 INSERT OR IGNORE，绝不覆盖用户手动整理的结果。
    * 仅在 session 首次获得 cronAutomationId 时由 syncTaskMeta 调用一次。
    */
-  private ensureCronGroupMembership(meta: ZCodeTaskMeta): void {
+  private ensureCronGroupMembership(meta: YCodeTaskMeta): void {
     this.ensureSystemGroupMembership(meta, {
       groupId: CRON_DEFAULT_GROUP_ID,
       title: "cron",
@@ -1314,7 +1314,7 @@ export class TaskIndexRepo {
   }
 
   private ensureSystemGroupMembership(
-    meta: Pick<ZCodeTaskMeta, "workspacePath" | "workspaceIdentity" | "taskId">,
+    meta: Pick<YCodeTaskMeta, "workspacePath" | "workspaceIdentity" | "taskId">,
     params: { groupId: string; title: string; color: string },
   ): void {
     const database = this.getDatabase();
@@ -1366,7 +1366,7 @@ export class TaskIndexRepo {
    * 订阅。首次 snapshot 必须能补齐全新的 tasks-index.sqlite，但不能用摘要默认值
    * 覆盖已有的 pin/archive/unread/手动标题，也不能与随后到达的完整 snapshot 竞态回写。
    */
-  async seedTaskMetaIfMissing(meta: ZCodeTaskMeta): Promise<ZCodeTaskMeta> {
+  async seedTaskMetaIfMissing(meta: YCodeTaskMeta): Promise<YCodeTaskMeta> {
     await this.ensureReady();
     return this.enqueueWrite(meta, () => {
       const existing = this.getTaskRow(meta);
@@ -1388,7 +1388,7 @@ export class TaskIndexRepo {
     workspaceIdentity?: string;
     taskId: string;
     expectedUnreadAt: number;
-  }): Promise<{ meta: ZCodeTaskMeta; cleared: boolean }> {
+  }): Promise<{ meta: YCodeTaskMeta; cleared: boolean }> {
     await this.ensureReady();
     return this.enqueueWrite(params, () => {
       const database = this.getDatabase();
@@ -1404,7 +1404,7 @@ export class TaskIndexRepo {
           return { meta: current, cleared: false };
         }
 
-        const nextMeta: ZCodeTaskMeta = {
+        const nextMeta: YCodeTaskMeta = {
           ...current,
           unreadAt: undefined,
         };
@@ -1445,7 +1445,7 @@ export class TaskIndexRepo {
     workspaceIdentity?: string;
     taskId: string;
     cleanupPending: boolean;
-  }): Promise<ZCodeTaskMeta> {
+  }): Promise<YCodeTaskMeta> {
     await this.ensureReady();
     return this.enqueueWrite(params, () => {
       const database = this.getDatabase();
@@ -1466,7 +1466,7 @@ export class TaskIndexRepo {
               traceId: params.taskId,
               title: "",
               mode: "build",
-              provider: ZCODE_AGENT_PROVIDER,
+              provider: YCODE_AGENT_PROVIDER,
               createdAt: row?.created_at ?? Date.now(),
               updatedAt: Date.now(),
             },
@@ -1501,7 +1501,7 @@ export class TaskIndexRepo {
     workspacePath: string;
     workspaceIdentity?: string;
     taskId: string;
-  }): Promise<ZCodeTaskMeta | null> {
+  }): Promise<YCodeTaskMeta | null> {
     await this.ensureReady();
     return this.enqueueWrite(params, () => {
       const database = this.getDatabase();
@@ -1536,7 +1536,7 @@ export class TaskIndexRepo {
     workspaceIdentity?: string;
     taskId: string;
     patch: TaskIndexStatePatch;
-  }): Promise<ZCodeTaskMeta> {
+  }): Promise<YCodeTaskMeta> {
     await this.ensureReady();
     return this.enqueueWrite(params, () => {
       const database = this.getDatabase();
@@ -1567,7 +1567,7 @@ export class TaskIndexRepo {
           : "unreadAt" in params.patch
             ? undefined
             : current.unreadAt;
-        const nextMeta: ZCodeTaskMeta = {
+        const nextMeta: YCodeTaskMeta = {
           ...current,
           title: params.patch.title ?? current.title,
           titleOverridden: params.patch.titleOverridden ?? current.titleOverridden,
@@ -1605,7 +1605,7 @@ export class TaskIndexRepo {
     workspaceIdentity?: string;
     taskId: string;
     patch: Pick<TaskIndexStatePatch, "title" | "status" | "lastError" | "target" | "updatedAt">;
-  }): Promise<ZCodeTaskMeta | null> {
+  }): Promise<YCodeTaskMeta | null> {
     await this.ensureReady();
     return this.enqueueWrite(params, () => {
       const row = this.getTaskRow(params);
@@ -1614,7 +1614,7 @@ export class TaskIndexRepo {
       }
       const current = rowToMeta(row);
       const canAcceptAgentTitle = row.title_overridden !== 1;
-      const nextMeta: ZCodeTaskMeta = {
+      const nextMeta: YCodeTaskMeta = {
         ...current,
         title: canAcceptAgentTitle && params.patch.title ? params.patch.title : current.title,
         titleOverridden: row.title_overridden === 1,
@@ -1636,11 +1636,11 @@ export class TaskIndexRepo {
   async listTaskMetas(params: {
     workspacePath?: string;
     workspaceIdentity?: string;
-    provider?: ZCodeProvider;
+    provider?: YCodeProvider;
     pinned?: boolean;
     archived?: boolean;
     includeDeleted?: boolean;
-  }): Promise<ZCodeTaskMeta[]> {
+  }): Promise<YCodeTaskMeta[]> {
     await this.ensureReady();
     // listTaskMetas 支持不传 workspacePath 查询全部任务，但 workspaceKey 只接受必填路径。
     // 先把可选入参收窄成明确的 workspace target，避免类型层把全量查询和 workspace 查询混在一起。
@@ -1702,7 +1702,7 @@ export class TaskIndexRepo {
   async listDeletedTaskIds(params: {
     workspacePath: string;
     workspaceIdentity?: string;
-    provider?: ZCodeProvider;
+    provider?: YCodeProvider;
   }): Promise<string[]> {
     await this.ensureReady();
     const workspaceKeyValue = workspaceKey({
@@ -1729,7 +1729,7 @@ export class TaskIndexRepo {
    * 列出某条 automation 产生的所有 cron session（用于 automation 详情展开、关联查询）。
    * 走 cron_automation_id 索引列，只返回未删除的 session，按创建时间倒序。
    */
-  async listSessionsByAutomation(automationId: string): Promise<ZCodeTaskMeta[]> {
+  async listSessionsByAutomation(automationId: string): Promise<YCodeTaskMeta[]> {
     await this.ensureReady();
     const rows = this.getDatabase()
       .prepare(
@@ -1765,8 +1765,8 @@ export class TaskIndexRepo {
   }
 
   async queryTaskList(
-    params: ZCodeTaskListQuery & { provider?: ZCodeProvider },
-  ): Promise<ZCodeTaskListResult> {
+    params: YCodeTaskListQuery & { provider?: YCodeProvider },
+  ): Promise<YCodeTaskListResult> {
     await this.ensureReady();
     const workspaceKeys = normalizeWorkspaceKeys(params.workspaceScopes);
     if (workspaceKeys.length === 0) {
@@ -1779,7 +1779,7 @@ export class TaskIndexRepo {
     const where = ["deleted = 0", `workspace_key IN (${workspaceKeys.map(() => "?").join(", ")})`];
     const args: Array<string | number> = [...workspaceKeys];
     if (params.provider) {
-      appendZCodeAgentIndexedProviderFilter(where, args, params.provider);
+      appendYCodeAgentIndexedProviderFilter(where, args, params.provider);
     }
     if (params.kind === "pinned") {
       where.push("pinned = 1", "archived = 0");
@@ -1860,8 +1860,8 @@ export class TaskIndexRepo {
 
   async createTaskGroup(params?: {
     title?: string;
-    color?: ZCodeTaskGroupColor;
-  }): Promise<ZCodeTaskGroup> {
+    color?: YCodeTaskGroupColor;
+  }): Promise<YCodeTaskGroup> {
     await this.ensureReady();
     const now = Date.now();
     const id = `task-group-${randomUUID()}`;
@@ -1895,7 +1895,7 @@ export class TaskIndexRepo {
     };
   }
 
-  async renameTaskGroup(params: { groupId: string; title: string }): Promise<ZCodeTaskGroup> {
+  async renameTaskGroup(params: { groupId: string; title: string }): Promise<YCodeTaskGroup> {
     await this.ensureReady();
     const title = params.title.trim() || "New Group";
     const now = Date.now();
@@ -1930,8 +1930,8 @@ export class TaskIndexRepo {
 
   async updateTaskGroupColor(params: {
     groupId: string;
-    color: ZCodeTaskGroupColor;
-  }): Promise<ZCodeTaskGroup> {
+    color: YCodeTaskGroupColor;
+  }): Promise<YCodeTaskGroup> {
     await this.ensureReady();
     if (!isTaskGroupColor(params.color)) {
       throw new Error("Task group 颜色无效");
@@ -1990,12 +1990,12 @@ export class TaskIndexRepo {
     }
   }
 
-  async initializeGroupedTaskAtTop(params: ZCodeGroupedTaskRef): Promise<boolean> {
+  async initializeGroupedTaskAtTop(params: YCodeGroupedTaskRef): Promise<boolean> {
     await this.ensureReady();
     return this.initializeGroupedTaskAtTopReady(params);
   }
 
-  private initializeGroupedTaskAtTopReady(params: ZCodeGroupedTaskRef): boolean {
+  private initializeGroupedTaskAtTopReady(params: YCodeGroupedTaskRef): boolean {
     const row = this.getTaskRow(params);
     if (!row || row.deleted === 1 || row.archived === 1 || row.pinned === 1) {
       return false;
@@ -2038,8 +2038,8 @@ export class TaskIndexRepo {
   // 本方法仅剩 applyGroupedTaskViewOrder 的回包复用（UI 已不采信该回包），
   // 随 applyGroupedTaskViewOrder 返回面收敛一并收口。
   async queryGroupedTaskView(
-    params: ZCodeGroupedTaskViewQuery & { provider?: ZCodeProvider },
-  ): Promise<ZCodeGroupedTaskView> {
+    params: YCodeGroupedTaskViewQuery & { provider?: YCodeProvider },
+  ): Promise<YCodeGroupedTaskView> {
     await this.ensureReady();
     const includeAllWorkspaces = params.includeAllWorkspaces === true;
     const requestedWorkspaceScopes = normalizeWorkspaceBootstrapScopes(params.workspaceScopes);
@@ -2054,9 +2054,9 @@ export class TaskIndexRepo {
     ];
     const activeTaskArgs: Array<string | number> = includeAllWorkspaces ? [] : [...workspaceKeys];
     if (params.provider) {
-      // grouped 和 workspace 都是 ZCode Agent 任务列表入口，必须共享旧 provider
+      // grouped 和 workspace 都是 YCode Agent 任务列表入口，必须共享旧 provider
       // 残留过滤口径；否则历史 claude/codex/gemini 索引行会只在 grouped 里冒出来。
-      appendZCodeAgentIndexedProviderFilter(activeTaskWhere, activeTaskArgs, params.provider);
+      appendYCodeAgentIndexedProviderFilter(activeTaskWhere, activeTaskArgs, params.provider);
     }
     const activeTasks =
       !includeAllWorkspaces && workspaceKeys.length === 0
@@ -2179,10 +2179,10 @@ export class TaskIndexRepo {
       ]),
     );
     const groupedVisibleTaskKeys = new Set<string>();
-    const nodes: ZCodeGroupedTaskViewNode[] = groups.map((group) => {
+    const nodes: YCodeGroupedTaskViewNode[] = groups.map((group) => {
       const groupTasks = (membersByGroupId.get(group.id) ?? [])
         .map((member) => activeTaskByKey.get(`${member.workspace_key}\u0000${member.task_id}`))
-        .filter((task): task is ZCodeTaskListItem => Boolean(task));
+        .filter((task): task is YCodeTaskListItem => Boolean(task));
       if (group.id === CRON_DEFAULT_GROUP_ID) {
         // cron 系统分组不走用户手动排序，固定按创建时间倒序展示最新结果。
         groupTasks.sort(compareCronGroupTasks);
@@ -2228,7 +2228,7 @@ export class TaskIndexRepo {
    */
   async queryGroupedTaskViewStructure(params: {
     workspaceScopes: Array<{ workspacePath: string; workspaceIdentity?: string }>;
-  }): Promise<ZCodeGroupedTaskViewStructure> {
+  }): Promise<YCodeGroupedTaskViewStructure> {
     await this.ensureReady();
     const visibleWorkspaceKeys = new Set(normalizeWorkspaceKeys(params.workspaceScopes));
     const bootstrapRows = this.getDatabase()
@@ -2275,7 +2275,7 @@ export class TaskIndexRepo {
         FROM task_group_members`,
       )
       .all() as unknown as TaskGroupMemberRow[];
-    const members: ZCodeGroupedTaskViewStructureMember[] = memberRows.map((row) => ({
+    const members: YCodeGroupedTaskViewStructureMember[] = memberRows.map((row) => ({
       groupId: row.group_id,
       workspaceKey: row.workspace_key,
       workspacePath: row.workspace_path,
@@ -2295,7 +2295,7 @@ export class TaskIndexRepo {
         FROM task_group_view_node_orders`,
       )
       .all() as unknown as TaskGroupViewNodeOrderRow[];
-    const topLevelOrders: ZCodeGroupedTaskViewStructureTopOrder[] = [];
+    const topLevelOrders: YCodeGroupedTaskViewStructureTopOrder[] = [];
     for (const row of orderRows) {
       if (row.node_type === "group") {
         topLevelOrders.push({
@@ -2328,8 +2328,8 @@ export class TaskIndexRepo {
   }
 
   async applyGroupedTaskViewOrder(
-    params: ZCodeGroupedTaskViewOrderInput & { provider?: ZCodeProvider },
-  ): Promise<ZCodeGroupedTaskView> {
+    params: YCodeGroupedTaskViewOrderInput & { provider?: YCodeProvider },
+  ): Promise<YCodeGroupedTaskView> {
     await this.ensureReady();
     const workspaceKeys = new Set(normalizeWorkspaceKeys(params.workspaceScopes));
     const now = Date.now();
@@ -2342,7 +2342,7 @@ export class TaskIndexRepo {
         }>
       ).map((row) => row.group_id),
     );
-    const validateTaskRef = (task: ZCodeGroupedTaskRef): string | null => {
+    const validateTaskRef = (task: YCodeGroupedTaskRef): string | null => {
       const key = workspaceKey(task);
       if (!workspaceKeys.has(key)) {
         throw new Error("Grouped task order 包含当前 scope 外的 task");
@@ -2353,7 +2353,7 @@ export class TaskIndexRepo {
       }
       if (params.provider && row.provider !== params.provider) {
         // grouped 保存回包之前没有 provider 边界，旧 gemini/codex/claude 排序残留会在保存后重新展示。
-        // 带 provider 的 ZCode Agent 视图只接受当前 glm task；旧 provider 引用作为不可见遗留数据跳过。
+        // 带 provider 的 YCode Agent 视图只接受当前 glm task；旧 provider 引用作为不可见遗留数据跳过。
         return null;
       }
       return key;
@@ -2361,8 +2361,8 @@ export class TaskIndexRepo {
 
     const topLevelTaskKeys = new Set<string>();
     const groupedTaskKeys = new Set<string>();
-    const visibleTopLevelNodes: ZCodeGroupedTaskViewTopLevelNodeRef[] = [];
-    const visibleGroups: Array<{ groupId: string; taskRefs: ZCodeGroupedTaskRef[] }> = [];
+    const visibleTopLevelNodes: YCodeGroupedTaskViewTopLevelNodeRef[] = [];
+    const visibleGroups: Array<{ groupId: string; taskRefs: YCodeGroupedTaskRef[] }> = [];
     for (const node of params.topLevelNodes) {
       if (node.type === "group") {
         if (!groupIds.has(node.groupId)) {
@@ -2383,7 +2383,7 @@ export class TaskIndexRepo {
       if (!groupIds.has(group.groupId)) {
         throw new Error("Grouped task order 包含不存在的 group");
       }
-      const visibleTaskRefs: ZCodeGroupedTaskRef[] = [];
+      const visibleTaskRefs: YCodeGroupedTaskRef[] = [];
       for (const taskRef of group.taskRefs) {
         const workspaceKey = validateTaskRef(taskRef);
         if (!workspaceKey) {
@@ -2521,7 +2521,7 @@ export class TaskIndexRepo {
     workspacePath: string;
     workspaceIdentity?: string;
     taskId: string;
-  }): Promise<ZCodeTaskMeta | null> {
+  }): Promise<YCodeTaskMeta | null> {
     await this.ensureReady();
     const row = this.getTaskRow(params);
     if (!row || row.deleted === 1) {

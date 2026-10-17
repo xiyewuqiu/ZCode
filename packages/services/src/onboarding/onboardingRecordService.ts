@@ -1,12 +1,12 @@
 import { mkdir, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
-import { onboardingRecordFileSchema } from "@zcode/shared";
-import { appSettingsOccupationEnum } from "@zcode/shared";
+import { onboardingRecordFileSchema } from "@ycode/shared";
+import { appSettingsOccupationEnum } from "@ycode/shared";
 import type {
   OnboardingRecordEntry,
   OnboardingRecordEntryInput,
   OnboardingRecordFile,
-} from "@zcode/shared";
+} from "@ycode/shared";
 import { atomicWriteText } from "../fs/atomicFileUtils.js";
 import { getAppConfigDir } from "../paths.js";
 import { createServiceLogger } from "../logger/serviceLogger.js";
@@ -19,7 +19,7 @@ import type {
 const logger = createServiceLogger("onboardingRecordService");
 
 function getRecordFile(): string {
-  // 记录是设备级数据，必须跟随 dataBaseDir（用户自定义数据目录时落在其 .zcode/v2 下，
+  // 记录是设备级数据，必须跟随 dataBaseDir（用户自定义数据目录时落在其 .ycode/v2 下，
   // 与 telemetry-state.json 一致），不能学 setting.json 固定写 home——setting.json 留在 home
   // 只是启动引导需要固定位置读取 dataBaseDir，不代表其他设备数据的落点。
   return join(getAppConfigDir(), "onboarding-record.json");
@@ -59,7 +59,7 @@ export function createOnboardingRecordService(
 
   return {
     async appendRecord(deviceMid: string, entry: OnboardingRecordEntryInput): Promise<void> {
-      const userId = await (await options.loadUserId?.()) ?? null;
+      const userId = (await await options.loadUserId?.()) ?? null;
       await enqueueWrite(async () => {
         const filePath = getRecordFile();
         const existing = await readRecordFile(filePath);
@@ -97,7 +97,7 @@ export function createOnboardingRecordService(
     },
 
     async claimAnonymousRecord(): Promise<void> {
-      const userId = await (await options.loadUserId?.()) ?? null;
+      const userId = (await await options.loadUserId?.()) ?? null;
       if (!userId) return;
       await enqueueWrite(async () => {
         const filePath = getRecordFile();
@@ -119,14 +119,14 @@ export function createOnboardingRecordService(
     },
 
     async shouldOnboard(): Promise<boolean> {
-      const userId = await (await options.loadUserId?.()) ?? null;
+      const userId = (await await options.loadUserId?.()) ?? null;
       const file = await readRecordFile(getRecordFile());
       if (!file) return true;
       return !file.entries.some((entry) => entry.userId === userId);
     },
 
     async getLatestEntry(): Promise<OnboardingRecordEntry | null> {
-      const userId = await (await options.loadUserId?.()) ?? null;
+      const userId = (await await options.loadUserId?.()) ?? null;
       const file = await readRecordFile(getRecordFile());
       if (!file) return null;
       let latest: OnboardingRecordEntry | undefined;
@@ -137,7 +137,7 @@ export function createOnboardingRecordService(
     },
 
     async syncSettingsFromRecord(): Promise<OnboardingSettingsSyncPatch | null> {
-      const userId = await (await options.loadUserId?.()) ?? null;
+      const userId = (await await options.loadUserId?.()) ?? null;
       const file = await readRecordFile(getRecordFile());
       if (!file) return null;
       // append 是覆盖语义，正常每 userId 至多一条；兼容旧版本的重复追加文件时取最后一条。
@@ -162,7 +162,7 @@ export function createOnboardingRecordService(
         Pick<OnboardingRecordEntryInput, "memoryEnabled" | "proactiveSuggestionsEnabled">
       >,
     ): Promise<void> {
-      const userId = await (await options.loadUserId?.()) ?? null;
+      const userId = (await await options.loadUserId?.()) ?? null;
       await enqueueWrite(async () => {
         const filePath = getRecordFile();
         const file = await readRecordFile(filePath);

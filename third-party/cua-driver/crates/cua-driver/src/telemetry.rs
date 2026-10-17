@@ -1,6 +1,6 @@
 //! Telemetry: removed.
 //!
-//! ZCode vendored this crate from trycua/cua and ships it as part of the
+//! YCode vendored this crate from trycua/cua and ships it as part of the
 //! YCode desktop application, which must not report product usage anywhere.
 //! The upstream module built PostHog payloads, persisted a pseudonymous
 //! installation id under `~/.cua-driver/`, spooled pending events to disk and

@@ -1,5 +1,5 @@
 {
-  "name": "@zcode/services",
+  "name": "@ycode/services",
   "private": true,
   "type": "module",
   "imports": {
@@ -17,11 +17,11 @@
     "lint:fix": "oxlint --fix"
   },
   "dependencies": {
-    "@zcode/provider": "workspace:*",
-    "@zcode/provider-node": "workspace:*",
-    "@zcode/rpc": "workspace:*",
-    "@zcode/shared": "workspace:*",
-    "@zcode/zcode-cua": "workspace:*",
+    "@ycode/provider": "workspace:*",
+    "@ycode/provider-node": "workspace:*",
+    "@ycode/rpc": "workspace:*",
+    "@ycode/shared": "workspace:*",
+    "@ycode/ycode-cua": "workspace:*",
     "croner": "^10.0.1",
     "ignore": "^5.3.2",
     "node-forge": "^1.4.0",

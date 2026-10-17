@@ -11,15 +11,12 @@ import {
   type Provider,
   type ProviderModel,
 } from "./resolver.js";
-import type {
-  ProviderConfigSnapshot,
-  ProviderSource,
-} from "./sources.js";
+import type { ProviderConfigSnapshot, ProviderSource } from "./sources.js";
 
 export interface ProviderRegistryServiceSnapshot {
   readonly sourceRevisions: {
     readonly config: string;
-    };
+  };
   readonly config: ProviderConfigSnapshot;
   readonly resolution: ProviderConfigResolution;
   readonly registry: ProviderRegistryView;
@@ -200,10 +197,10 @@ export class ProviderRegistryService {
 
       try {
         const resolution = this.#resolver.resolve({
-          zcodeBuiltinProviders: config.zcodeBuiltinProviders,
-          zcodeBuiltinProviderTemplates: config.zcodeBuiltinProviderTemplates,
+          ycodeBuiltinProviders: config.ycodeBuiltinProviders,
+          ycodeBuiltinProviderTemplates: config.ycodeBuiltinProviderTemplates,
           personalProviders: config.personalProviders,
-          zcodeBuiltinModelRules: config.zcodeBuiltinModelRules,
+          ycodeBuiltinModelRules: config.ycodeBuiltinModelRules,
           personalModels: config.personalModels,
           personalProviderOrder: config.personalProviderOrder,
         });
@@ -270,4 +267,3 @@ export class ProviderRegistryService {
     if (this.#disposed) throw new Error("ProviderRegistryService 已 dispose");
   }
 }
-

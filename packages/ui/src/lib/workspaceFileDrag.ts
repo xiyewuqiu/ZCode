@@ -1,8 +1,8 @@
 import { buildFileMentionMarkdown } from "@/mentions/mentionMarkdown.js";
 
-export const WORKSPACE_FILE_DRAG_MIME = "application/x-zcode-workspace-file";
-export const WORKSPACE_FILE_ADD_TO_CHAT_EVENT = "zcode:add-workspace-file-to-chat";
-export const WORKSPACE_FILE_DRAG_STATE_EVENT = "zcode:workspace-file-drag-state";
+export const WORKSPACE_FILE_DRAG_MIME = "application/x-ycode-workspace-file";
+export const WORKSPACE_FILE_ADD_TO_CHAT_EVENT = "ycode:add-workspace-file-to-chat";
+export const WORKSPACE_FILE_DRAG_STATE_EVENT = "ycode:workspace-file-drag-state";
 
 export interface WorkspaceFileDragPayload {
   type: "file" | "directory";

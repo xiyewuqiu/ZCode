@@ -33,7 +33,7 @@ export function TaskStorageDialogHost() {
         ...(request.workspaceIdentity ? { workspaceIdentity: request.workspaceIdentity } : {}),
       }}
       title={request.title}
-      service={services.zcodeTaskService}
+      service={services.ycodeTaskService}
       onClose={close}
     />
   );

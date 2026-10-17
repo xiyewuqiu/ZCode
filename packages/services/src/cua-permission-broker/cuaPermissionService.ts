@@ -3,21 +3,21 @@
 // As part of the single-package merge the type definitions + functional helpers
 // (CuaPermissionStatus, CuaPermissionStatusResult, isCuaPermissionStatusAvailable,
 // shouldRunCuaScreenCaptureProbe, ICuaPermissionService interface, etc.) moved
-// to @zcode/zcode-cua/src/broker/ports.ts. The descriptor registration itself stays in
+// to @ycode/ycode-cua/src/broker/ports.ts. The descriptor registration itself stays in
 // services (host control plane — depends on services' createServiceDescriptor
-// + @zcode/shared ServiceChannels), so services internal callers (node.ts,
-// accessor.ts, services/index.ts) and ui consumers (via @zcode/services root
+// + @ycode/shared ServiceChannels), so services internal callers (node.ts,
+// accessor.ts, services/index.ts) and ui consumers (via @ycode/services root
 // export) keep importing `ICuaPermissionService` from this exact path.
 //
 // producer 只拥有 type contract；VALUE descriptor 继续由 services 的
 // createServiceDescriptor 创建，避免 producer 反向依赖 RPC/service registry。
 
-import { ServiceChannels } from "@zcode/shared";
+import { ServiceChannels } from "@ycode/shared";
 
 import { createServiceDescriptor } from "../descriptors.js";
 
 // Type layer — type-only imports from the consolidated package (erased by TS
-// at compile time; Vite never resolves @zcode/zcode-cua for these).
+// at compile time; Vite never resolves @ycode/ycode-cua for these).
 import type {
   CuaPermissionState,
   CuaPermissionStatus,
@@ -27,7 +27,7 @@ import type {
   CuaPermissionRestartResult,
   CuaPermissionRestartOptions,
   ICuaPermissionService as BrokerICuaPermissionService,
-} from "@zcode/zcode-cua/broker";
+} from "@ycode/ycode-cua/broker";
 
 // Re-export types for consumers.
 export type {
@@ -46,7 +46,7 @@ export type {
 export {
   isCuaPermissionStatusAvailable,
   shouldRunCuaScreenCaptureProbe,
-} from "@zcode/zcode-cua/broker/ports";
+} from "@ycode/ycode-cua/broker/ports";
 
 export interface ICuaPermissionService extends BrokerICuaPermissionService {}
 

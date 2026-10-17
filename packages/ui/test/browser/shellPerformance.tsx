@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Group, Panel } from "react-resizable-panels";
-import type { IPlatformService, WindowControlsOverlayMetrics } from "@zcode/shared";
+import type { IPlatformService, WindowControlsOverlayMetrics } from "@ycode/shared";
 import { PlatformProvider } from "../../src/hooks/usePlatform.js";
-import { ZCodeIntlProvider } from "../../src/i18n/IntlProvider.js";
+import { YCodeIntlProvider } from "../../src/i18n/IntlProvider.js";
 import { DesktopWindowControls } from "../../src/DesktopWindowControls.js";
 import { SettingsPageLoading } from "../../src/root/SettingsPageLoading.js";
 import { useAnimatedResizablePanel } from "../../src/app-shell/useAnimatedResizablePanel.js";
@@ -137,9 +137,9 @@ Object.assign(window, { shellCounters: counters });
 const root = createRoot(document.getElementById("root")!);
 root.render(
   <PlatformProvider platform={platform}>
-    <ZCodeIntlProvider initialLocale="en-US">
+    <YCodeIntlProvider initialLocale="en-US">
       <Fixture />
-    </ZCodeIntlProvider>
+    </YCodeIntlProvider>
   </PlatformProvider>,
 );
 import.meta.hot?.dispose(() => root.unmount());

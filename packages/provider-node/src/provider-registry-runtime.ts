@@ -1,4 +1,4 @@
-import { ProviderRegistryService } from "@zcode/provider";
+import { ProviderRegistryService } from "@ycode/provider";
 import {
   NodeProviderConfigRuntime,
   type NodeProviderConfigRuntimeOptions,
@@ -31,8 +31,8 @@ export class NodeProviderRegistryRuntime {
     return this.#configRuntime.personalRepository;
   }
 
-  onDidCheckZCodeBuiltin(listener: () => Promise<void>): () => void {
-    return this.#configRuntime.onDidCheckZCodeBuiltin(listener);
+  onDidCheckYCodeBuiltin(listener: () => Promise<void>): () => void {
+    return this.#configRuntime.onDidCheckYCodeBuiltin(listener);
   }
 
   dispose(): void {

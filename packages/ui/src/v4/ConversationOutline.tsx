@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/dialog.js";
 import { Input } from "@/components/ui/input.js";
 import { cn } from "@/components/lib/utils.js";
-import { useZCodeIntl } from "@/i18n/IntlProvider.js";
+import { useYCodeIntl } from "@/i18n/IntlProvider.js";
 import { usePrefersReducedMotion } from "@/hooks/usePrefersReducedMotion.js";
 import { logger } from "@/logger.js";
 import {
@@ -43,7 +43,7 @@ interface ConversationOutlineProps {
 }
 
 export function ConversationOutline(props: ConversationOutlineProps) {
-  const { intl } = useZCodeIntl();
+  const { intl } = useYCodeIntl();
   const [open, setOpen] = useState(false);
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -74,7 +74,7 @@ function ConversationOutlineContent({
   onJumpToQuery,
   onClose,
 }: ConversationOutlineProps & { onClose: () => void }) {
-  const { intl } = useZCodeIntl();
+  const { intl } = useYCodeIntl();
   const reducedMotion = usePrefersReducedMotion();
   const listId = useId();
   const inputRef = useRef<HTMLInputElement>(null);

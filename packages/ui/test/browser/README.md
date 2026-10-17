@@ -100,7 +100,7 @@ Get-Content packages/ui/test/browser/verifyInteractions.js -Raw | npx --yes agen
 node packages/ui/test/browser/run-regressions.mjs
 ```
 
-入口使用本机 Edge 的隔离 headless profile；也可设置 `ZCODE_TEST_BROWSER_CHANNEL=chrome` 使用本机 Chrome。覆盖 1258×622 和 390×844、5,000 段工作正文、200 次压缩标记、20Hz 更新、远处查找、选区回收、10 次会话切换、后台追赶、整轮复制。每个视口报告帧分布；功能断言失败返回非零，帧耗时是观测值，不作为跨机器阈值。截图保存在 `.tmp/desktop-iteration/`。
+入口使用本机 Edge 的隔离 headless profile；也可设置 `YCODE_TEST_BROWSER_CHANNEL=chrome` 使用本机 Chrome。覆盖 1258×622 和 390×844、5,000 段工作正文、200 次压缩标记、20Hz 更新、远处查找、选区回收、10 次会话切换、后台追赶、整轮复制。每个视口报告帧分布；功能断言失败返回非零，帧耗时是观测值，不作为跨机器阈值。截图保存在 `.tmp/desktop-iteration/`。
 
 Windows 原生窗控及真实 Host 启动分别运行：
 

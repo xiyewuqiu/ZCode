@@ -1,4 +1,4 @@
-import type { ModelSelectionView } from "@zcode/services";
+import type { ModelSelectionView } from "@ycode/services";
 
 interface ProviderAvailabilityState {
   readonly source: "registry";

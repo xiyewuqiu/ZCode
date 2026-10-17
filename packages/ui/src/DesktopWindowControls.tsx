@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
-import { DesktopCommandIds } from "@zcode/shared";
+import { DesktopCommandIds } from "@ycode/shared";
 import { MinusIcon, XIcon } from "lucide-react";
 import { WindowMaximizeIcon, WindowRestoreIcon } from "@/components/icons/windowIcons.js";
 import { Button } from "@/components/ui/button.js";
 import { usePlatform } from "@/hooks/usePlatform.js";
-import { useZCodeIntl } from "@/i18n/IntlProvider.js";
+import { useYCodeIntl } from "@/i18n/IntlProvider.js";
 import { logger } from "@/logger.js";
 
 export function DesktopWindowControls() {
@@ -31,7 +31,7 @@ export function DesktopWindowControls() {
 
 function CustomDesktopWindowControls() {
   const platform = usePlatform();
-  const { intl } = useZCodeIntl();
+  const { intl } = useYCodeIntl();
   const [maximized, setMaximized] = useState(false);
   useEffect(() => {
     let disposed = false;

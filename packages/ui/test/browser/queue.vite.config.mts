@@ -10,7 +10,7 @@ export default defineConfig({
   resolve: {
     alias: [
       { find: "@", replacement: resolve(import.meta.dirname, "../../src") },
-      { find: /^@zcode\/shared$/, replacement: resolve(import.meta.dirname, "queueShared.ts") },
+      { find: /^@ycode\/shared$/, replacement: resolve(import.meta.dirname, "queueShared.ts") },
     ],
   },
   server: {

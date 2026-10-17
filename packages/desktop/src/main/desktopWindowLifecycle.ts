@@ -2,7 +2,7 @@ import { getDatabaseStartupPortPayload } from "./databaseStartupRelay.js";
 import { randomUUID } from "node:crypto";
 import { app, BrowserWindow, Menu, MessageChannelMain } from "electron";
 import type { MessagePortMain, UtilityProcess as ElectronUtilityProcess } from "electron";
-import { HostMessageTypes, InternalChannels, PlatformChannels, type Locale } from "@zcode/shared";
+import { HostMessageTypes, InternalChannels, PlatformChannels, type Locale } from "@ycode/shared";
 import { createBrowserWindow } from "./desktopWindowChrome.js";
 import type {
   HostInitMessage,
@@ -34,7 +34,7 @@ export function createWindow(options: {
   spawnHostProcess: (
     win: BrowserWindow,
     label: string,
-    initMessage: Omit<HostInitMessage, "zcodeBuiltinProviderConfigFilePath">,
+    initMessage: Omit<HostInitMessage, "ycodeBuiltinProviderConfigFilePath">,
     spawnOptions?: SpawnHostProcessOptions,
   ) => ElectronUtilityProcess;
   disposeHostProcess: (

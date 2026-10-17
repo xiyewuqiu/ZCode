@@ -7,8 +7,8 @@ import test from "node:test";
 
 const execute = promisify(execFile);
 const binary = process.env.AGENT_BROWSER_BIN || "agent-browser";
-const session = "zcode-queue-e2e";
-const origin = process.env.ZCODE_UI_TEST_ORIGIN || "http://127.0.0.1:5189/queue.html";
+const session = "ycode-queue-e2e";
+const origin = process.env.YCODE_UI_TEST_ORIGIN || "http://127.0.0.1:5189/queue.html";
 const artifacts = resolve(".tmp/queue-e2e");
 await mkdir(artifacts, { recursive: true });
 async function browser(...args) {

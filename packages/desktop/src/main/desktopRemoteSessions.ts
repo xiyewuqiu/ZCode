@@ -11,7 +11,7 @@ import {
   PlatformChannels,
   type RemoteTarget,
   type WindowHostRemoteWorkspaceDescriptor,
-} from "@zcode/shared";
+} from "@ycode/shared";
 import type { RemoteAssetDirs } from "./desktopRuntimeEnv.js";
 
 interface RemoteWorkspaceSessionContext {

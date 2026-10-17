@@ -60,7 +60,7 @@ export async function applyDesktopChromiumNetworkPolicies(
   if (!hasCustomProxy && !hasCustomCaCert && !allowInsecure) {
     // 启动快速路径：无任何自定义网络策略时，跳过 embedded-browser partition 的
     // setProxy / closeAllConnections / 证书校验安装（Chromium 默认即 system 代理 + 默认校验）。
-    // 但 defaultSession 仍需显式固定为 direct：把 ZCode 自身后端出口与系统代理隔离
+    // 但 defaultSession 仍需显式固定为 direct：把 YCode 自身后端出口与系统代理隔离
     // 是显式产品边界，不能用 Chromium 默认（跟随系统代理）代替。
     try {
       await sessionProvider.defaultSession.setProxy({ mode: "direct" });
@@ -78,13 +78,13 @@ export async function applyDesktopChromiumNetworkPolicies(
       name: "default-session",
       session: sessionProvider.defaultSession,
       allowInsecure: false,
-      // ZCode 自身对后端与模型 API 的出口，收敛到设置页的显式配置，不被本机系统代理左右。
+      // YCode 自身对后端与模型 API 的出口，收敛到设置页的显式配置，不被本机系统代理左右。
       fallbackProxyMode: "direct" as const,
     },
     {
       name: "embedded-browser",
       session: sessionProvider.fromPartition(EMBEDDED_BROWSER_PARTITION),
-      // 自签名放行只开在内置浏览器出口：defaultSession 承载 renderer 对 ZCode 后端与模型 API
+      // 自签名放行只开在内置浏览器出口：defaultSession 承载 renderer 对 YCode 后端与模型 API
       // 的流量，在那里放行等于整个应用失去 TLS 保护，与「访问内网测试站点」的诉求不成比例。
       allowInsecure: settings.embeddedBrowserAllowInsecureCertificates === true,
       // 内置浏览器是用户自己的浏览出口，留空时跟随系统代理，与本机浏览器保持一致；

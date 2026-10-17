@@ -1,5 +1,5 @@
 // App 仅由 root/RootWorkspaceContent 直接导入（@/App.js），不在此 re-export：
-// barrel 静态导出会让所有 @zcode/ui 消费方的首屏闭包都携带完整 App 图。
+// barrel 静态导出会让所有 @ycode/ui 消费方的首屏闭包都携带完整 App 图。
 export { AppErrorBoundary, ScopedErrorBoundary } from "./ErrorBoundary.js";
 export type { ScopedErrorBoundaryVariant } from "./ErrorBoundary.js";
 export { Button, buttonVariants } from "./components/ui/button.js";
@@ -17,8 +17,8 @@ export { useTheme } from "./useTheme.js";
 export type { Theme } from "./useTheme.js";
 export { useTestActions } from "./test-actions.js";
 export type { TestActions } from "./test-actions.js";
-export { StoreProvider, useZCodeStore } from "./store/StoreProvider.js";
-export type { ZCodeState } from "./store/index.js";
+export { StoreProvider, useYCodeStore } from "./store/StoreProvider.js";
+export type { YCodeState } from "./store/index.js";
 export {
   bindRemoteWorkspacePath,
   getRemoteWorkspaceSession,
@@ -54,7 +54,7 @@ export {
   useGitActions,
 } from "./hooks/index.js";
 
-export { ZCodeIntlProvider, useZCodeIntl, LocaleSwitcher } from "./i18n/index.js";
+export { YCodeIntlProvider, useYCodeIntl, LocaleSwitcher } from "./i18n/index.js";
 export type { IntlInstance } from "./i18n/index.js";
 export {
   FileDisplayInline,

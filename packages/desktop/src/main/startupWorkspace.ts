@@ -4,7 +4,7 @@ import {
   resolveStartupLocalWorkspaceSessionIndex,
   type AppSettings,
   type WorkspacePurpose,
-} from "@zcode/shared";
+} from "@ycode/shared";
 
 interface StartupWorkspaceLogger {
   info?: (...args: unknown[]) => void;
@@ -141,7 +141,7 @@ export async function resolveStartupWindowBootstrap({
   }
 
   // UI 可以没有项目，但 Agent 必须始终有真实 cwd。首次启动统一预热
-  // app-managed conversation backing workspace，不能再创建会被误认成项目的 ZCodeProject。
+  // app-managed conversation backing workspace，不能再创建会被误认成项目的 YCodeProject。
   await mkdir(conversationWorkspaceDir, { recursive: true });
   logger?.info?.("[startup-workspace] using conversation workspace:", conversationWorkspaceDir);
   return {

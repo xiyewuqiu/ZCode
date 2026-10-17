@@ -5,7 +5,7 @@ import {
   TID_MODEL_PROVIDER_API_KEY_INPUT,
   TID_MODEL_PROVIDER_BASE_URL_INPUT,
   testId,
-} from "@zcode/shared";
+} from "@ycode/shared";
 import { EyeIcon, EyeOffIcon } from "lucide-react";
 import { Button } from "@/components/ui/button.js";
 import { Input } from "@/components/ui/input.js";
@@ -16,10 +16,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select.js";
-import { useZCodeIntl } from "@/i18n/IntlProvider.js";
+import { useYCodeIntl } from "@/i18n/IntlProvider.js";
 import { usePlatform } from "@/hooks/usePlatform.js";
 import { TECHNICAL_INPUT_ATTRIBUTES } from "@/lib/technicalInputAttributes.js";
-import type { ProviderApiType } from "@zcode/provider";
+import type { ProviderApiType } from "@ycode/provider";
 
 const PROVIDER_CONNECTION_API_FORMATS: readonly ProviderApiType[] = [
   "anthropic-messages",
@@ -56,7 +56,7 @@ function ProviderApiFormatSelect({
   value: ProviderApiType;
   onChange: (value: ProviderApiType) => void;
 }) {
-  const { intl } = useZCodeIntl();
+  const { intl } = useYCodeIntl();
 
   return (
     <Select value={value} onValueChange={(nextValue) => onChange(nextValue as ProviderApiType)}>
@@ -101,7 +101,7 @@ export function ProviderConnectionSection({
   onBaseUrlCompositionStart?: () => void;
   onBaseUrlCompositionEnd?: () => void;
 }) {
-  const { intl } = useZCodeIntl();
+  const { intl } = useYCodeIntl();
 
   return (
     <>
@@ -137,7 +137,7 @@ export function ProviderConnectionSection({
 
 /** 获取入口不区分个人／团队；两个按钮和专用字段会偏离单一控制台入口的预期。 */
 function PresetProviderApiKeyLink({ onOpenApiKey }: { onOpenApiKey: () => void }) {
-  const { intl } = useZCodeIntl();
+  const { intl } = useYCodeIntl();
   return (
     <button
       type="button"
@@ -168,7 +168,7 @@ function ProviderApiKeyInput({
   onCompositionEnd?: () => void;
   onToggleVisibility: () => void;
 }) {
-  const { intl } = useZCodeIntl();
+  const { intl } = useYCodeIntl();
 
   return (
     <div className="relative">
@@ -222,7 +222,7 @@ export function ProviderApiKeySection({
   onApiKeyCompositionEnd?: () => void;
   onToggleApiKeyVisibility: () => void;
 }) {
-  const { intl } = useZCodeIntl();
+  const { intl } = useYCodeIntl();
   const platform = usePlatform();
   const openApiKeyManagementUrl = useCallback(() => {
     const normalized = apiKeyManagementUrl?.trim();

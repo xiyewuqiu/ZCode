@@ -1,12 +1,12 @@
 /* oxlint-disable eslint(max-lines) -- 草稿值、投影规则与稀疏 Overlay 提交共享同一字段映射，拆开会复制出第二套规则。 */
 import type { ProviderSettingsFormModel } from "@/lib/providerSettingsFormTypes.js";
-import type { ModelInputFormatData } from "@zcode/shared/model-config";
+import type { ModelInputFormatData } from "@ycode/shared/model-config";
 import {
   EnumOptionSpecConfig,
   extractManualModelConfig,
   clearManualModelConfig,
   type ModelConfigObject,
-} from "@zcode/provider";
+} from "@ycode/provider";
 
 export type ProviderModelInputFormatDraft = ModelInputFormatData;
 

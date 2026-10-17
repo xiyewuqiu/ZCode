@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { applyConversationDelta, applyConversationDeltas } from "../src/zcode-protocol-v4/apply.js";
-import { conversationSnapshotSchema } from "../src/zcode-protocol-v4/snapshot.js";
-import type { ConversationDelta } from "../src/zcode-protocol-v4/delta.js";
-import type { ConversationRow } from "../src/zcode-protocol-v4/rows.js";
+import { applyConversationDelta, applyConversationDeltas } from "../src/ycode-protocol-v4/apply.js";
+import { conversationSnapshotSchema } from "../src/ycode-protocol-v4/snapshot.js";
+import type { ConversationDelta } from "../src/ycode-protocol-v4/delta.js";
+import type { ConversationRow } from "../src/ycode-protocol-v4/rows.js";
 
 function textRow(rowId: number): ConversationRow {
   return {

@@ -1,31 +1,31 @@
-// 电脑控制（cua-driver）→ ZCode Agent spawn env。
+// 电脑控制（cua-driver）→ YCode Agent spawn env。
 //
 // 为什么在这里：开关属于 AppSettings（host 是设置权威），驱动路径属于随包资源解析（desktop host），
 // 而真正把这个能力变成模型可见工具的是 CLI bootstrap 的内置 MCP 装配。二者之间只应该有
 // 「事实」而不应该有「实现」：host 下发驱动路径 + 权限模式，CLI 负责组装 MCP server 配置
-// （常量与权限映射见 @zcode/shared 的 mcp.ts，三处共用避免字面量漂移）。
+// （常量与权限映射见 @ycode/shared 的 mcp.ts，三处共用避免字面量漂移）。
 //
 // 时序（与设置页代理 env 同一套语义：spawn 时读取，改动后下次启动 agent 生效）：
 //
 //   设置页开启 computerControl
 //     → 下一次 agent spawn（新 workspace / agent 重启 / mcp 状态查询进程）
 //     → resolveSpawnEnv 读设置 + 解析驱动路径
-//     → spawn env: ZCODE_CUA_DRIVER_BINARY / ZCODE_CUA_DRIVER_PERMISSION_MODE
+//     → spawn env: YCODE_CUA_DRIVER_BINARY / YCODE_CUA_DRIVER_PERMISSION_MODE
 //     → CLI bootstrap 组装内置 MCP server（驱动缺失则不注册）
 //     → 会话运行时出现 mcp__cua-driver__* 工具
 
 import {
-  ZCODE_CUA_DRIVER_BINARY_ENV,
-  ZCODE_CUA_DRIVER_PERMISSION_MODE_ENV,
-  type ZCodeComputerControlPermissionMode,
-} from "@zcode/shared";
+  YCODE_CUA_DRIVER_BINARY_ENV,
+  YCODE_CUA_DRIVER_PERMISSION_MODE_ENV,
+  type YCodeComputerControlPermissionMode,
+} from "@ycode/shared";
 import { createServiceLogger } from "#src/logger/serviceLogger.js";
 
 const logger = createServiceLogger("computer-control");
 
 export type ComputerControlSettingsSnapshot = {
   enabled: boolean;
-  permissionMode: ZCodeComputerControlPermissionMode;
+  permissionMode: YCodeComputerControlPermissionMode;
 };
 
 export function resolveComputerControlAgentSpawnEnv(input: {
@@ -49,10 +49,10 @@ export function resolveComputerControlAgentSpawnEnv(input: {
   }
 
   return {
-    [ZCODE_CUA_DRIVER_BINARY_ENV]: driverBinaryPath,
+    [YCODE_CUA_DRIVER_BINARY_ENV]: driverBinaryPath,
     // 模式只透传，不在 host 侧翻译成驱动 env：MCP server 的 env 必须落在驱动子进程上，
     // 放进 agent 进程 env 会让驱动授权变量泄漏给 Bash/其它 MCP 子进程（见 shared/mcp.ts）。
-    [ZCODE_CUA_DRIVER_PERMISSION_MODE_ENV]: input.computerControl.permissionMode,
+    [YCODE_CUA_DRIVER_PERMISSION_MODE_ENV]: input.computerControl.permissionMode,
   };
 }
 
@@ -64,7 +64,7 @@ export function resolveComputerControlAgentSpawnEnv(input: {
  */
 function disabledComputerControlEnv(): Record<string, string> {
   return {
-    [ZCODE_CUA_DRIVER_BINARY_ENV]: "",
-    [ZCODE_CUA_DRIVER_PERMISSION_MODE_ENV]: "",
+    [YCODE_CUA_DRIVER_BINARY_ENV]: "",
+    [YCODE_CUA_DRIVER_PERMISSION_MODE_ENV]: "",
   };
 }

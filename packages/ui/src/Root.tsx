@@ -6,7 +6,7 @@ import {
   DesktopCommandIds,
   appRuntimePreferencesChangedBroadcastPayloadSchema,
   type RemoteTarget,
-} from "@zcode/shared";
+} from "@ycode/shared";
 import { TooltipProvider } from "@/components/ui/tooltip.js";
 import { SettingsPageLoading } from "@/root/SettingsPageLoading.js";
 import { Button } from "@/components/ui/button.js";
@@ -18,7 +18,7 @@ const DirectoryBrowser = lazy(() =>
   import("@/DirectoryBrowser.js").then((m) => ({ default: m.DirectoryBrowser })),
 );
 import { useWorkspaceServices } from "@/hooks/useWorkspaceServices.js";
-import { useZCodeIntl } from "@/i18n/IntlProvider.js";
+import { useYCodeIntl } from "@/i18n/IntlProvider.js";
 // 重型页面/弹窗全部懒加载，只把首屏真正需要的模块留在主 bundle 里：
 // SettingsPage（复杂设置页）、SSHDialog（远程 SSH 面板）、
 // DirectoryBrowser（目录浏览器）与 OnboardingDialog 都是低频入口，静态引入会让首屏
@@ -36,9 +36,9 @@ import {
   shouldShowRootStartupLoading,
   shouldOpenFallbackWorkspaceAfterCreate,
 } from "@/lib/rootStartupGate.js";
-import { StoreProvider, useZCodeStore } from "@/store/StoreProvider.js";
+import { StoreProvider, useYCodeStore } from "@/store/StoreProvider.js";
 import { setMcpStorePlatform } from "@/store/mcpStore.js";
-import { useZCodeSessionStore } from "@/store/zcodeSessionStore.js";
+import { useYCodeSessionStore } from "@/store/ycodeSessionStore.js";
 import { TabStoreProvider, useTabStore, useTabStoreApi } from "@/store/TabStoreProvider.js";
 import { isSettingsTab, isWorkspaceTab } from "@/store/tabStore.js";
 import { logger } from "@/logger.js";
@@ -160,12 +160,9 @@ function RootInner({
   // 动态工作流灰度快照的唯一落定点（厂商灰度源移除后恒为 disabled）。
   useDynamicWorkflowAvailabilityLoader();
 
-  const { intl, locale } = useZCodeIntl();
-  const theme = useZCodeStore((state) => state.theme);
-  const {
-    settings: appSettings,
-    refresh: refreshAppSettings,
-  } = useSettings();
+  const { intl, locale } = useYCodeIntl();
+  const theme = useYCodeStore((state) => state.theme);
+  const { settings: appSettings, refresh: refreshAppSettings } = useSettings();
   const [providerFamilyDomainMigrationComplete, setProviderFamilyDomainMigrationComplete] =
     useState(false);
   const rootModelSelectionRead = useModelSelectionServiceView(services.modelSelectionService);
@@ -224,7 +221,7 @@ function RootInner({
           return;
         }
         void refreshAppSettings();
-        void services.zcodeAgentService.syncAppRuntimePreferences(parsed.data).catch((error) => {
+        void services.ycodeAgentService.syncAppRuntimePreferences(parsed.data).catch((error) => {
           logger.warn("[settings] 同步跨窗口运行时偏好失败", error);
         });
         return;
@@ -258,13 +255,13 @@ function RootInner({
     return () => {
       disposable.dispose();
     };
-  }, [refreshAppSettings, services.broadcastService, services.zcodeAgentService]);
+  }, [refreshAppSettings, services.broadcastService, services.ycodeAgentService]);
 
   useEffect(() => {
     if (!appSettings) {
       return;
     }
-    void services.zcodeAgentService
+    void services.ycodeAgentService
       .syncAppRuntimePreferences({
         askUserQuestionAutoResolutionEnabled:
           appSettings.askUserQuestionAutoResolutionEnabled !== false,
@@ -276,7 +273,7 @@ function RootInner({
   }, [
     appSettings?.askUserQuestionAutoResolutionEnabled,
     appSettings?.modelIoFullRetentionEnabled,
-    services.zcodeAgentService,
+    services.ycodeAgentService,
   ]);
 
   const tabs = useTabStore((state) => state.tabs);
@@ -320,7 +317,7 @@ function RootInner({
     }
     return activeTab.workspacePath;
   });
-  const totalUnreadTaskCount = useZCodeSessionStore((state) =>
+  const totalUnreadTaskCount = useYCodeSessionStore((state) =>
     countAllUnreadTasks(state.workspaces),
   );
   const addTab = useTabStore((state) => state.addTab);
@@ -384,7 +381,7 @@ function RootInner({
     providerAvailabilityStartupCheckCompleted,
   });
   // 首次安装时 provider 可用性判定晚于 workspace 注入，ChatView 会先 mount 并触发草稿预热。
-  // 这里把 provider 启动检查纳入 workspace 恢复门禁，避免在模型配置就绪前启动 ZCode session。
+  // 这里把 provider 启动检查纳入 workspace 恢复门禁，避免在模型配置就绪前启动 YCode session。
   const canRestoreWorkspaceSession = !isResolvingProviderStartupState;
 
   useEffect(() => {
@@ -773,7 +770,7 @@ function RootInner({
         {rootModelSelectionErrorNode}
         {remoteConnectionDialog}
         {directoryBrowserDialog}
-        {/* HTML 启动壳已经展示 ZCode SVG，但 React 接管 root 后旧壳会被整棵替换。
+        {/* HTML 启动壳已经展示 YCode SVG，但 React 接管 root 后旧壳会被整棵替换。
             之前阻塞恢复 tab / 初始 workspace 注入时重新渲染纯文字“加载中...”，所以启动被拆成两套 loading。
             这里复用同一套 SVG 启动画面，只把文案保留到 aria-label，保证视觉始终连续且不牺牲可访问性。 */}
         <RootStartupLoading label={loadingLabel} />

@@ -1,6 +1,6 @@
 /* eslint-disable max-lines */
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
-import type { ZCodeProvider } from "@zcode/shared";
+import type { YCodeProvider } from "@ycode/shared";
 import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext";
 import { createPortal } from "react-dom";
 import { PaletteIcon, WandSparkles } from "lucide-react";
@@ -16,7 +16,7 @@ import {
   KEY_TAB_COMMAND,
 } from "lexical";
 
-import { useZCodeIntl } from "../i18n/IntlProvider.js";
+import { useYCodeIntl } from "../i18n/IntlProvider.js";
 import {
   extractActivePromptInputTrigger,
   getActivePromptInputTokenTailLength,
@@ -136,9 +136,9 @@ export function MentionPlugin({
   container,
   disabled = false,
   onWhiteboardMentionSelected,
-}: MentionPluginProps & { provider: ZCodeProvider }) {
+}: MentionPluginProps & { provider: YCodeProvider }) {
   const [editor] = useLexicalComposerContext();
-  const { intl } = useZCodeIntl();
+  const { intl } = useYCodeIntl();
   const [activeTrigger, setActiveTrigger] = useState<ActivePromptInputTrigger | null>(null);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const dismissedSignatureRef = useRef<string | null>(null);

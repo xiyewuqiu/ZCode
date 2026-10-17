@@ -1,4 +1,4 @@
-import type { IServiceAccessor } from "@zcode/services";
+import type { IServiceAccessor } from "@ycode/services";
 import { logger } from "@/logger.js";
 
 /**

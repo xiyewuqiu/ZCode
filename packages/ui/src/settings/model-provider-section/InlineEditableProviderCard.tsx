@@ -1,12 +1,12 @@
 import { useCallback } from "react";
-import type { SavePersonalModelDraftInput } from "@zcode/provider";
-import { isApiKeyAccess } from "@zcode/provider";
-import type { ModelConnectivityResult } from "@zcode/shared";
+import type { SavePersonalModelDraftInput } from "@ycode/provider";
+import { isApiKeyAccess } from "@ycode/provider";
+import type { ModelConnectivityResult } from "@ycode/shared";
 import type {
   ProviderSettingsFormModel,
   ProviderSettingsFormProvider,
 } from "@/lib/providerSettingsFormTypes.js";
-import { useZCodeIntl } from "@/i18n/IntlProvider.js";
+import { useYCodeIntl } from "@/i18n/IntlProvider.js";
 import { Switch } from "@/components/ui/switch.js";
 import { ControlHintTooltip } from "@/ControlHintTooltip.js";
 import { ProviderApiKeySection, ProviderConnectionSection } from "./ProviderConnectionForm.js";
@@ -54,7 +54,7 @@ export function InlineEditableProviderCard({
   apiKeyManagementUrl?: string;
   settingsRevision?: number;
 }) {
-  const { intl } = useZCodeIntl();
+  const { intl } = useYCodeIntl();
   const {
     providerName,
     editingName,

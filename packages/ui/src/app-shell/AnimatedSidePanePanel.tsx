@@ -11,7 +11,7 @@ import {
   type RefObject,
 } from "react";
 import type { PanelImperativeHandle } from "react-resizable-panels";
-import type { IServiceAccessor } from "@zcode/services";
+import type { IServiceAccessor } from "@ycode/services";
 import {
   closestCenter,
   DndContext,
@@ -23,7 +23,7 @@ import {
   type DragStartEvent,
 } from "@dnd-kit/core";
 import { horizontalListSortingStrategy, SortableContext } from "@dnd-kit/sortable";
-import type { BrowserViewScreenshotSurfacePreparePayload, GitChangeSourceId } from "@zcode/shared";
+import type { BrowserViewScreenshotSurfacePreparePayload, GitChangeSourceId } from "@ycode/shared";
 // PreviewPane（内部含懒加载的 PDF/PPTX/Office 重查看器）与 SidePaneTerminalPane（@xterm/xterm）
 // 都是重依赖：静态 import 会把整条依赖链拖进首屏闭包。side pane 的这两个 tab 都按需打开，
 // 与 WorkspaceArtifactBody / WorkspaceShellLayout 的 lazy 边界保持同一模式。
@@ -106,7 +106,7 @@ import {
 import { inferMediaPreview, type CodeViewerSource } from "@/lib/codeViewer.js";
 import type { MessageFileLinkTarget } from "@/components/ai-elements/message.js";
 import { getVisibleSidePaneTabs } from "@/lib/workspaceSidePane.js";
-import { useZCodeIntl } from "@/i18n/IntlProvider.js";
+import { useYCodeIntl } from "@/i18n/IntlProvider.js";
 import {
   BugIcon,
   FileDiffIcon,
@@ -419,7 +419,7 @@ export function AnimatedSidePanePanel({
   onBrowserPageMetadataChange: (tabId: string, metadata: BrowserSidePaneMetadata) => void;
   onSelectGitSource: (value: GitChangeSourceId) => void;
 }) {
-  const { intl } = useZCodeIntl();
+  const { intl } = useYCodeIntl();
   const isOfficeMode = useIsOfficeMode();
   const developerToolsEnabled = useDeveloperToolsVisibility();
   const isDragCollapsible = !isVisible;

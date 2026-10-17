@@ -16,7 +16,7 @@ import { ControlHintTooltip } from "@/ControlHintTooltip.js";
 import { useConfirmDialog } from "@/hooks/useConfirmDialog.js";
 import { useGlobalTaskList } from "@/hooks/useGlobalTaskList.js";
 import { useBaseWorkspaceServices } from "@/hooks/useWorkspaceServices.js";
-import { useZCodeIntl } from "@/i18n/IntlProvider.js";
+import { useYCodeIntl } from "@/i18n/IntlProvider.js";
 import { formatTaskRelativeTime } from "@/lib/taskListItemPresentation.js";
 import { getTaskChangeSummary } from "@/lib/taskChangeSummary.js";
 import { getPathLeaf } from "@/lib/path.js";
@@ -52,7 +52,7 @@ export function WorkspaceArchivedTasksFlatSection({
     targetWorkspaceIdentity?: string,
   ) => void;
 }) {
-  const { intl } = useZCodeIntl();
+  const { intl } = useYCodeIntl();
   const confirmDialog = useConfirmDialog();
   const baseServices = useBaseWorkspaceServices();
   const sessionsById = useRemoteWorkspaceSessionStore((state) => state.sessionsById);
@@ -107,7 +107,7 @@ export function WorkspaceArchivedTasksFlatSection({
   const storageService = storageTarget
     ? workspaceServiceLookup.get(
         buildTaskWorkspaceKey(storageTarget.workspacePath, storageTarget.workspaceIdentity),
-      )?.services.zcodeTaskService
+      )?.services.ycodeTaskService
     : null;
 
   return (
@@ -134,7 +134,7 @@ export function WorkspaceArchivedTasksFlatSection({
           label: tab.label || getPathLeaf(tab.workspacePath),
           service: workspaceServiceLookup.get(
             buildTaskWorkspaceKey(tab.workspacePath, tab.workspaceIdentity),
-          )?.services.zcodeTaskService,
+          )?.services.ycodeTaskService,
         }))}
         onDeleted={removeTaskFromTaskCaches}
         onRefresh={refresh}
@@ -258,7 +258,7 @@ export function WorkspaceArchivedTasksFlatSection({
                     onClick={(event) => {
                       event.preventDefault();
                       event.stopPropagation();
-                      void services.zcodeTaskService
+                      void services.ycodeTaskService
                         .unarchiveTask({
                           taskId: task.taskId,
                           workspacePath: task.workspacePath,
@@ -347,7 +347,7 @@ export function WorkspaceArchivedTasksFlatSection({
 
                           setDeletingTaskKeys((current) => new Set(current).add(taskKey));
                           try {
-                            await services.zcodeTaskService.deleteTask({
+                            await services.ycodeTaskService.deleteTask({
                               taskId: task.taskId,
                               workspacePath: task.workspacePath,
                               ...(task.workspaceIdentity

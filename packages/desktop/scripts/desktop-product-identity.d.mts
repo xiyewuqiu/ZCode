@@ -6,7 +6,7 @@ export interface DesktopProductIdentity {
   readonly linuxPackageName: string;
   readonly cuaHelperInstallVariant: "preview" | null;
 }
-export const ZCODE_PREVIEW_IDENTITY_ENV: "ZCODE_PREVIEW_IDENTITY";
+export const YCODE_PREVIEW_IDENTITY_ENV: "YCODE_PREVIEW_IDENTITY";
 export const desktopProductIdentities: Readonly<
   Record<"production" | "preview", DesktopProductIdentity>
 >;

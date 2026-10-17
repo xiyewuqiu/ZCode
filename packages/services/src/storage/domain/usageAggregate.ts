@@ -12,7 +12,7 @@ import {
   type StorageRootSpec,
   type StorageRootUsage,
   type StorageVolume,
-} from "@zcode/shared";
+} from "@ycode/shared";
 
 export interface StorageScanEntry {
   relativePath: string;

@@ -3,7 +3,7 @@ import {
   getProviderFormLabel,
   type ProviderSettingsFormProvider,
 } from "@/lib/providerSettingsFormTypes.js";
-import { useZCodeIntl } from "@/i18n/IntlProvider.js";
+import { useYCodeIntl } from "@/i18n/IntlProvider.js";
 import {
   sortModelProvidersForDisplay,
   type ProviderOrderView,
@@ -19,7 +19,7 @@ interface UseModelProviderNavigationOptions {
   displayOrder?: ProviderOrderView;
   selectedNodeKey: string | null;
   setSelectedNodeKey: (key: string | null) => void;
-  intl: ReturnType<typeof useZCodeIntl>["intl"];
+  intl: ReturnType<typeof useYCodeIntl>["intl"];
 }
 
 /** 设置页供应商导航：只展示用户自己配置的供应商，顺序与聊天框模型菜单一致。 */

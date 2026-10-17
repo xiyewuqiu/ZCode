@@ -1,12 +1,12 @@
 import {
   NodeModelSelectionConfigRepository,
   createNodeModelSelectionFacade,
-} from "@zcode/provider-node";
+} from "@ycode/provider-node";
 import {
   ProviderRegistryService,
   ProviderSettingsFacade,
   type ProviderSettingsMutationTarget,
-} from "@zcode/provider";
+} from "@ycode/provider";
 import {
   createProviderConfigRuntime,
   type ProviderConfigRuntime,
@@ -131,7 +131,7 @@ function createSettingsMutationTarget(
     refresh: (reason) => registryService.refresh(reason),
     refreshSources: async (reason) => {
       const sourceResults = await Promise.allSettled([
-        configRuntime.refreshZCodeBuiltin({ force: true }),
+        configRuntime.refreshYCodeBuiltin({ force: true }),
       ]);
       const snapshot = await registryService.refresh(reason);
       const failed = sourceResults.find(

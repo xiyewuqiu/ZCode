@@ -13,8 +13,8 @@ import type {
   GitCommitMessageConversationContext,
   GitIdentity,
   GitRepositorySummary,
-  ZCodeTaskChangeSummary,
-} from "@zcode/shared";
+  YCodeTaskChangeSummary,
+} from "@ycode/shared";
 import { cn } from "@/components/lib/utils.js";
 import { Button } from "@/components/ui/button.js";
 import { Command, CommandItem, CommandList, CommandShortcut } from "@/components/ui/command.js";
@@ -46,7 +46,7 @@ import {
   getCurrentSessionFilePaths,
 } from "@/git-action-menu/currentSessionFileScope.js";
 import { useServices } from "@/hooks/useServices.js";
-import { useZCodeIntl } from "@/i18n/IntlProvider.js";
+import { useYCodeIntl } from "@/i18n/IntlProvider.js";
 import { getErrorMessage } from "@/lib/errorMessage.js";
 import { formatCommandShortcutLabel, matchesPrimaryShortcut } from "@/lib/keyboardShortcuts.js";
 import { logger } from "@/logger.js";
@@ -65,7 +65,7 @@ interface GitActionMenuProps {
   workspacePath: string;
   workspaceIdentity?: string;
   gitSummary: GitRepositorySummary;
-  activeTaskChangeSummary?: ZCodeTaskChangeSummary | null;
+  activeTaskChangeSummary?: YCodeTaskChangeSummary | null;
   commitMessageConversationContext?: GitCommitMessageConversationContext | null;
   onRefreshGit: () => void;
   className?: string;
@@ -102,7 +102,7 @@ function isCommitMessageTextAreaTarget(target: EventTarget | null): target is HT
 interface GitCommitDialogState {
   summary: GitRepositorySummary;
   identity: GitIdentity | null;
-  activeTaskChangeSummary: ZCodeTaskChangeSummary | null;
+  activeTaskChangeSummary: YCodeTaskChangeSummary | null;
   stagedFiles: GitCommitPreviewFile[];
   unstagedFiles: GitCommitPreviewFile[];
 }
@@ -205,7 +205,7 @@ function GitCommitDialog({
   onSubmitAndPush,
   onPushOnly,
 }: GitCommitDialogProps) {
-  const { intl, locale } = useZCodeIntl();
+  const { intl, locale } = useYCodeIntl();
   const [selectedActionId, setSelectedActionId] = useState<CommitDialogActionId>("commit");
   const messageTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const messageInputFocusedOnOpenRef = useRef(false);
@@ -600,7 +600,7 @@ function GitPushDialog({
   onOpenChange,
   onSubmit,
 }: GitPushDialogProps) {
-  const { intl, locale } = useZCodeIntl();
+  const { intl, locale } = useYCodeIntl();
   const numberFormatter = new Intl.NumberFormat(locale);
   const [errorCopied, setErrorCopied] = useState(false);
   const descriptionId = gitSummary.trackingBranchName
@@ -830,7 +830,7 @@ export function GitActionMenu({
   triggerLayout = "header",
 }: GitActionMenuProps) {
   const { gitService } = useServices();
-  const { intl, locale } = useZCodeIntl();
+  const { intl, locale } = useYCodeIntl();
   const [commitDialogOpen, setCommitDialogOpen] = useState(false);
   const [commitDialogLoading, setCommitDialogLoading] = useState(false);
   const [commitDialogState, setCommitDialogState] = useState<GitCommitDialogState | null>(null);

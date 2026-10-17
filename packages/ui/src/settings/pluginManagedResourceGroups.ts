@@ -3,14 +3,14 @@ import type {
   McpServerStatus,
   SkillSummary,
   UserCommand,
-  ZCodeCommand,
-  ZCodeMcpServer,
-  ZCodeMcpServerStatusSnapshot,
-  ZCodePluginInfo,
-  ZCodePluginComponentKind,
-  ZCodePluginsDescribeResult,
-} from "@zcode/shared";
-import { isPluginCommand, isUserCommand, ZCODE_COMMAND_AGENT_SOURCE } from "@zcode/shared";
+  YCodeCommand,
+  YCodeMcpServer,
+  YCodeMcpServerStatusSnapshot,
+  YCodePluginInfo,
+  YCodePluginComponentKind,
+  YCodePluginsDescribeResult,
+} from "@ycode/shared";
+import { isPluginCommand, isUserCommand, YCODE_COMMAND_AGENT_SOURCE } from "@ycode/shared";
 import type { PluginComponentDisplayGroup } from "@/settings/PluginComponentGroups.js";
 
 interface ResourceGroups<TLocal, TPlugin> {
@@ -19,7 +19,7 @@ interface ResourceGroups<TLocal, TPlugin> {
 }
 
 /** 详情分组的展示顺序，与 describeResultToDisplayGroups / buildInstalledPluginDisplayGroups 一致。 */
-const COMPONENT_KIND_ORDER: ZCodePluginComponentKind[] = [
+const COMPONENT_KIND_ORDER: YCodePluginComponentKind[] = [
   "agent",
   "command",
   "skill",
@@ -32,9 +32,9 @@ const COMPONENT_KIND_ORDER: ZCodePluginComponentKind[] = [
  * 省略空分组。数量取 items.length（describe 已是权威枚举）。
  */
 export function describeResultToDisplayGroups(
-  result: ZCodePluginsDescribeResult,
+  result: YCodePluginsDescribeResult,
 ): PluginComponentDisplayGroup[] {
-  const byKind = new Map<ZCodePluginComponentKind, PluginComponentDisplayGroup>();
+  const byKind = new Map<YCodePluginComponentKind, PluginComponentDisplayGroup>();
   for (const group of result.components) {
     if (group.items.length === 0) continue;
     byKind.set(group.kind, {
@@ -61,9 +61,9 @@ export function describeResultToDisplayGroups(
  * 这里直接用它，彻底去掉脆弱的 join。
  */
 export function buildInstalledPluginDisplayGroups(
-  plugin: ZCodePluginInfo,
+  plugin: YCodePluginInfo,
 ): PluginComponentDisplayGroup[] {
-  const byKind = new Map<ZCodePluginComponentKind, PluginComponentDisplayGroup>();
+  const byKind = new Map<YCodePluginComponentKind, PluginComponentDisplayGroup>();
   for (const group of plugin.components ?? []) {
     if (group.items.length === 0) continue;
     byKind.set(group.kind, {
@@ -82,9 +82,9 @@ export function buildInstalledPluginDisplayGroups(
 
 export interface PluginMcpServerItem {
   active: boolean;
-  authorization?: ZCodeMcpServerStatusSnapshot["authorization"];
+  authorization?: YCodeMcpServerStatusSnapshot["authorization"];
   error?: string;
-  failureKind?: ZCodeMcpServerStatusSnapshot["failureKind"];
+  failureKind?: YCodeMcpServerStatusSnapshot["failureKind"];
   id: string;
   hostProvided?: boolean;
   name: string;
@@ -174,7 +174,7 @@ export function groupSkillsByPlugin(
 }
 
 export function groupCommandsByPlugin(
-  commands: ZCodeCommand[],
+  commands: YCodeCommand[],
   query: string,
 ): ResourceGroups<UserCommand, PluginCommand> {
   const local: UserCommand[] = [];
@@ -182,7 +182,7 @@ export function groupCommandsByPlugin(
   for (const command of commands) {
     if (
       isUserCommand(command) &&
-      command.agentSource === ZCODE_COMMAND_AGENT_SOURCE &&
+      command.agentSource === YCODE_COMMAND_AGENT_SOURCE &&
       normalizedQueryMatches(query, [command.name, command.description, command.prompt])
     ) {
       local.push(command);
@@ -203,9 +203,9 @@ export function groupCommandsByPlugin(
   return { local, plugin };
 }
 
-export function filterLocalMcpServers(servers: ZCodeMcpServer[], query: string): ZCodeMcpServer[] {
+export function filterLocalMcpServers(servers: YCodeMcpServer[], query: string): YCodeMcpServer[] {
   return servers.filter((server) => {
-    if (server.source !== "zcodeagentmcp") {
+    if (server.source !== "ycodeagentmcp") {
       return false;
     }
     return normalizedQueryMatches(query, [server.name, server.config.url, server.config.command]);
@@ -213,9 +213,9 @@ export function filterLocalMcpServers(servers: ZCodeMcpServer[], query: string):
 }
 
 export function buildPluginMcpServerItems(
-  plugins: ZCodePluginInfo[],
+  plugins: YCodePluginInfo[],
   query: string,
-  statusSnapshots: Record<string, ZCodeMcpServerStatusSnapshot> = {},
+  statusSnapshots: Record<string, YCodeMcpServerStatusSnapshot> = {},
 ): PluginMcpServerItem[] {
   return plugins.flatMap((plugin) => {
     const hostNames = new Set(plugin.hostMcpServerNames ?? []);
@@ -268,14 +268,14 @@ export function buildPluginMcpServerItems(
   });
 }
 
-function toPluginMcpServerDisplayName(plugin: ZCodePluginInfo, serverName: string): string {
+function toPluginMcpServerDisplayName(plugin: YCodePluginInfo, serverName: string): string {
   const namespacePrefix = `plugin:${plugin.name}:`;
   return serverName.startsWith(namespacePrefix)
     ? serverName.slice(namespacePrefix.length)
     : serverName;
 }
 
-function resolvePluginMcpRuntimeServerName(plugin: ZCodePluginInfo, displayName: string): string {
+function resolvePluginMcpRuntimeServerName(plugin: YCodePluginInfo, displayName: string): string {
   const activeName = plugin.mcpServerNames.find(
     (serverName) =>
       serverName === displayName ||
@@ -285,7 +285,7 @@ function resolvePluginMcpRuntimeServerName(plugin: ZCodePluginInfo, displayName:
 }
 
 function mapPluginRuntimeStatus(
-  snapshot: ZCodeMcpServerStatusSnapshot | undefined,
+  snapshot: YCodeMcpServerStatusSnapshot | undefined,
 ): Pick<
   PluginMcpServerItem,
   "authorization" | "error" | "failureKind" | "serverRequestId" | "status" | "toolCount"

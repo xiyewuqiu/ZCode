@@ -1,12 +1,12 @@
 import { useCallback, useState } from "react";
 import type { ProviderSettingsFormModel } from "@/lib/providerSettingsFormTypes.js";
-import type { ModelConfigResolution, ProviderConfigObject } from "@zcode/provider";
-import type { ModelConnectivityResult } from "@zcode/shared";
+import type { ModelConfigResolution, ProviderConfigObject } from "@ycode/provider";
+import type { ModelConnectivityResult } from "@ycode/shared";
 import { Loader2Icon, Trash2, Unplug } from "lucide-react";
 import { Button } from "@/components/ui/button.js";
 import { ModelInputCapabilityBadge } from "@/components/ModelInputCapabilityBadge.js";
 import { Switch } from "@/components/ui/switch.js";
-import { useZCodeIntl } from "@/i18n/IntlProvider.js";
+import { useYCodeIntl } from "@/i18n/IntlProvider.js";
 import { formatModelContextWindowLabel } from "@/lib/tokenNumberFormat.js";
 import { shouldShowModelVisionBadge } from "@/lib/modelVisionBadge.js";
 import { useProviderDetailFeedback } from "./ProviderDetailFeedback.js";
@@ -46,7 +46,7 @@ export function ProviderModelRow({
   onEnabledChange?: (enabled: boolean) => void;
   onTest?: (model: string) => Promise<ModelConnectivityResult>;
 }) {
-  const { intl, locale } = useZCodeIntl();
+  const { intl, locale } = useYCodeIntl();
   const { showFeedback } = useProviderDetailFeedback();
   const [isTesting, setIsTesting] = useState(false);
   const dialog = useModelEditorDialog({

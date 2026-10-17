@@ -3,7 +3,7 @@ import type {
   HookInvocationRow,
   TurnHeaderRow,
   UserInputRow,
-} from "@zcode/shared/zcode-protocol-v4";
+} from "@ycode/shared/ycode-protocol-v4";
 import type { AssistantWorkRow } from "@/v4/conversationTurnFlowItems.js";
 
 export interface DraftTurnRenderUnit {

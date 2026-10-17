@@ -3,20 +3,20 @@ import { createRoot } from "react-dom/client";
 import {
   AppErrorBoundary,
   Root,
-  ZCodeIntlProvider,
+  YCodeIntlProvider,
   generateMobileDeviceFingerprint,
   playTaskNotificationSound,
   setStreamClientId,
   type Theme,
-} from "@zcode/ui";
-import "@zcode/ui/styles.css";
-import { connectViaWebSocket } from "@zcode/client";
+} from "@ycode/ui";
+import "@ycode/ui/styles.css";
+import { connectViaWebSocket } from "@ycode/client";
 import { resolveWebCommunityUrl, resolveWebHelpConfig } from "./communityUrl.js";
-import type { IPlatformService, RemoteTarget, ServerRemoteInfo } from "@zcode/shared";
+import type { IPlatformService, RemoteTarget, ServerRemoteInfo } from "@ycode/shared";
 import { WEB_DEFAULT_THEME, resolveWebInitialTheme } from "./webThemeSeed.js";
 
 function resolveWebThemePreference(defaultTheme: Theme = WEB_DEFAULT_THEME): Theme {
-  const saved = localStorage.getItem("zcode-theme");
+  const saved = localStorage.getItem("ycode-theme");
   return resolveWebInitialTheme({ storedTheme: saved, defaultTheme });
 }
 
@@ -66,7 +66,6 @@ interface WebBootstrapResult {
   restoreSession?: boolean;
   allowOpenWorkspace?: boolean;
 }
-
 
 function createWebPlatform(): IPlatformService {
   return {
@@ -290,14 +289,13 @@ function WebBootstrapErrorScreen({ message }: { message: string }) {
 }
 
 function renderWebBootstrapError(error: unknown): void {
-  document.title = "ZCode - Web";
+  document.title = "YCode - Web";
   root.render(
     <WebBootstrapErrorScreen message={error instanceof Error ? error.message : String(error)} />,
   );
 }
 
 async function bootstrapWebApp() {
-
   let bootstrap: WebBootstrapResult;
   try {
     bootstrap = await resolveWebBootstrap();
@@ -311,11 +309,11 @@ async function bootstrapWebApp() {
       onClose: () => {},
     });
     const platform = createWebPlatform();
-    document.title = "ZCode - Web + Server";
+    document.title = "YCode - Web + Server";
 
     root.render(
       <AppErrorBoundary>
-        <ZCodeIntlProvider
+        <YCodeIntlProvider
           settingService={services.settingService}
           broadcastService={services.broadcastService}
         >
@@ -331,7 +329,7 @@ async function bootstrapWebApp() {
             supportsEmbeddedBrowser={false}
             allowRemoteWorkspace={false}
           />
-        </ZCodeIntlProvider>
+        </YCodeIntlProvider>
       </AppErrorBoundary>,
     );
   } catch (error) {

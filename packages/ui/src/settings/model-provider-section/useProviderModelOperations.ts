@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useRef } from "react";
-import type { SavePersonalModelDraftInput } from "@zcode/provider";
+import type { SavePersonalModelDraftInput } from "@ycode/provider";
 import type {
   ProviderSettingsFormModel,
   ProviderSettingsFormProvider,

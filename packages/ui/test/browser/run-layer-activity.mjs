@@ -3,7 +3,7 @@ import { chromium } from "playwright-core";
 
 // 需要 `vite --config packages/ui/test/browser/vite.config.mjs` 已在 5199 端口运行。
 const browser = await chromium.launch({
-  channel: process.env.ZCODE_TEST_BROWSER_CHANNEL ?? "msedge",
+  channel: process.env.YCODE_TEST_BROWSER_CHANNEL ?? "msedge",
   headless: true,
 });
 try {

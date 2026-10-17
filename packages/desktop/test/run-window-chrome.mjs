@@ -9,7 +9,7 @@ import { build } from "tsup";
 
 assert.equal(process.platform, "win32", "Native window smoke requires Windows");
 const root = fileURLToPath(new URL("../../../", import.meta.url));
-const output = join(root, "node_modules/.cache/zcode-window-smoke");
+const output = join(root, "node_modules/.cache/ycode-window-smoke");
 const hostSmoke = process.argv.includes("--host");
 const testName = hostSmoke ? "hostStartup" : "windowChrome";
 await build({
@@ -22,7 +22,7 @@ await build({
   format: [hostSmoke ? "esm" : "cjs"],
   target: "node24",
   external: ["electron", "node-pty", "ssh2", "undici", "yaml", "node-forge", "yauzl", "yazl"],
-  noExternal: [/^@zcode\//],
+  noExternal: [/^@ycode\//],
   dts: false,
   config: false,
 });
@@ -38,18 +38,18 @@ if (hostSmoke)
     config: false,
     dts: false,
     external: ["electron", "node-pty", "ssh2", "undici", "yaml", "node-forge", "yauzl", "yazl"],
-    noExternal: [/^@zcode\//],
+    noExternal: [/^@ycode\//],
   });
 const tempRoot = await realpath(tmpdir());
-const profile = await mkdtemp(join(tempRoot, "zcode-window-smoke-"));
+const profile = await mkdtemp(join(tempRoot, "ycode-window-smoke-"));
 try {
   const environment = {
     ...process.env,
-    ZCODE_WINDOW_SMOKE_PROFILE: profile,
-    ZCODE_WINDOW_SMOKE_ICON: join(root, "packages/desktop/build/icon.ico"),
-    ZCODE_DATA_BASE_DIR: profile,
-    ZCODE_BASE_URL: "http://127.0.0.1:9",
-    ZCODE_DESKTOP_APPLICATION_NAME: "ZCode isolated smoke",
+    YCODE_WINDOW_SMOKE_PROFILE: profile,
+    YCODE_WINDOW_SMOKE_ICON: join(root, "packages/desktop/build/icon.ico"),
+    YCODE_DATA_BASE_DIR: profile,
+    YCODE_BASE_URL: "http://127.0.0.1:9",
+    YCODE_DESKTOP_APPLICATION_NAME: "YCode isolated smoke",
   };
   delete environment.ELECTRON_RUN_AS_NODE;
   const code = await new Promise((resolveExit, reject) => {
@@ -83,6 +83,6 @@ try {
   // 只删除本次创建的临时 profile；Electron 退出后再清理，避免锁文件残留。
   const target = await realpath(profile);
   assert.equal(dirname(target).toLowerCase(), resolve(tempRoot).toLowerCase());
-  assert.ok(basename(target).startsWith("zcode-window-smoke-"));
+  assert.ok(basename(target).startsWith("ycode-window-smoke-"));
   await rm(target, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
 }

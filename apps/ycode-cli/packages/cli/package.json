@@ -1,0 +1,40 @@
+{
+  "name": "@ycode/cli",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Main CLI application for ycode",
+  "bin": {
+    "ycode": "./dist/ycode.cjs"
+  },
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "main": "./dist/ycode.cjs",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "build:desktop-agent": "node scripts/build.mjs --desktop-agent",
+    "build:sea": "pnpm --dir ../../../.. exec turbo --skip-infer --cwd apps/ycode-cli run build --filter=!@ycode/cli --force && pnpm build && node scripts/build-sea.mjs --all",
+    "sea": "node scripts/build-sea.mjs",
+    "upload:sea": "node scripts/upload-sea-smb.mjs",
+    "clean": "node ../../scripts/clean-dist.mjs",
+    "dev": "tsx src/main.ts",
+    "typecheck": "tsc --noEmit",
+    "lint": "oxlint src",
+    "lint:fix": "oxlint --write src"
+  },
+  "dependencies": {
+    "@ycode/adapters": "workspace:*",
+    "@ycode/bootstrap": "workspace:*",
+    "@ycode/contracts": "workspace:*",
+    "@ycode/core": "workspace:*",
+    "@ycode/dynamic-workflow-runtime": "workspace:*",
+    "@ycode/i18n": "workspace:*",
+    "@ycode/provider-node": "workspace:*",
+    "@ycode/shared": "workspace:*",
+    "@ycode/shared-types": "workspace:*",
+    "@ycode/tui": "workspace:*",
+    "dotenv": "^17.4.2",
+    "playwright-core": "1.59.1"
+  }
+}

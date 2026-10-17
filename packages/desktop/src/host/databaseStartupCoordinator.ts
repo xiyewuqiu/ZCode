@@ -7,7 +7,7 @@ import {
   type DatabaseStartupState,
   type DatabaseMigrationFacts,
   type StartupDiskSummary,
-} from "@zcode/shared";
+} from "@ycode/shared";
 
 type Report = (
   phase: DatabaseStartupState["phase"],

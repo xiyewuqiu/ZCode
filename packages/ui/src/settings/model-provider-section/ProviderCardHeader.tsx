@@ -4,7 +4,7 @@ import {
   type ReactNode,
   type RefObject,
 } from "react";
-import { TID_MODEL_PROVIDER_NAME_EDIT_BUTTON, TID_MODEL_PROVIDER_NAME_INPUT } from "@zcode/shared";
+import { TID_MODEL_PROVIDER_NAME_EDIT_BUTTON, TID_MODEL_PROVIDER_NAME_INPUT } from "@ycode/shared";
 import { MoreHorizontal, Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button.js";
 import { Input } from "@/components/ui/input.js";
@@ -15,9 +15,9 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu.js";
-import { useZCodeIntl } from "@/i18n/IntlProvider.js";
+import { useYCodeIntl } from "@/i18n/IntlProvider.js";
 import { TECHNICAL_INPUT_ATTRIBUTES } from "@/lib/technicalInputAttributes.js";
-import type { ProviderConfigObject } from "@zcode/provider";
+import type { ProviderConfigObject } from "@ycode/provider";
 import { ProviderLogo } from "./ProviderLogo.js";
 
 /** 供应商卡片标题栏：Logo、就地重命名与供应商级操作菜单。 */
@@ -50,7 +50,7 @@ export function ProviderCardHeader({
   onDelete?: () => void;
   providerToggle?: ReactNode;
 }) {
-  const { intl } = useZCodeIntl();
+  const { intl } = useYCodeIntl();
   const renameRequestedRef = useRef(false);
 
   return (

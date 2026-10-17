@@ -1,8 +1,8 @@
 import { lazy, Suspense, useMemo } from "react";
-import type { FileBinaryPreview } from "@zcode/shared";
+import type { FileBinaryPreview } from "@ycode/shared";
 import { CodeBlock } from "@/components/ai-elements/code-block.js";
 import { MessageResponse } from "@/components/ai-elements/message.js";
-import { useZCodeIntl } from "@/i18n/IntlProvider.js";
+import { useYCodeIntl } from "@/i18n/IntlProvider.js";
 import {
   buildPresetLabels,
   isArtifactPresetKind,
@@ -88,7 +88,7 @@ interface WorkflowArtifactBodyProps {
 }
 
 export function WorkflowArtifactBody(props: WorkflowArtifactBodyProps) {
-  const { intl } = useZCodeIntl();
+  const { intl } = useYCodeIntl();
   const { artifact } = props;
 
   // 预置看板不读字节，直接画。
@@ -157,7 +157,7 @@ function WorkflowArtifactContent({
   localSourcePath,
   isLatestVersion,
 }: WorkflowArtifactBodyProps & { bytes: Uint8Array<ArrayBuffer> }) {
-  const { intl } = useZCodeIntl();
+  const { intl } = useYCodeIntl();
   const pdfLabels = usePdfViewerLabels();
   const pptxLabels = usePptxViewerLabels();
   const contentType = artifact.contentType ?? "application/octet-stream";

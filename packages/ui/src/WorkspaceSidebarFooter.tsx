@@ -1,12 +1,12 @@
 /* oxlint-disable eslint(max-lines) -- footer 聚合偏好设置、主题、模式和快捷键菜单。 */
-import type { Locale } from "@zcode/shared";
+import type { Locale } from "@ycode/shared";
 import { memo, useCallback, useEffect, useState } from "react";
 import {
   DesktopCommandIds,
   TID_SIDEBAR_CODING_PLAN_USAGE_BUTTON,
   TID_SIDEBAR_SETTINGS_MENU_TRIGGER,
   TID_TASK_SETTINGS_BUTTON,
-} from "@zcode/shared";
+} from "@ycode/shared";
 import { ControlHintTooltip } from "@/ControlHintTooltip.js";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar.js";
 import { cn } from "@/components/lib/utils.js";
@@ -34,9 +34,9 @@ import {
   ZoomOut,
 } from "lucide-react";
 import { usePlatform } from "@/hooks/usePlatform.js";
-import { useZCodeIntl } from "@/i18n/IntlProvider.js";
+import { useYCodeIntl } from "@/i18n/IntlProvider.js";
 import { useShortcutCommandLabel } from "@/shortcuts/useShortcutBindings.js";
-import { useZCodeStore } from "@/store/StoreProvider.js";
+import { useYCodeStore } from "@/store/StoreProvider.js";
 import { normalizeInterfaceMode } from "@/lib/interfaceMode.js";
 import { setPendingSettingsUsageIntent } from "@/lib/settingsNavigation.js";
 import type { Theme } from "@/useTheme.js";
@@ -65,10 +65,10 @@ export const WorkspaceSidebarFooter = memo(function WorkspaceSidebarFooterCompon
   isDesktop?: boolean;
   className?: string;
 }) {
-  const { intl } = useZCodeIntl();
+  const { intl } = useYCodeIntl();
   const platform = usePlatform();
-  const interfaceMode = useZCodeStore((state) => state.interfaceMode);
-  const setInterfaceMode = useZCodeStore((state) => state.setInterfaceMode);
+  const interfaceMode = useYCodeStore((state) => state.interfaceMode);
+  const setInterfaceMode = useYCodeStore((state) => state.setInterfaceMode);
   const zoomInShortcutLabel = useShortcutCommandLabel("zoomIn");
   const zoomOutShortcutLabel = useShortcutCommandLabel("zoomOut");
   const resetZoomShortcutLabel = useShortcutCommandLabel("resetZoom");

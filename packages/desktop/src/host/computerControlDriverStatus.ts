@@ -17,7 +17,7 @@ import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join, resolve as resolvePath } from "node:path";
 
-import type { ComputerControlDriverStatus } from "@zcode/services";
+import type { ComputerControlDriverStatus } from "@ycode/services";
 
 /** 与 packages/desktop/bundled-tools/<platformKey> 的 key 口径一致（`<platform>-<arch>`）。 */
 const PLATFORM_KEY = `${process.platform}-${process.arch}`;

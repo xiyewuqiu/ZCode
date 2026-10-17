@@ -10,7 +10,7 @@ import {
   getProviderFormLabel,
   type ProviderSettingsFormProvider,
 } from "@/lib/providerSettingsFormTypes.js";
-import type { ProviderApiType } from "@zcode/provider";
+import type { ProviderApiType } from "@ycode/provider";
 import { logger } from "@/logger.js";
 import { isImeComposingKeyEvent } from "@/lib/imeComposition.js";
 import { resolvePendingProviderDraftSave, type ProviderDraftValues } from "./ProviderDraftSave.js";

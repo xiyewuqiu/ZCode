@@ -7,10 +7,10 @@ import {
   TID_V4_TURN_NAVIGATOR_ITEM,
   TID_V4_TURN_NAVIGATOR_TOOLTIP,
   testId,
-} from "@zcode/shared";
+} from "@ycode/shared";
 import { cn } from "@/components/lib/utils.js";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card.js";
-import { useZCodeIntl } from "@/i18n/IntlProvider.js";
+import { useYCodeIntl } from "@/i18n/IntlProvider.js";
 import {
   createConversationTurnNavigatorProjector,
   resolveConversationTurnNavigatorActiveUnitIndex,
@@ -48,7 +48,7 @@ function ConversationTurnNavigatorImpl({
   onLoadAllOlder,
   onJumpToQuery,
 }: ConversationTurnNavigatorProps) {
-  const { intl } = useZCodeIntl();
+  const { intl } = useYCodeIntl();
   const prefersReducedMotion = usePrefersReducedMotion();
   const [interactionItemIndex, setInteractionItemIndex] = useState<number | undefined>(undefined);
   const [projectNavigatorItems] = useState(createConversationTurnNavigatorProjector);

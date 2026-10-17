@@ -1,11 +1,11 @@
-import type { ZCodeSessionEndedSubagent, ZCodeSessionSubagentsResult } from "@zcode/shared";
+import type { YCodeSessionEndedSubagent, YCodeSessionSubagentsResult } from "@ycode/shared";
 
 const PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 100;
 
 interface SessionSubagentsViewState {
   revision: number;
-  ended: ZCodeSessionSubagentsResult["ended"];
+  ended: YCodeSessionSubagentsResult["ended"];
   error: string | null;
   loading: boolean;
 }
@@ -17,7 +17,7 @@ const emptyState = (): SessionSubagentsViewState => ({
   loading: false,
 });
 
-function sameItem(a: ZCodeSessionEndedSubagent, b: ZCodeSessionEndedSubagent): boolean {
+function sameItem(a: YCodeSessionEndedSubagent, b: YCodeSessionEndedSubagent): boolean {
   return (
     a.childSessionId === b.childSessionId &&
     a.agentId === b.agentId &&
@@ -44,7 +44,7 @@ export class SessionSubagentsQuery {
     private readonly requestPage: (
       limit: number,
       cursor?: string,
-    ) => Promise<ZCodeSessionSubagentsResult>,
+    ) => Promise<YCodeSessionSubagentsResult>,
     private readonly onError?: (message: string) => void,
   ) {}
 
@@ -123,7 +123,7 @@ export class SessionSubagentsQuery {
     let cursor = kind === "more" ? previous.nextCursor : undefined;
     let target = Math.max(PAGE_SIZE, previous.items.length);
     let first = true;
-    let response: ZCodeSessionSubagentsResult;
+    let response: YCodeSessionSubagentsResult;
     do {
       if (cursor) {
         if (cursors.has(cursor)) throw new Error("subagent_directory_repeated_cursor");

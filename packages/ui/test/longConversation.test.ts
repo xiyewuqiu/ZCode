@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { ConversationRow, ToolCallRow } from "@zcode/shared/zcode-protocol-v4";
+import type { ConversationRow, ToolCallRow } from "@ycode/shared/ycode-protocol-v4";
 import {
   buildConversationTurnRenderUnits,
   createConversationTurnRenderer,
@@ -8,7 +8,6 @@ import {
 import { buildConversationFindIndex } from "../src/v4/conversationFindIndex.js";
 import { toolCallRowToLegacyNode } from "../src/v4/toolCallRowAdapter.js";
 import { buildConversationTurnNavigatorItems } from "../src/v4/conversationTurnNavigatorHelpers.js";
-
 
 function turn(id: number, running = false): ConversationRow[] {
   const base = { turnId: `turn-${id}`, createdAt: id, createdAtSeq: id };

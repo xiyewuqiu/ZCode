@@ -9,7 +9,7 @@ const scripts = await Promise.all(
   ),
 );
 const browser = await chromium.launch({
-  channel: process.env.ZCODE_TEST_BROWSER_CHANNEL ?? "msedge",
+  channel: process.env.YCODE_TEST_BROWSER_CHANNEL ?? "msedge",
   headless: true,
 });
 const artifacts = new URL("../../../../.tmp/desktop-iteration/", import.meta.url);

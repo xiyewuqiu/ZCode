@@ -1,14 +1,14 @@
 import { create } from "zustand";
 import type {
-  ZCodeAvailablePluginSummary,
-  ZCodeInstalledPluginSummary,
-  ZCodePluginDiagnostic,
-  ZCodePluginInfo,
-  ZCodePluginMarketplaceSummary,
-  ZCodePluginScope,
-  ZCodePluginsDescribeResult,
-} from "@zcode/shared";
-import type { IPluginManagementService } from "@zcode/services";
+  YCodeAvailablePluginSummary,
+  YCodeInstalledPluginSummary,
+  YCodePluginDiagnostic,
+  YCodePluginInfo,
+  YCodePluginMarketplaceSummary,
+  YCodePluginScope,
+  YCodePluginsDescribeResult,
+} from "@ycode/shared";
+import type { IPluginManagementService } from "@ycode/services";
 import { logger } from "@/logger.js";
 import { loadInto, runWorkspaceOperation } from "@/store/pluginManagementStoreLoading.js";
 import { setPluginEnabledOptimistically } from "@/store/pluginManagementStoreEnabled.js";
@@ -16,25 +16,25 @@ import { setPluginEnabledOptimistically } from "@/store/pluginManagementStoreEna
 // 市场详情按需拉取的组件清单缓存：按 pluginId 记 loading/data/error，避免重复请求与切换闪烁。
 export interface PluginDescribeEntry {
   status: "loading" | "loaded" | "error";
-  data?: ZCodePluginsDescribeResult;
+  data?: YCodePluginsDescribeResult;
   error?: string;
 }
 
-// 设置页「插件管理」的数据源: 经 IPluginManagementService 薄服务由 zcode-cli 提供 (list + enable/disable)。
-// UI 不再直触 IZCodeAgentService，plugins/* 旧协议词的消费收拢到服务实现一处。
+// 设置页「插件管理」的数据源: 经 IPluginManagementService 薄服务由 ycode-cli 提供 (list + enable/disable)。
+// UI 不再直触 IYCodeAgentService，plugins/* 旧协议词的消费收拢到服务实现一处。
 // 与已 retired 的 marketplace pluginStore 无关, 故单独建一个精简 store。
 export interface PluginManagementState {
   workspacePath: string | null;
   workspaceIdentity: string | null;
-  configScope: ZCodePluginScope | null;
-  plugins: ZCodePluginInfo[];
-  marketplaces: ZCodePluginMarketplaceSummary[];
+  configScope: YCodePluginScope | null;
+  plugins: YCodePluginInfo[];
+  marketplaces: YCodePluginMarketplaceSummary[];
   /** 最近一次 overview 是否成功；false 表示来源存在性未知，不能推导孤立状态。 */
   marketplaceAvailabilityKnown: boolean;
-  availablePlugins: ZCodeAvailablePluginSummary[];
-  installedPlugins: ZCodeInstalledPluginSummary[];
-  restorableBuiltins: ZCodeAvailablePluginSummary[];
-  diagnostics: ZCodePluginDiagnostic[];
+  availablePlugins: YCodeAvailablePluginSummary[];
+  installedPlugins: YCodeInstalledPluginSummary[];
+  restorableBuiltins: YCodeAvailablePluginSummary[];
+  diagnostics: YCodePluginDiagnostic[];
   loading: boolean;
   error: string | null;
   /**
@@ -51,7 +51,7 @@ export interface PluginManagementState {
   initialize: (params: {
     workspacePath: string;
     workspaceIdentity?: string;
-    configScope?: ZCodePluginScope;
+    configScope?: YCodePluginScope;
     pluginService: IPluginManagementService;
   }) => Promise<void>;
   refresh: (pluginService: IPluginManagementService) => Promise<void>;
@@ -68,7 +68,7 @@ export interface PluginManagementState {
     pluginName: string,
     marketplace: string,
     pluginService: IPluginManagementService,
-    scope?: ZCodePluginScope,
+    scope?: YCodePluginScope,
   ) => Promise<void>;
   uninstallPlugin: (
     pluginId: string,
@@ -81,20 +81,20 @@ export interface PluginManagementState {
     pluginId: string,
     options: Record<string, string | number | boolean>,
     pluginService: IPluginManagementService,
-    scope?: ZCodePluginScope,
+    scope?: YCodePluginScope,
     clearOptionKeys?: string[],
   ) => Promise<boolean>;
   resetPluginConfig: (
     pluginId: string,
     pluginService: IPluginManagementService,
-    scope?: ZCodePluginScope,
+    scope?: YCodePluginScope,
   ) => Promise<boolean>;
   validateSource: (source: string, pluginService: IPluginManagementService) => Promise<void>;
   setEnabled: (
     pluginId: string,
     enabled: boolean,
     pluginService: IPluginManagementService,
-    scope?: ZCodePluginScope,
+    scope?: YCodePluginScope,
   ) => Promise<boolean>;
   // 按需拉取插件组件清单（名称+描述）；force 跳过缓存重试。
   describePlugin: (
@@ -110,7 +110,7 @@ function toMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function throwForErrorDiagnostic(diagnostics: ZCodePluginDiagnostic[]): void {
+function throwForErrorDiagnostic(diagnostics: YCodePluginDiagnostic[]): void {
   const blockingDiagnostic = diagnostics.find((diagnostic) => diagnostic.severity === "error");
   if (blockingDiagnostic) {
     throw new Error(blockingDiagnostic.message);

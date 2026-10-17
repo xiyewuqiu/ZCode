@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState } from "react";
-import type { ModelConfigObject, ModelConfigResolution } from "@zcode/provider";
+import type { ModelConfigObject, ModelConfigResolution } from "@ycode/provider";
 import type { ProviderSettingsFormModel } from "@/lib/providerSettingsFormTypes.js";
-import { useZCodeIntl } from "@/i18n/IntlProvider.js";
+import { useYCodeIntl } from "@/i18n/IntlProvider.js";
 import type { ProviderModelDraftErrorField } from "./modelDraft.js";
 import { useProviderModelDraft } from "./useProviderModelDraft.js";
 
@@ -29,7 +29,7 @@ export function useModelEditorDialog({
   settingsRevision?: number;
   onCommitModel: (model: ProviderSettingsFormModel, basedOnRevision: number) => Promise<void>;
 }) {
-  const { intl } = useZCodeIntl();
+  const { intl } = useYCodeIntl();
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);

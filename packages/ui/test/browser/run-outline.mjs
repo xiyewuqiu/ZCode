@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
 
 const browser = await chromium.launch({
-  channel: process.env.ZCODE_TEST_BROWSER_CHANNEL ?? "msedge",
+  channel: process.env.YCODE_TEST_BROWSER_CHANNEL ?? "msedge",
   headless: true,
 });
 const artifacts = new URL("../../../../.tmp/conversation-outline/", import.meta.url);

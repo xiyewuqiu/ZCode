@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
-import type { ConversationRow } from "@zcode/shared/zcode-protocol-v4";
+import type { ConversationRow } from "@ycode/shared/ycode-protocol-v4";
 import { ConversationTimeline } from "../../src/v4/ConversationTimeline.js";
-import { ZCodeIntlProvider } from "../../src/i18n/IntlProvider.js";
+import { YCodeIntlProvider } from "../../src/i18n/IntlProvider.js";
 import { TooltipProvider } from "../../src/components/ui/tooltip.js";
 import type { ConversationRowRenderContext } from "../../src/v4/conversationRowContext.js";
 import { DEFAULT_CODE_PREVIEW_SETTINGS } from "../../src/lib/codePreviewSettings.js";
@@ -165,11 +165,11 @@ function Fixture() {
 
 const root = createRoot(document.getElementById("root")!);
 root.render(
-  <ZCodeIntlProvider initialLocale="en-US">
+  <YCodeIntlProvider initialLocale="en-US">
     <TooltipProvider>
       <Fixture />
     </TooltipProvider>
-  </ZCodeIntlProvider>,
+  </YCodeIntlProvider>,
 );
 
 // 测试入口会被 Vite 热替换；销毁旧 root，避免旧计时器和测量 observer 与新页面并存。

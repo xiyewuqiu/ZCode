@@ -7,14 +7,14 @@ import {
   classifyDatabaseStartupError,
   databaseMigrationFactsSchema,
   type DatabaseMigrationFacts,
-  zcodeStoragePreparationFrameSchema,
+  ycodeStoragePreparationFrameSchema,
   type DatabaseStartupState,
-} from "@zcode/shared";
+} from "@ycode/shared";
 
 import {
   prepareTasksIndexStorage,
-  resolveDefaultZCodeAgentCommand,
-} from "@zcode/services/storage-startup";
+  resolveDefaultYCodeAgentCommand,
+} from "@ycode/services/storage-startup";
 
 type Phase = NonNullable<DatabaseStartupState["databasePhase"]>;
 const statusError = (
@@ -78,7 +78,7 @@ export async function prepareSessionStorage(options: {
   preparedPaths?: Set<string>;
   observePath: (path: string) => Promise<void>;
 }): Promise<void> {
-  const command = resolveDefaultZCodeAgentCommand({
+  const command = resolveDefaultYCodeAgentCommand({
     workspacePath: options.cwd,
     workspaceKey: options.cwd,
     presentationSurface: "desktop",
@@ -122,7 +122,7 @@ export async function prepareSessionStorage(options: {
     lines.on("line", (line) => {
       try {
         if (line.length > 65536) throw statusError("transport_closed");
-        const frame = zcodeStoragePreparationFrameSchema.parse(JSON.parse(line));
+        const frame = ycodeStoragePreparationFrameSchema.parse(JSON.parse(line));
         clearTimeout(firstStateTimer);
         if (frame.method === "startup/storagePath") {
           if (pathReceived) throw statusError("transport_closed");

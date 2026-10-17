@@ -4,25 +4,26 @@ on:
   workflow_dispatch:
     inputs:
       release:
-        description: 'Publish to GitHub Releases'
+        description: "Publish to GitHub Releases"
         required: false
         type: boolean
         default: false
       prerelease:
-        description: 'Mark as Pre-release'
+        description: "Mark as Pre-release"
         required: false
         type: boolean
         default: false
   push:
     tags:
-      - 'v*'
+      - "v*"
   pull_request:
     paths:
-      - 'packages/desktop/**'
-      - 'packages/services/**'
-      - 'packages/shared/**'
-      - 'packages/ui/**'
-      - 'pnpm-lock.yaml'
+      - "apps/ycode-cli/**"
+      - "config/**"
+      - "packages/**"
+      - "scripts/**"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -49,7 +50,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 24
-          cache: 'pnpm'
+          cache: "pnpm"
 
       - name: Cache Electron binaries (Windows)
         uses: actions/cache@v4
@@ -74,7 +75,7 @@ jobs:
       - name: Build shared packages
         run: pnpm build:bootstrap
         env:
-          ZCODE_SKIP_REMOTE_ASSETS: '1'
+          YCODE_SKIP_REMOTE_ASSETS: "1"
 
       - name: Install Rust toolchain (cua-driver)
         uses: actions-rust-lang/setup-rust-toolchain@v1
@@ -103,14 +104,14 @@ jobs:
         # cfg 门控/FFI 面的 dead_code，默认 warning 即可，不应升级为 error）。
         run: pnpm build:cua-driver
         env:
-          RUSTFLAGS: ''
+          RUSTFLAGS: ""
 
       - name: Bundle Desktop App (Windows x64)
-        run: pnpm --filter @zcode/desktop run bundle -- --os win --arch x64
+        run: pnpm --filter @ycode/desktop run bundle -- --os win --arch x64
         env:
-          CI: 'true'
-          ZCODE_SKIP_REMOTE_ASSETS: '1'
-          ELECTRON_BUILDER_ALLOW_UNRESOLVED_DEPENDENCIES: 'true'
+          CI: "true"
+          YCODE_SKIP_REMOTE_ASSETS: "1"
+          ELECTRON_BUILDER_ALLOW_UNRESOLVED_DEPENDENCIES: "true"
 
       - name: Upload Windows Build Artifacts
         uses: actions/upload-artifact@v4

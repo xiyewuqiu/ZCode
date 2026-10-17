@@ -7,7 +7,7 @@ import { DatabaseSync } from "node:sqlite";
 import { TaskIndexRepo } from "../src/session/taskIndexRepo.js";
 
 test("permanent deletion clears search and metadata; late sync cannot refill; pending cleanup remains retryable", async () => {
-  const root = await mkdtemp(join(tmpdir(), "zcode-index-purge-"));
+  const root = await mkdtemp(join(tmpdir(), "ycode-index-purge-"));
   const path = join(root, "tasks.sqlite"),
     repo = new TaskIndexRepo(path);
   const target = { taskId: "one", workspacePath: "/workspace/example" };

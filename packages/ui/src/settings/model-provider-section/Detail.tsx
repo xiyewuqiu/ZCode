@@ -1,12 +1,12 @@
-import type { ModelConnectivityResult } from "@zcode/shared";
-import type { SavePersonalModelDraftInput } from "@zcode/provider";
-import type { ProviderSettingsView } from "@zcode/services";
+import type { ModelConnectivityResult } from "@ycode/shared";
+import type { SavePersonalModelDraftInput } from "@ycode/provider";
+import type { ProviderSettingsView } from "@ycode/services";
 import { Loader2Icon } from "lucide-react";
 import {
   getProviderFormApiKeyManagementUrl,
   type ProviderSettingsFormProvider,
 } from "@/lib/providerSettingsFormTypes.js";
-import { useZCodeIntl } from "@/i18n/IntlProvider.js";
+import { useYCodeIntl } from "@/i18n/IntlProvider.js";
 import { useProviderSettingsView } from "@/hooks/useProviderSettingsView.js";
 import type { ModelProviderNavItem } from "./constants.js";
 import { InlineEditableProviderCard } from "./InlineEditableProviderCard.js";
@@ -55,7 +55,7 @@ export function ModelProviderSectionDetail({
   onTestModel: (providerId: string, modelId: string) => Promise<ModelConnectivityResult>;
   providerSettingsView?: ProviderSettingsView | null;
 }) {
-  const { intl } = useZCodeIntl();
+  const { intl } = useYCodeIntl();
   const loadingLabel = intl.formatMessage({ id: "common.loading" });
   const rootProviderSettingsRead = useProviderSettingsView();
   const rootProviderSettingsView =

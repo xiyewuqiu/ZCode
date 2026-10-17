@@ -1,4 +1,4 @@
-import type { TurnHeaderRow, WorkflowNotificationMeta } from "@zcode/shared/zcode-protocol-v4";
+import type { TurnHeaderRow, WorkflowNotificationMeta } from "@ycode/shared/ycode-protocol-v4";
 import type { WorkflowRunCardSummary } from "@/ToolCallBlocks/fileSummaryTypes.js";
 
 /**

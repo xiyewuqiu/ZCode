@@ -5,7 +5,7 @@ import {
   InternalChannels,
   databaseStartupControlSchema,
   type DatabaseStartupState,
-} from "@zcode/shared";
+} from "@ycode/shared";
 
 let localStorageReady = false;
 let quit: (() => void) | undefined;

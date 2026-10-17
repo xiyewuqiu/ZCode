@@ -1,15 +1,15 @@
 import { createRoot } from "react-dom/client";
-import type { ResourceUsageSnapshot, StorageManagementBridge } from "@zcode/shared";
-import "@zcode/ui/styles.css";
-// ResourceManagerApp 已从 @zcode/ui barrel 移除：barrel 静态 re-export 会把资源管理器
+import type { ResourceUsageSnapshot, StorageManagementBridge } from "@ycode/shared";
+import "@ycode/ui/styles.css";
+// ResourceManagerApp 已从 @ycode/ui barrel 移除：barrel 静态 re-export 会把资源管理器
 // 的组件图拖进主窗口首屏闭包。独立窗口改为子路径直接导入。
-import { ResourceManagerApp } from "@zcode/ui/resource-manager";
+import { ResourceManagerApp } from "@ycode/ui/resource-manager";
 import {
-  ZCodeIntlProvider,
+  YCodeIntlProvider,
   applyUiFontSizePx,
   loadUiFontSizePx,
   subscribeToUiFontSizeStorageChanges,
-} from "@zcode/ui";
+} from "@ycode/ui";
 
 declare global {
   interface Window {
@@ -31,7 +31,7 @@ function resolveTheme(theme: Theme): "light" | "dark" {
 }
 
 function applyResourceManagerTheme(): void {
-  const savedTheme = (localStorage.getItem("zcode-theme") as Theme | null) ?? "zai-dark";
+  const savedTheme = (localStorage.getItem("ycode-theme") as Theme | null) ?? "zai-dark";
   const resolvedTheme = resolveTheme(savedTheme);
   const appliedTheme =
     savedTheme === "system"
@@ -58,7 +58,7 @@ const root = document.getElementById("root");
 if (root) {
   createRoot(root).render(
     // 语言沿用主窗口写入 localStorage 的偏好；不接 settingService，避免独立窗口再起一份 RPC。
-    <ZCodeIntlProvider>
+    <YCodeIntlProvider>
       <ResourceManagerApp
         setSamplingActive={window.resourceManager?.setSamplingActive}
         getSnapshot={
@@ -66,6 +66,6 @@ if (root) {
         }
         storage={window.resourceManager?.storage}
       />
-    </ZCodeIntlProvider>,
+    </YCodeIntlProvider>,
   );
 }

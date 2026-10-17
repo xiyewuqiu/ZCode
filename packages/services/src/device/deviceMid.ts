@@ -1,4 +1,4 @@
-import { createUuid } from "@zcode/shared";
+import { createUuid } from "@ycode/shared";
 import { mkdir, open, readFile, stat, unlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { getAppConfigDir } from "../paths.js";
@@ -189,7 +189,7 @@ export async function ensureDeviceMidInLockedState(
  * 确保设备身份文件里存在 deviceMid 并返回它。
  *
  * deviceMid 是跨端共享的设备身份：X-Device-Mid 计费 header、反馈、onboarding 都读它。
- * 远端 zcode-server 没有 Desktop main 进程，由 stdio entry 启动时调用本函数补写，
+ * 远端 ycode-server 没有 Desktop main 进程，由 stdio entry 启动时调用本函数补写，
  * 与同机 CLI/Desktop 共享同一个文件、字段与锁。
  */
 export function ensureDeviceMid(options: EnsureDeviceMidOptions = {}): Promise<string> {

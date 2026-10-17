@@ -17,7 +17,7 @@ MCP JSON-RPC 工具（截图、UIA 元素树、点击、输入、窗口、浏览
 | 许可 | MIT，见 `LICENSE`（复制自上游仓库根 `LICENSE.md`，Copyright (c) 2025 Cua AI, Inc.） |
 | 上游 README | 原件保存在 `UPSTREAM-README.md`（本文件覆盖了 `README.md` 位置） |
 
-复制基线：`robocopy /E`，487 个文件 / 12 874 507 字节，与上游逐字节一致；本目录内所有 ZCode 改动见
+复制基线：`robocopy /E`，487 个文件 / 12 874 507 字节，与上游逐字节一致；本目录内所有 YCode 改动见
 下文"已做的改动"。
 
 ## 目录结构
@@ -28,7 +28,7 @@ MCP JSON-RPC 工具（截图、UIA 元素树、点击、输入、窗口、浏览
   `cua-driver-bindgen`、`pip-preview`。
 - `include/`：C ABI 头（`cua_driver_abi.h`）。
 - `Skills/`、`scripts/`、`examples/`、`tests/`、`test-apps/`：上游自带的技能包、打包脚本、示例与测试夹具。
-- `vendor/msvc-spectre-libs/`：ZCode 新增，见"Windows 构建环境补丁"。
+- `vendor/msvc-spectre-libs/`：YCode 新增，见"Windows 构建环境补丁"。
 - `target/`：Cargo 构建产物，已 gitignore。
 
 上游 crate 用途与测试矩阵见 `UPSTREAM-README.md` 与 `crates/cua-driver/tests/README.md`。
@@ -89,13 +89,13 @@ Spectre-mitigated libs 组件"的 Windows 主机上直接 panic（本机 BuildTo
 不改变任何被链接的内容。若某台机器确实装了该组件、希望恢复上游行为，删除
 `[patch.crates-io]` 一节与 `vendor/` 目录即可（`Cargo.lock` 会随之回退）。
 
-## 遥测已剥离（ZCode 改动）
+## 遥测已剥离（YCode 改动）
 
 上游 `crates/cua-driver/src/telemetry.rs` 是一个默认开启的 PostHog 上报器：构造固定字段的 payload、
 在 `~/.cua-driver/` 落盘伪匿名安装 ID、把待发事件写入 spool、并 fork 出无输出的 worker 进程用
 `ureq` + rustls 往 `https://eu.i.posthog.com/capture/` POST（API key 硬编码在源码里）。
 
-ZCode 要求零上报，因此该文件被**整体重写为惰性空实现**（3683 行 → 246 行）：
+YCode 要求零上报，因此该文件被**整体重写为惰性空实现**（3683 行 → 246 行）：
 
 | 被删除的内容 | 说明 |
 | --- | --- |
@@ -140,7 +140,7 @@ node -e "const b=require('fs').readFileSync('packages/desktop/bundled-tools/win3
 
 ## 相对上游的完整改动清单（供复核）
 
-复制基线 487 个文件全部保留，无删除。ZCode 侧共 8 改 5 增：
+复制基线 487 个文件全部保留，无删除。YCode 侧共 8 改 5 增：
 
 | 类型 | 文件 | 说明 |
 | --- | --- | --- |
@@ -186,7 +186,7 @@ node -e "const b=require('fs').readFileSync('packages/desktop/bundled-tools/win3
 ## 如何同步上游
 
 1. 在上游 checkout 里取目标 revision：`git -C <cua> rev-parse HEAD`，确认 `libs/cua-driver/rust/VERSION`。
-2. 用 `robocopy /E`（或 `rsync -a --delete`）覆盖本目录的**上游部分**，注意保留 ZCode 侧文件：
+2. 用 `robocopy /E`（或 `rsync -a --delete`）覆盖本目录的**上游部分**，注意保留 YCode 侧文件：
    `LICENSE`、`UPSTREAM-REVISION`、`README.md`、`UPSTREAM-README.md`、`vendor/` 与本节改动。
 3. 重做剥离：以新版 `crates/cua-driver/src/telemetry.rs` 为准，把新增/改名的 `capture_*` 等入口以空实现
    补进本目录的 `telemetry.rs`（编译器的 `cargo check -p cua-driver` 会列出所有缺失入口）。

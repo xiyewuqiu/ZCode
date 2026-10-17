@@ -3,8 +3,8 @@ import { Client as SSHClient } from "ssh2";
 import type { ConnectConfig } from "ssh2";
 import { createReadStream } from "node:fs";
 import { posix } from "node:path";
-import { Emitter } from "@zcode/rpc";
-import { resolveZCodeRuntimeEnv } from "@zcode/shared";
+import { Emitter } from "@ycode/rpc";
+import { resolveYCodeRuntimeEnv } from "@ycode/shared";
 import type {
   IRemoteBackend,
   RemoteDisconnectEvent,
@@ -12,29 +12,29 @@ import type {
   RemoteEnvironment,
   RemoteUploadOptions,
   StdioStream,
-} from "@zcode/server/remote/backend.js";
+} from "@ycode/server/remote/backend.js";
 import {
   normalizeRemoteArch,
   normalizeRemotePlatform,
   resolveRemotePlatform,
-} from "@zcode/server/remote/detectEnv.js";
-import { createCloseEventController } from "@zcode/server/remote/closeEvent.js";
+} from "@ycode/server/remote/detectEnv.js";
+import { createCloseEventController } from "@ycode/server/remote/closeEvent.js";
 import {
   buildPosixShellExecCommand,
   quotePosixShellArg,
   resolvePosixHomePath,
-} from "@zcode/server/remote/posixShell.js";
+} from "@ycode/server/remote/posixShell.js";
 import {
   buildSSHConnectConfig,
   createKeyboardInteractiveResponder,
   normalizeSSHConnectError,
-} from "@zcode/server/remote/sshAuth.js";
+} from "@ycode/server/remote/sshAuth.js";
 import {
   createSSHUploadProgressReporter,
   formatSSHUploadError,
   formatSSHUploadLabel,
   readLocalFileSize,
-} from "@zcode/server/remote/sshUploadProgress.js";
+} from "@ycode/server/remote/sshUploadProgress.js";
 
 export interface SSHBackendOptions {
   host: string;
@@ -137,7 +137,7 @@ export class SSHBackend implements IRemoteBackend {
       password: options.password,
       agent: options.agent,
     });
-    if (resolveZCodeRuntimeEnv(process.env) === "development") {
+    if (resolveYCodeRuntimeEnv(process.env) === "development") {
       this.config.debug = (message: string) => {
         // SSH ready 超时只暴露 client-timeout 时无法判断卡在 TCP、协商还是认证。
         // 仅开发环境输出 ssh2 握手细节；CHANNEL_DATA / EXTENDED_DATA 是命令 stdout/stderr 数据包，

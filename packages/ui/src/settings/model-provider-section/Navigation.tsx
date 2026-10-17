@@ -17,10 +17,10 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { CircleIcon, Loader2Icon } from "lucide-react";
-import { TID_MODEL_PROVIDER_NAV_ITEM, testId } from "@zcode/shared";
+import { TID_MODEL_PROVIDER_NAV_ITEM, testId } from "@ycode/shared";
 import { useCallback, useMemo, type KeyboardEvent } from "react";
 import { ControlHintTooltip } from "@/ControlHintTooltip.js";
-import { useZCodeIntl } from "@/i18n/IntlProvider.js";
+import { useYCodeIntl } from "@/i18n/IntlProvider.js";
 import type { ProviderSettingsFormProvider } from "@/lib/providerSettingsFormTypes.js";
 import type { ModelProviderNavGroup, ModelProviderNavItem } from "./constants.js";
 import { ProviderLogo } from "./ProviderLogo.js";
@@ -41,7 +41,7 @@ function ProviderStatusIndicator({
 }: {
   provider?: Pick<ProviderSettingsFormProvider, "enabled" | "executable"> | null;
 }) {
-  const { intl } = useZCodeIntl();
+  const { intl } = useYCodeIntl();
   const status =
     provider?.enabled === false ? "disabled" : provider?.executable ? "ready" : "unavailable";
   const { label, color } = PROVIDER_STATUS_PRESENTATION[status];

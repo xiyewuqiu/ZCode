@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ModelSelectionView } from "@zcode/services";
+import type { ModelSelectionView } from "@ycode/services";
 import { resolveProviderAvailabilityState } from "@/lib/modelProviderAvailability.js";
 import { logger } from "@/logger.js";
 
@@ -13,7 +13,7 @@ interface ProviderAvailabilityStartupCheckResult {
  *
  * 原实现叫「登录入口守卫」：未登录且没有可用 Provider 时强制打开登录页。账号体系移除后
  * 登录入口不复存在，这里只保留可用性计算与启动门禁完成信号——Root 依赖它决定是否可以
- * 继续恢复工作区会话，避免在模型配置就绪前启动 ZCode session。
+ * 继续恢复工作区会话，避免在模型配置就绪前启动 YCode session。
  */
 export function useProviderAvailabilityStartupCheck({
   providerFamilyDomain,

@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import type { IPlatformService } from "@zcode/shared";
+import type { IPlatformService } from "@ycode/shared";
 import { logger } from "@/logger.js";
 
 /**

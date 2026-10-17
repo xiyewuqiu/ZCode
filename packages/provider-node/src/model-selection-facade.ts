@@ -1,4 +1,4 @@
-import { ModelSelectionFacade, type ProviderRegistryFacadeSource } from "@zcode/provider";
+import { ModelSelectionFacade, type ProviderRegistryFacadeSource } from "@ycode/provider";
 import { resolveLegacyReasoningLevel } from "./legacy-reasoning-level.js";
 
 /** Host 与受管理 Worker 共用同一份模型选择解析；解析由纯 Provider Facade 负责。 */

@@ -5,10 +5,10 @@ import { join } from "node:path";
 import { app, BrowserWindow, type MessagePortMain } from "electron";
 import { spawnHostProcess } from "../src/main/desktopHostProcess.js";
 import { BroadcastHub } from "../src/main/broadcastHub.js";
-import { HostMessageTypes, hostResponseMessageSchema } from "@zcode/shared";
+import { HostMessageTypes, hostResponseMessageSchema } from "@ycode/shared";
 
 async function main() {
-  const profile = process.env.ZCODE_WINDOW_SMOKE_PROFILE;
+  const profile = process.env.YCODE_WINDOW_SMOKE_PROFILE;
   assert.ok(profile, "Use the isolated runner");
   app.setPath("userData", profile);
   await app.whenReady();
@@ -33,10 +33,10 @@ async function main() {
     {
       type: HostMessageTypes.InitLocal,
       agentSpawnFallbackCwd: profile,
-      zcodeBuiltinProviderConfigFilePath: configPath,
+      ycodeBuiltinProviderConfigFilePath: configPath,
     },
     {
-      hostProcessLocalEnv: { ZCODE_DATA_BASE_DIR: profile, ZCODE_BASE_URL: "http://127.0.0.1:9" },
+      hostProcessLocalEnv: { YCODE_DATA_BASE_DIR: profile, YCODE_BASE_URL: "http://127.0.0.1:9" },
       logger: { info() {}, warn: (...args) => console.warn(...args) },
       broadcastHub: new BroadcastHub(),
       windowHostProcessMap: new Map(),

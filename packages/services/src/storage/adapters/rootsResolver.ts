@@ -4,9 +4,9 @@
  */
 import { join, resolve } from "node:path";
 import type { RootsResolverPort } from "../app/ports.js";
-import type { StorageRootSpec } from "@zcode/shared";
+import type { StorageRootSpec } from "@ycode/shared";
 
-const ZCODE_DATA_DIR_NAME = ".ycode";
+const YCODE_DATA_DIR_NAME = ".ycode";
 
 export function resolveStorageRoots(params: {
   homeDir: string;
@@ -16,12 +16,12 @@ export function resolveStorageRoots(params: {
   const dataBase = resolve(params.dataBaseDir);
   const hasCustomDataBaseDir = dataBase !== home;
   const roots: StorageRootSpec[] = [
-    { id: "home", path: join(home, ZCODE_DATA_DIR_NAME), hasCustomDataBaseDir },
+    { id: "home", path: join(home, YCODE_DATA_DIR_NAME), hasCustomDataBaseDir },
   ];
   if (hasCustomDataBaseDir) {
     roots.push({
       id: "dataBaseDir",
-      path: join(dataBase, ZCODE_DATA_DIR_NAME),
+      path: join(dataBase, YCODE_DATA_DIR_NAME),
       hasCustomDataBaseDir,
     });
   }

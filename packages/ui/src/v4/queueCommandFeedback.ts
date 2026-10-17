@@ -1,4 +1,4 @@
-import type { CommandAck } from "@zcode/shared/zcode-protocol-v4";
+import type { CommandAck } from "@ycode/shared/ycode-protocol-v4";
 
 export type QueueCommandFailure =
   | { kind: "rejected"; ack: CommandAck }

@@ -1,4 +1,4 @@
-import type { FeedbackTicketStatus } from "@zcode/shared";
+import type { FeedbackTicketStatus } from "@ycode/shared";
 
 type MessageFormatter = (descriptor: { id: string }, values?: Record<string, string>) => string;
 

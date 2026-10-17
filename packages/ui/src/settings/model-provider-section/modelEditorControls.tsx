@@ -3,7 +3,7 @@ import { CheckIcon, CircleHelp } from "lucide-react";
 import { Button } from "@/components/ui/button.js";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover.js";
 import { cn } from "@/components/lib/utils.js";
-import { useZCodeIntl } from "@/i18n/IntlProvider.js";
+import { useYCodeIntl } from "@/i18n/IntlProvider.js";
 
 /** 模型编辑器专用：边框仅标记覆盖，Hover/焦点用同一底色，不修改全站控件。 */
 export function modelEditorControlStyle(overridden: boolean, selected?: boolean) {
@@ -32,7 +32,7 @@ type ModelConfigHelpField =
 
 export function ModelConfigHelp({ field }: { field: ModelConfigHelpField }) {
   const [open, setOpen] = useState(false);
-  const { intl } = useZCodeIntl();
+  const { intl } = useYCodeIntl();
   const label = intl.formatMessage({ id: `settings.modelProvider.${field}` });
   const copy = intl.formatMessage({ id: `settings.modelProvider.help.${field}` });
   return (
@@ -101,7 +101,7 @@ export function ModelConfigInputLabel({
   field: ModelConfigHelpField;
   htmlFor: string;
 }) {
-  const { intl } = useZCodeIntl();
+  const { intl } = useYCodeIntl();
   return (
     // 帮助按钮必须是 label 的兄弟，避免抢走输入关联和标题点击焦点。
     <>

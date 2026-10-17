@@ -1,4 +1,4 @@
-import type { DatabaseMigrationFacts } from "@zcode/shared";
+import type { DatabaseMigrationFacts } from "@ycode/shared";
 import { mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
 import { createRequire } from "node:module";
@@ -95,10 +95,7 @@ export async function prepareTasksIndexStorage(
     }
   }
   markTasksStorageMigrated(path);
-  const repos = [
-    new TaskIndexRepo(path, LOCK_WAIT_MS),
-    new AutomationRepo(path, LOCK_WAIT_MS),
-  ];
+  const repos = [new TaskIndexRepo(path, LOCK_WAIT_MS), new AutomationRepo(path, LOCK_WAIT_MS)];
   let preparationFailure: unknown;
   try {
     // 这些是原本就在初始化时执行的修复，不创建新的迁移或改变已有事务边界。

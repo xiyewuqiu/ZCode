@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import type { ZCodeTaskMeta } from "@zcode/shared";
-import { useZCodeSessionService } from "@/hooks/useZCodeSessionService.js";
-import { zcodeSessionSnapshotToTaskMeta } from "@/lib/zcodeSessionProjection.js";
+import type { YCodeTaskMeta } from "@ycode/shared";
+import { useYCodeSessionService } from "@/hooks/useYCodeSessionService.js";
+import { ycodeSessionSnapshotToTaskMeta } from "@/lib/ycodeSessionProjection.js";
 import { logger } from "@/logger.js";
 
 /**
@@ -17,9 +17,9 @@ export function useActiveTaskSnapshotMeta(
   taskId: string | null,
   preferredRemoteSessionId?: string | null,
   workspaceIdentity?: string,
-  taskMetaFromLists?: ZCodeTaskMeta | null,
+  taskMetaFromLists?: YCodeTaskMeta | null,
 ) {
-  const zcodeSessionService = useZCodeSessionService(
+  const ycodeSessionService = useYCodeSessionService(
     workspacePath,
     preferredRemoteSessionId,
     workspaceIdentity,
@@ -32,7 +32,7 @@ export function useActiveTaskSnapshotMeta(
       workspacePath,
       taskId,
       preferredRemoteSessionId,
-      zcodeSessionService,
+      ycodeSessionService,
       needsSnapshot,
     }),
     [
@@ -40,13 +40,13 @@ export function useActiveTaskSnapshotMeta(
       workspacePath,
       taskId,
       preferredRemoteSessionId,
-      zcodeSessionService,
+      ycodeSessionService,
       needsSnapshot,
     ],
   );
   const [result, setResult] = useState<{
     request: typeof request;
-    meta: ZCodeTaskMeta | null;
+    meta: YCodeTaskMeta | null;
   } | null>(null);
 
   useEffect(() => {
@@ -54,8 +54,8 @@ export function useActiveTaskSnapshotMeta(
 
     if (!request.needsSnapshot || !request.taskId) return;
 
-    void request.zcodeSessionService
-      // active header 只需要 session meta/标题兜底，走 ZCode Protocol 的轻量读取，
+    void request.ycodeSessionService
+      // active header 只需要 session meta/标题兜底，走 YCode Protocol 的轻量读取，
       // 避免继续经 legacy snapshot 把大任务消息整包拉回 UI。
       .readSession({
         workspacePath: request.workspacePath,
@@ -67,7 +67,7 @@ export function useActiveTaskSnapshotMeta(
         if (cancelled) {
           return;
         }
-        setResult({ request, meta: zcodeSessionSnapshotToTaskMeta(snapshot) });
+        setResult({ request, meta: ycodeSessionSnapshotToTaskMeta(snapshot) });
       })
       .catch((error: unknown) => {
         if (cancelled) {

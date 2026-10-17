@@ -35,6 +35,6 @@ export function normalizePowerShellReadlineRedraw(data: string, shell: string | 
   if (!PSREADLINE_DEFAULT_ON_BLACK_PATTERN.test(data)) return data;
 
   // Windows PowerShell/PSReadLine 重绘当前输入行时，会用 ANSI 40m 给尾随空白 cell 补黑色背景。
-  // z-code 的终端背景不是 ANSI black，xterm 会把这些空白画成灰块；这里只把这类行编辑 redraw 的背景恢复为默认背景。
+  // y-code 的终端背景不是 ANSI black，xterm 会把这些空白画成灰块；这里只把这类行编辑 redraw 的背景恢复为默认背景。
   return replaceAnsiBlackBackgroundWithDefault(data);
 }

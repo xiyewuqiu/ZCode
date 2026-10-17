@@ -1,6 +1,6 @@
-import { buildRuntimeZCodeApiUrl, resolveZaiBusinessBaseUrl } from "@zcode/shared";
+import { buildRuntimeYCodeApiUrl, resolveZaiBusinessBaseUrl } from "@ycode/shared";
 
-export const ZCODE_CLIENT_SCENES_URL = buildRuntimeZCodeApiUrl(
+export const YCODE_CLIENT_SCENES_URL = buildRuntimeYCodeApiUrl(
   process.env,
   "/api/v1/client/scenes",
 );

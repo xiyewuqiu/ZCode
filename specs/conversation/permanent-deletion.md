@@ -57,7 +57,7 @@ Desktop continuous 与 Web replayable 的业务流顺序不变；永久删除结
 
 - 隔离 SQLite/文件、运行时互斥、真实协议启动与分派、Host 索引去正文、远端来源换代共 11 项测试通过。真实协议测试不创建模型 runtime，不使用真实用户目录。
 - 浏览器覆盖 1100px、390px、260px；确认前不可执行、重新预检/切换来源后确认失效、阻塞提示、部分失败重试、请求异常、关闭后迟到结果、中英文均通过。截图保存在忽略目录 `node_modules/.cache/session-purge-browser/`，已检查手机布局。
-- 根 `pnpm typecheck` 通过；CLI `pnpm --dir apps/zcode-cli typecheck` 通过（27 个任务）。本机通过 Corepack 与临时 PATH 补齐 pnpm/turbo 入口，CLI 使用 Node 24.14.0。
+- 根 `pnpm typecheck` 通过；CLI `pnpm --dir apps/ycode-cli typecheck` 通过（27 个任务）。本机通过 Corepack 与临时 PATH 补齐 pnpm/turbo 入口，CLI 使用 Node 24.14.0。
 - 根 `pnpm lint` 为 0 错误、63 个既有警告。CLI 全量 lint 未通过，包含已有 `max-lines` 等问题；本轮变更文件定向 lint 的 4 个超长文件错误和 2 个警告均在 HEAD 基线重现，新增文件无 lint 错误。没有放宽规则或添加忽略项。
 - `pnpm architecture:check --changed` 为 0 violations / 0 baseline / 0 new；本轮文件分别使用根与 CLI 自带格式化器检查通过，`git diff --check` 通过。
 - 本轮跨 CLI、shared、services/session、desktop/host、ui 边界接线，新增源码净 1,228 行（不计测试及 spec）；事务与文件清理在适配器内，Host 只路由/维护索引投影，UI 只持有确认与请求状态。
@@ -65,7 +65,7 @@ Desktop continuous 与 Web replayable 的业务流顺序不变；永久删除结
 复现：
 
 ```powershell
-node --import tsx --test apps/zcode-cli/packages/adapters/test/session-purge.test.ts apps/zcode-cli/packages/bootstrap/test/session-storage.test.ts apps/zcode-cli/packages/bootstrap/test/session-storage-integration.test.ts packages/services/test/taskStoragePurge.test.ts packages/desktop/test/taskStorageRouting.test.ts
+node --import tsx --test apps/ycode-cli/packages/adapters/test/session-purge.test.ts apps/ycode-cli/packages/bootstrap/test/session-storage.test.ts apps/ycode-cli/packages/bootstrap/test/session-storage-integration.test.ts packages/services/test/taskStoragePurge.test.ts packages/desktop/test/taskStorageRouting.test.ts
 corepack pnpm exec vite --config packages/ui/test/browser/vite.config.mjs
 # 保持上述 Vite 服务运行，在另一个终端执行：
 node packages/ui/test/browser/run-task-storage.mjs

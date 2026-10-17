@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { createRoot } from "react-dom/client";
-import type { QueueState } from "@zcode/shared/zcode-protocol-v4";
+import type { QueueState } from "@ycode/shared/ycode-protocol-v4";
 import { ConversationQueuePanel } from "../../src/v4/ConversationQueuePanel.js";
-import { ZCodeIntlProvider, useZCodeIntl } from "../../src/i18n/IntlProvider.js";
+import { YCodeIntlProvider, useYCodeIntl } from "../../src/i18n/IntlProvider.js";
 import {
   runQueueCommandWithFeedback,
   queueCommandFailureMessage,
@@ -28,7 +28,7 @@ const initial: QueueState["items"] = ["a", "b", "c"].map((id, index) => ({
 }));
 
 function QueueFixture() {
-  const { intl } = useZCodeIntl();
+  const { intl } = useYCodeIntl();
   const [items, setItems] = useState(initial);
   const [moves, setMoves] = useState(0);
   const failureMode = params.get("failure");
@@ -104,8 +104,8 @@ function QueueFixture() {
 
 const root = createRoot(document.getElementById("root")!);
 root.render(
-  <ZCodeIntlProvider initialLocale={params.get("locale") === "en-US" ? "en-US" : "zh-CN"}>
+  <YCodeIntlProvider initialLocale={params.get("locale") === "en-US" ? "en-US" : "zh-CN"}>
     <QueueFixture />
-  </ZCodeIntlProvider>,
+  </YCodeIntlProvider>,
 );
 import.meta.hot?.dispose(() => root.unmount());

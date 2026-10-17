@@ -3,10 +3,10 @@ export {
   getCompactToolCallSummary,
   isCompactToolCallFinishedState,
   isCompactToolCallRunningState,
-} from "@zcode/shared";
+} from "@ycode/shared";
 export type {
   CompactToolCallState,
   ToolCallChangeStat,
   ToolCallSummary,
   ToolCallSummarySource,
-} from "@zcode/shared";
+} from "@ycode/shared";

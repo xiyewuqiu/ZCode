@@ -2,7 +2,7 @@ import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { CheckCircle2Icon, ChevronRightIcon, CircleAlertIcon } from "lucide-react";
 import { Button } from "@/components/ui/button.js";
 import { Switch } from "@/components/ui/switch.js";
-import { useZCodeIntl } from "@/i18n/IntlProvider.js";
+import { useYCodeIntl } from "@/i18n/IntlProvider.js";
 import type { ProviderModelDraftErrorField } from "./modelDraft.js";
 import { ModelConfigHelp } from "./modelEditorControls.js";
 
@@ -29,7 +29,7 @@ export function ModelEditorAdvanced({
   validationAttempt: number;
   children: ReactNode;
 }) {
-  const { intl } = useZCodeIntl();
+  const { intl } = useYCodeIntl();
   const ref = useRef<HTMLDivElement>(null);
   const contentId = useId();
   const [expanded, setExpanded] = useState(false);
@@ -98,7 +98,7 @@ export function ModelConfigDraftFeedback({
   error?: string | null;
   matched?: boolean;
 }) {
-  const { intl } = useZCodeIntl();
+  const { intl } = useYCodeIntl();
   if (!error && !matched) return null;
   const Icon = error ? CircleAlertIcon : CheckCircle2Icon;
   return (
@@ -125,7 +125,7 @@ export function ModelConfigRestoreButton({
   disabled: boolean;
   onRestore?: () => void;
 }) {
-  const { intl } = useZCodeIntl();
+  const { intl } = useYCodeIntl();
   return (
     <Button
       type="button"
@@ -150,7 +150,7 @@ export function ModelSmartConfigSwitch({
   disabled: boolean;
   onChange: (checked: boolean) => void;
 }) {
-  const { intl } = useZCodeIntl();
+  const { intl } = useYCodeIntl();
   const label = intl.formatMessage({ id: "settings.modelProvider.followRecommendedConfig" });
   return (
     <div

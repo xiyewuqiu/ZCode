@@ -7,7 +7,7 @@ import {
   PlatformChannels,
   remoteTargetSchema,
   type RemoteTarget,
-} from "@zcode/shared";
+} from "@ycode/shared";
 import { dispatchTaskNotification } from "./desktopNotifications.js";
 import { clearDeepLinkRoutesForWindow, deliverPendingDeepLink } from "./desktopDeepLinkRouter.js";
 import { openPathInDefaultApp } from "./desktopMainIpcHelpers.js";

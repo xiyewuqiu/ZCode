@@ -1,4 +1,4 @@
-import type { CommandStorageLevel } from "@zcode/shared";
+import type { CommandStorageLevel } from "@ycode/shared";
 import { getPluginWorkspaceKey } from "@/settings/PluginScopeMenu.js";
 import type { WorkspaceTabState } from "@/store/tabStore.js";
 

@@ -14,13 +14,13 @@ const { stageThirdPartyNotices } = await import(
 const rootPackageJsonPath = resolve(import.meta.dirname, "../../package.json");
 const { version } = JSON.parse(readFileSync(rootPackageJsonPath, "utf-8"));
 
-const { environment: zcodeEnv, content: zcodeBuiltinProviderConfigJson } =
+const { environment: ycodeEnv, content: ycodeBuiltinProviderConfigJson } =
   await loadBuiltinProviderConfig();
 
 export const SERVER_HTTP_DEFINES = {
-  __ZCODE_VERSION__: JSON.stringify(version),
-  __ZCODE_ENV__: JSON.stringify(zcodeEnv),
-  __ZCODE_BUILTIN_PROVIDER_CONFIG_JSON__: JSON.stringify(zcodeBuiltinProviderConfigJson),
+  __YCODE_VERSION__: JSON.stringify(version),
+  __YCODE_ENV__: JSON.stringify(ycodeEnv),
+  __YCODE_BUILTIN_PROVIDER_CONFIG_JSON__: JSON.stringify(ycodeBuiltinProviderConfigJson),
 };
 
 function createSharedDefines() {
@@ -59,11 +59,11 @@ export default defineConfig({
   target: "node22",
   // workspace 包的 exports 指向 .ts 源码，node 运行时无法直接加载，需要 bundle 进来
   noExternal: [
-    "@zcode/shared",
-    "@zcode/rpc",
-    "@zcode/services",
-    "@zcode/services/node",
-    "@zcode/client",
+    "@ycode/shared",
+    "@ycode/rpc",
+    "@ycode/services",
+    "@ycode/services/node",
+    "@ycode/client",
   ],
   // ssh2 / node-pty 含 .node native addon，不能被 esbuild 处理。
   // undici / axios 这类 CJS 依赖被内联进 ESM bundle 后，运行时会走到

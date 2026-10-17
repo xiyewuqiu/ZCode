@@ -1,6 +1,6 @@
 import { memo } from "react";
-import type { ZCodeSessionEndedSubagent } from "@zcode/shared";
-import type { RunningSubagentSummary } from "@zcode/shared/zcode-protocol-v4";
+import type { YCodeSessionEndedSubagent } from "@ycode/shared";
+import type { RunningSubagentSummary } from "@ycode/shared/ycode-protocol-v4";
 import {
   BanIcon,
   CheckCircle2Icon,
@@ -9,10 +9,10 @@ import {
   LoaderCircleIcon,
   PauseCircleIcon,
 } from "lucide-react";
-import { useZCodeIntl } from "@/i18n/IntlProvider.js";
+import { useYCodeIntl } from "@/i18n/IntlProvider.js";
 import { formatTaskRelativeTime } from "@/lib/taskListItemPresentation.js";
 
-export type SubagentDirectoryItem = RunningSubagentSummary | ZCodeSessionEndedSubagent;
+export type SubagentDirectoryItem = RunningSubagentSummary | YCodeSessionEndedSubagent;
 
 const STATUS_ICONS = {
   running: LoaderCircleIcon,
@@ -42,7 +42,7 @@ export const SubagentDirectoryRow = memo(function SubagentDirectoryRow({
   tabIndex: number;
   onOpen: (item: SubagentDirectoryItem) => void;
 }) {
-  const { intl } = useZCodeIntl();
+  const { intl } = useYCodeIntl();
   const timestamp = "endedAt" in item ? item.endedAt : item.startedAt;
   const Icon = STATUS_ICONS[item.status];
   return (

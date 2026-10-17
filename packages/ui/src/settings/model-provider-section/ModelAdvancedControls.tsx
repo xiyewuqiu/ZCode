@@ -10,9 +10,9 @@ import { LockKeyholeIcon, PlusIcon, XIcon } from "lucide-react";
 import { Button } from "@/components/ui/button.js";
 import { Textarea } from "@/components/ui/textarea.js";
 import { cn } from "@/components/lib/utils.js";
-import { useZCodeIntl } from "@/i18n/IntlProvider.js";
+import { useYCodeIntl } from "@/i18n/IntlProvider.js";
 import { TECHNICAL_INPUT_ATTRIBUTES } from "@/lib/technicalInputAttributes.js";
-import type { ModelConfigObject } from "@zcode/provider";
+import type { ModelConfigObject } from "@ycode/provider";
 import type { ProviderModelDraftValues, ProviderModelInputFormatDraft } from "./modelDraft.js";
 import {
   ModelConfigHelp,
@@ -85,7 +85,7 @@ function ModalityOption({
   overridden?: boolean;
   onToggle?: () => void;
 }) {
-  const { intl } = useZCodeIntl();
+  const { intl } = useYCodeIntl();
   return (
     <Button
       type="button"
@@ -352,7 +352,7 @@ export function ProviderModelReasoningSettings({
   overrideFields?: ReadonlySet<string>;
   onDraftChange: (patch: Partial<ProviderModelDraftValues>) => void;
 }) {
-  const { intl } = useZCodeIntl();
+  const { intl } = useYCodeIntl();
 
   return (
     <ModelSettingsGroup group="reasoning">

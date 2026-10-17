@@ -1,5 +1,5 @@
 import { useCallback, useRef } from "react";
-import { useZCodeIntl } from "@/i18n/IntlProvider.js";
+import { useYCodeIntl } from "@/i18n/IntlProvider.js";
 import { useProviderDetailFeedback } from "./ProviderDetailFeedback.js";
 
 export interface ProviderSaveNotificationTarget {
@@ -22,7 +22,7 @@ export function useProviderSaveOperation({
   providerId: string;
   providerDisplayName: string;
 }) {
-  const { intl } = useZCodeIntl();
+  const { intl } = useYCodeIntl();
   const { dismissFeedback, showFeedback } = useProviderDetailFeedback();
   const draftRevisionRef = useRef(0);
   const selfSaveRequestedRef = useRef(false);

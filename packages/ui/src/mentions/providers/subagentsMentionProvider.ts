@@ -1,4 +1,4 @@
-import type { AgentSummary } from "@zcode/shared";
+import type { AgentSummary } from "@ycode/shared";
 import { buildSubagentMentionMarkdown } from "@/mentions/mentionMarkdown.js";
 import type { MentionItem } from "@/mentions/mentionTypes.js";
 

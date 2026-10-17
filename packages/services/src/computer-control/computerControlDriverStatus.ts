@@ -6,9 +6,9 @@
 //
 // 探测实现属于宿主能力（需要文件系统与子进程），放在 desktop host 侧，并通过
 // createLocalServices 的注入点装配；本文件只持有类型与 descriptor，保持 browser-safe
-// （UI/renderer 只从 @zcode/services 根入口引入类型与 channelName）。
+// （UI/renderer 只从 @ycode/services 根入口引入类型与 channelName）。
 
-import { ServiceChannels } from "@zcode/shared";
+import { ServiceChannels } from "@ycode/shared";
 
 import { createServiceDescriptor } from "../descriptors.js";
 

@@ -153,7 +153,7 @@ export async function stageNativeSearchNotices(
 export function thirdPartyNoticesVitePlugin(root = repositoryRoot) {
   let base = "/";
   return {
-    name: "zcode-third-party-notices",
+    name: "ycode-third-party-notices",
     apply: "build",
     configResolved(config) {
       base = config.base;

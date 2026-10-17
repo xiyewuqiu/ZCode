@@ -7,14 +7,14 @@
 import { BrowserWindow, ipcMain, shell, type IpcMainInvokeEvent, type WebContents } from "electron";
 import { homedir } from "node:os";
 import { isAbsolute, relative, resolve } from "node:path";
-import { PlatformChannels, type StorageCleanRequest, type StorageRootSpec } from "@zcode/shared";
+import { PlatformChannels, type StorageCleanRequest, type StorageRootSpec } from "@ycode/shared";
 import {
   createFsStorageCleaner,
   createStorageRootsResolver,
   createStorageService,
   getDataBaseDir,
-} from "@zcode/services/node";
-import type { IStorageService } from "@zcode/services";
+} from "@ycode/services/node";
+import type { IStorageService } from "@ycode/services";
 import { logger } from "./logger.js";
 import { createStorageScanWorkerRunner } from "./storageScanWorkerClient.js";
 

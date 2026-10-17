@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { ConversationOutline } from "../../src/v4/ConversationOutline.js";
-import { ZCodeIntlProvider } from "../../src/i18n/IntlProvider.js";
+import { YCodeIntlProvider } from "../../src/i18n/IntlProvider.js";
 import type {
   ConversationTurnNavigatorHydrationResult,
   ConversationTurnNavigatorItem,
@@ -66,12 +66,12 @@ function Fixture() {
 
 const root = createRoot(document.getElementById("root")!);
 root.render(
-  <ZCodeIntlProvider
+  <YCodeIntlProvider
     initialLocale={
       new URLSearchParams(location.search).get("locale") === "zh-CN" ? "zh-CN" : "en-US"
     }
   >
     <Fixture />
-  </ZCodeIntlProvider>,
+  </YCodeIntlProvider>,
 );
 import.meta.hot?.dispose(() => root.unmount());

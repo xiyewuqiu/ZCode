@@ -216,8 +216,8 @@ export class ProviderSettingsFacade {
     const snapshot = requireSnapshot(this.#source);
     return createProviderSettingsView({
       revision: snapshot.registry.revision,
-      zcodeBuiltinProviders: snapshot.config.zcodeBuiltinProviders,
-      zcodeBuiltinProviderTemplates: snapshot.config.zcodeBuiltinProviderTemplates,
+      ycodeBuiltinProviders: snapshot.config.ycodeBuiltinProviders,
+      ycodeBuiltinProviderTemplates: snapshot.config.ycodeBuiltinProviderTemplates,
       personalProviders: snapshot.config.personalProviders,
       personalModels: snapshot.config.personalModels,
       resolution: snapshot.resolution,
@@ -238,7 +238,7 @@ export class ProviderSettingsFacade {
     const provider = requireEffectiveProvider(snapshot, input.providerId);
     if (!("personalConfig" in input)) {
       const modelRules = ModelConfigRules.composeEffective(
-        snapshot.config.zcodeBuiltinModelRules,
+        snapshot.config.ycodeBuiltinModelRules,
         snapshot.config.personalModels,
       );
       const config = modelRules.resolve({
@@ -258,7 +258,7 @@ export class ProviderSettingsFacade {
     }
 
     const personalConfig = parseModelConfig(input.personalConfig);
-    const inheritedConfig = snapshot.config.zcodeBuiltinModelRules.resolve({
+    const inheritedConfig = snapshot.config.ycodeBuiltinModelRules.resolve({
       providerId: input.providerId,
       templateId: provider.templateId,
       modelId: input.modelId,
@@ -276,7 +276,7 @@ export class ProviderSettingsFacade {
     // 此入口预览智能配置草稿；固定模式不请求推荐，重新开启时不能沿用旧固定标记。
     personalRules = personalRules.setExact(input.providerId, input.modelId, personalConfig, true);
     const config = ModelConfigRules.composeEffective(
-      snapshot.config.zcodeBuiltinModelRules,
+      snapshot.config.ycodeBuiltinModelRules,
       personalRules,
     ).resolve({
       providerId: input.providerId,
@@ -595,8 +595,8 @@ function requireEffectiveProvider(
 
 function createProviderSettingsView(input: {
   revision: number;
-  zcodeBuiltinProviders: ProviderRegistryServiceSnapshot["config"]["zcodeBuiltinProviders"];
-  zcodeBuiltinProviderTemplates: ProviderRegistryServiceSnapshot["config"]["zcodeBuiltinProviderTemplates"];
+  ycodeBuiltinProviders: ProviderRegistryServiceSnapshot["config"]["ycodeBuiltinProviders"];
+  ycodeBuiltinProviderTemplates: ProviderRegistryServiceSnapshot["config"]["ycodeBuiltinProviderTemplates"];
   personalProviders: ProviderRegistryServiceSnapshot["config"]["personalProviders"];
   personalModels: ProviderRegistryServiceSnapshot["config"]["personalModels"];
   resolution: ProviderConfigResolution;
@@ -655,7 +655,7 @@ function createProviderSettingsView(input: {
   return Object.freeze({
     revision: input.revision,
     providerTemplates: Object.freeze(
-      (input.zcodeBuiltinProviderTemplates ?? ProviderTemplateMap.empty())
+      (input.ycodeBuiltinProviderTemplates ?? ProviderTemplateMap.empty())
         .entries()
         .map(([templateId, template]) =>
           Object.freeze({

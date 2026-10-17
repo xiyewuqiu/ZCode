@@ -1,17 +1,17 @@
 # 长会话体验 · 前沿深度设计
 
-> 2026-10-03 竞品研究 + ZCode 落地对照。
+> 2026-10-03 竞品研究 + YCode 落地对照。
 >
-> 本文回答一个问题：同类 AI 编程 Agent / 聊天工作台在「超长会话、持续流式、多视图切换、时间线导航、会话管理」上做到的最前沿设计是什么，ZCode 当前处在什么位置，下一步最该补什么。
+> 本文回答一个问题：同类 AI 编程 Agent / 聊天工作台在「超长会话、持续流式、多视图切换、时间线导航、会话管理」上做到的最前沿设计是什么，YCode 当前处在什么位置，下一步最该补什么。
 >
 > 证据等级：**[确认]** 官方文档 / 规范 / 源码 / 发布说明；**[报道]** 权威媒体或可信第三方；**[推断]** 多来源综合外推；**[未验证]** 仅单一弱来源。
 
 ## 0. 结论速览
 
-1. **ZCode 的渲染性能路线已经对齐前沿，不需要推翻重做。** 帧合并通知、层活动门控、视口探针、turnId 稳定 key 行高缓存、live tail 拆分这五件事，在竞品里都是 2025–2026 才收敛出来的做法，ZCode 已经实现（见 §3）。
-2. **真正的差距不在「通知节奏」，而在「单元内 item 级窗口」与「滚动所有权状态机」。** 竞品最惨的两个翻车点是：turn 级虚拟化撑不住单轮数百条 item（Codex VS Code 扩展，DOM 节点 3,903 → 773），以及贴底逻辑与虚拟化测量互相打架（assistant-ui 明确点名）。前者 ZCode 只做了一半，后者尚未成体系。
-3. **导航与会话内查找上 ZCode 领先。** 单对话内的查找 + 高亮 + 跳转在 2026 年仍是市场空白（Cursor 的 in-chat Ctrl-F 还是 feature request），ZCode 已有 `useConversationTimelineFind`、outline、turn navigator。
-4. **会话管理模式上 ZCode 落后**：缺 fork/branch、缺 summarize-from-here、缺 session picker 的范围三档与 PR 反查、缺 chronicle 式「问历史」。已有 rewind / storage preview / 归档 / 置顶 / 未读，底子在。
+1. **YCode 的渲染性能路线已经对齐前沿，不需要推翻重做。** 帧合并通知、层活动门控、视口探针、turnId 稳定 key 行高缓存、live tail 拆分这五件事，在竞品里都是 2025–2026 才收敛出来的做法，YCode 已经实现（见 §3）。
+2. **真正的差距不在「通知节奏」，而在「单元内 item 级窗口」与「滚动所有权状态机」。** 竞品最惨的两个翻车点是：turn 级虚拟化撑不住单轮数百条 item（Codex VS Code 扩展，DOM 节点 3,903 → 773），以及贴底逻辑与虚拟化测量互相打架（assistant-ui 明确点名）。前者 YCode 只做了一半，后者尚未成体系。
+3. **导航与会话内查找上 YCode 领先。** 单对话内的查找 + 高亮 + 跳转在 2026 年仍是市场空白（Cursor 的 in-chat Ctrl-F 还是 feature request），YCode 已有 `useConversationTimelineFind`、outline、turn navigator。
+4. **会话管理模式上 YCode 落后**：缺 fork/branch、缺 summarize-from-here、缺 session picker 的范围三档与 PR 反查、缺 chronicle 式「问历史」。已有 rewind / storage preview / 归档 / 置顶 / 未读，底子在。
 5. **一个依赖硬缺口**：`@tanstack/react-virtual` 当前锁在 `3.13.23`，**不含** 2026-05 才发布的聊天专用 API（`anchorTo:'end'` / `followOnAppend` / `scrollEndThreshold` / `useCachedMeasurements` / `takeSnapshot`），只有旧版 `initialMeasurementsCache`。端锚定与「隐藏测量」目前得自研或升级。
 6. **一个可维护性红旗**：`ConversationRowView.tsx` 2,093 行，`ConversationTurnGroup.tsx` 1,314 行，`ConversationTimeline.tsx` 1,911 行，均已越过强复查线。
 
@@ -39,14 +39,14 @@
 
 **共性结论**：DOM 客户端的默认答案是虚拟化；终端是「免费虚拟化」；GPU 自绘是另一条路（整体渲染 + 极高刷新率）；上下文压缩（compact/summary）解决的是 token/记忆，**不是** DOM 规模，两者常被混淆。
 
-## 3. ZCode 现状对照（代码证据）
+## 3. YCode 现状对照（代码证据）
 
 ### 3.1 已落地且对齐前沿
 
-| 能力                                                | ZCode 实现                                                                                                                              | 竞品对应                                                                                            | 判断     |
+| 能力                                                | YCode 实现                                                                                                                              | 竞品对应                                                                                            | 判断     |
 | --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- | -------- |
 | 帧内通知合并                                        | `lib/frameNotificationScheduler.ts`：状态同步写、通知按 rAF 合并、`visibilitychange` 隐藏挂起 / 恢复补一次、无 rAF 环境退化同步         | 与 Codex「有界合并 + 语义 flush」同源，且更完整（含可见性）                                         | **领先** |
-| 层活动门控                                          | `lib/layerActivity.tsx`：`LayerSurface` 非活动层保留 DOM/布局，用 `invisible absolute inset-0` + `inert`，不接收 React 通知，恢复补一次 | React `<Activity>` 用 `display:none` 会归零测高；ZCode 选保布局的 `visibility` 路线，正是社区推荐解 | **领先** |
+| 层活动门控                                          | `lib/layerActivity.tsx`：`LayerSurface` 非活动层保留 DOM/布局，用 `invisible absolute inset-0` + `inert`，不接收 React 通知，恢复补一次 | React `<Activity>` 用 `display:none` 会归零测高；YCode 选保布局的 `visibility` 路线，正是社区推荐解 | **领先** |
 | 视口探针                                            | `v4/timelineViewportProbe.ts`：滚动只登记失效、按帧合并、遮罩按签名去重写 DOM、稳定 selector 订阅、导航 rail 是唯一度量消费者           | 对应 shadcn MessageScroller 的「滚动热路径不触发 React rerender，状态镜像到 data-\*」               | **领先** |
 | turn 稳定 key                                       | `ConversationTimeline` 的 `getItemKey` 用 render unit 的 turnId                                                                         | 对应 TanStack「必须稳定 key」、Roo 翻车的反面教材                                                   | **正确** |
 | 行高缓存跨实例                                      | `v4/timelineRowHeightCache.ts`：以 turnId 为键、LRU 有界 4000、会话切换 clear                                                           | 对应 TanStack `initialMeasurementsCache` 的持久化思路                                               | **领先** |
@@ -58,7 +58,7 @@
 ### 3.2 真实差距
 
 **D1 · 单轮 item 级窗口（渲染边界）**
-`ConversationTimeline` 在 **render unit（回合）粒度**虚拟化。`conversationTurnRenderUnits` 单元内只做了 `flowRows` / `tailRows` 的尾部拆分，`flowRows` 仍是整段挂载。Codex 报告的直接证据表明：turn 级虚拟化在「单轮含数百条归一化 item」时不约束 DOM（活动尾部挂载 17 turns / 3,903 节点 → item 级 200 条窗口后 4 turns / 773 节点）。ZCode 的巨型回合（长工具链、长 subagent 输出）会命中同一问题。
+`ConversationTimeline` 在 **render unit（回合）粒度**虚拟化。`conversationTurnRenderUnits` 单元内只做了 `flowRows` / `tailRows` 的尾部拆分，`flowRows` 仍是整段挂载。Codex 报告的直接证据表明：turn 级虚拟化在「单轮含数百条归一化 item」时不约束 DOM（活动尾部挂载 17 turns / 3,903 节点 → item 级 200 条窗口后 4 turns / 773 节点）。YCode 的巨型回合（长工具链、长 subagent 输出）会命中同一问题。
 
 **D2 · 滚动所有权状态机**
 目前贴底判定散落在 `timelineScrollAnchor.ts` + `isAtBottom`，live tail 与虚拟化测量已有仲裁，但没有统一的 `pinned / unlocked / jumping` 三态机，也没有「N 条新消息 · 跳到最新」的持续可见入口与「选中文本 / 键盘 / 拖滚动条即解锁」的完整解锁信号集。
@@ -70,7 +70,7 @@
 有列表级 `unreadAt`，未见会话内的「新消息分隔线」（Slack/Discord 模式）。
 
 **D5 · 会话管理模式**
-缺 fork/branch（Claude Code `/branch`、Copilot `/fork`、ChatGPT branch in new chat）；缺 summarize-from-here/up-to-here（Claude Code、Zed New From Summary）；缺 session picker 的「项目 / worktree / 全机器」范围三档与按 PR 反查（Claude Code）；缺 chronicle 式「自然语言问历史」（Copilot `/chronicle`，ZCode 有 sessions-index 数据基础）。
+缺 fork/branch（Claude Code `/branch`、Copilot `/fork`、ChatGPT branch in new chat）；缺 summarize-from-here/up-to-here（Claude Code、Zed New From Summary）；缺 session picker 的「项目 / worktree / 全机器」范围三档与按 PR 反查（Claude Code）；缺 chronicle 式「自然语言问历史」（Copilot `/chronicle`，YCode 有 sessions-index 数据基础）。
 
 **D6 · 可维护性**
 `ConversationRowView.tsx` 2,093 行、`ConversationTimeline.tsx` 1,911 行、`ConversationTurnGroup.tsx` 1,314 行、`conversationProjectionStore.ts` 1,375 行。均已越过 800 行强复查线，是本模块最大的长期风险。
@@ -79,18 +79,18 @@
 
 ### 4.1 虚拟化与身份
 
-- **稳定 id key，禁止 index 身份**。Roo #7052 的根因就是「保留最近 500 条」按 index 追踪 + 数组位移。ZCode 已正确用 turnId，且 `slice` 均为描述性切分而非数据截断（无该 bug）。
+- **稳定 id key，禁止 index 身份**。Roo #7052 的根因就是「保留最近 500 条」按 index 追踪 + 数组位移。YCode 已正确用 turnId，且 `slice` 均为描述性切分而非数据截断（无该 bug）。
 - **视口 + buffer 窗口**：react-virtuoso 用 `increaseViewportBy {top:3000,bottom:1000}`。TanStack 用 `overscan`。
 - **数据全量留 store、只窗口化渲染**：Codex 明确「complete data in client state, derive a render-only window」。
 - **item 级窗口，不只 turn 级**：Codex 报告的 Finding 2。
-- **骨架「地图」+ island 懒加载**（Devin）：只查事件 `type` 画等高骨架，滚到未加载区再拉完整事件。适用于「历史超长、首屏要秒开、能滚到任意位置」的场景；ZCode 已有 `timelineViewportProbe` 度量基础，但要先有分页加载能力。
+- **骨架「地图」+ island 懒加载**（Devin）：只查事件 `type` 画等高骨架，滚到未加载区再拉完整事件。适用于「历史超长、首屏要秒开、能滚到任意位置」的场景；YCode 已有 `timelineViewportProbe` 度量基础，但要先有分页加载能力。
 
 ### 4.2 流式渲染隔离
 
 - **块 = 最小更新单元，只有最后一块是活的**（Textual 优化，官方称 equally applicable in the browser）：Markdown 按顶层 block（段落/代码围栏/表格/标题）切分，finalized 后缓存永不重建；只解析最后一个 block（解析成本与文档总长解耦）。
 - **生产/消费缓冲**：token 到达快于渲染时拼接 buffer，用最新整块替换。
 - **只有正在流式的行订阅易变切片**：Jotai `splitAtom` / Valtio 属性级订阅对标；Zustand 需手工做 `streamingTextById` 分片。
-- **有界合并 + 语义 flush barrier**：Codex 建议合并到 200ms，并在 turn 完成 / 权限请求 / 用户输入处强制 flush。ZCode 的帧合并已覆盖「按帧」，但**跨 macrotask 的终态**要确认有兜底（当前靠可见性事件，隐藏期间流结束的终态可能滞后到恢复才提交）。
+- **有界合并 + 语义 flush barrier**：Codex 建议合并到 200ms，并在 turn 完成 / 权限请求 / 用户输入处强制 flush。YCode 的帧合并已覆盖「按帧」，但**跨 macrotask 的终态**要确认有兜底（当前靠可见性事件，隐藏期间流结束的终态可能滞后到恢复才提交）。
 - **每 chunk 全量 parse Markdown 再 innerHTML 是 O(n²) 反模式**（Chrome 官方）。
 
 ### 4.3 滚动锚定与贴底
@@ -105,8 +105,8 @@
 ### 4.4 界面切换与隐藏层测量
 
 - React 19.2 `<Activity mode="hidden">` 已稳定：`display:none`、销毁 Effects（订阅随之退订）、隐藏期间低优先级重渲染、恢复时重建。代价：`display:none` 会让 ResizeObserver 报 0×0 → 虚拟列表测量归零。
-- **保布局的隐藏**（`visibility:hidden` / 绝对定位叠放）可让测量不归零——这正是 ZCode `LayerSurface` 的选择，代价是隐藏层仍参与布局。ZCode 用 `absolute inset-0` 让隐藏层脱离流叠加，是合理折中。
-- keep-alive 库结论：`react-activation` 禁 StrictMode、不支持 React 19（issue #337）、破坏 Context/ref 顺序 → **不要用**；`keepalive-for-react` 维护活跃但引入包体与淘汰语义。ZCode 自研 `LayerSurface` 是更可控的路径。
+- **保布局的隐藏**（`visibility:hidden` / 绝对定位叠放）可让测量不归零——这正是 YCode `LayerSurface` 的选择，代价是隐藏层仍参与布局。YCode 用 `absolute inset-0` 让隐藏层脱离流叠加，是合理折中。
+- keep-alive 库结论：`react-activation` 禁 StrictMode、不支持 React 19（issue #337）、破坏 Context/ref 顺序 → **不要用**；`keepalive-for-react` 维护活跃但引入包体与淘汰语义。YCode 自研 `LayerSurface` 是更可控的路径。
 - 隐藏层的工程细节：焦点 `inert`（已有）、IME composition 需 `blur` 清理（**待验证，中文输入必测**）、滚动位置显式保存/恢复、媒体用 `useLayoutEffect` cleanup。
 
 ### 4.5 时间线导航
@@ -168,7 +168,7 @@ flowchart TD
 ### 5.2 分阶段路线图
 
 **P0 · 保持既有优势（不动）**
-帧合并通知、层活动门控、视口探针、turnId 稳定 key、行高缓存、live tail 拆分。这六件是竞品 2025–2026 才收敛的成果，ZCode 已实现，不推翻。
+帧合并通知、层活动门控、视口探针、turnId 稳定 key、行高缓存、live tail 拆分。这六件是竞品 2025–2026 才收敛的成果，YCode 已实现，不推翻。
 
 **P1 · 渲染边界补全（对应 D1、D6）**
 
@@ -205,10 +205,10 @@ flowchart TD
 
 | 顺位 | 事项                        | 理由                                                                     | 证据强度 |
 | ---- | --------------------------- | ------------------------------------------------------------------------ | -------- |
-| 1    | 单轮 item 级窗口            | 唯一被公开报告证实的「turn 级虚拟化撑不住」缺陷，且 ZCode 已具备一半机制 | 确认     |
+| 1    | 单轮 item 级窗口            | 唯一被公开报告证实的「turn 级虚拟化撑不住」缺陷，且 YCode 已具备一半机制 | 确认     |
 | 2    | 滚动所有权状态机 + 端锚定   | 竞品共同痛点，也是用户体感最强的部分；依赖库缺口需先决策                 | 确认     |
 | 3    | 流式隔离确认                | 决定长回复越写越卡与否                                                   | 确认     |
-| 4    | 会话内未读线 + outline 联动 | 成本低、体感明显、ZCode 有基础                                           | 确认     |
+| 4    | 会话内未读线 + outline 联动 | 成本低、体感明显、YCode 有基础                                           | 确认     |
 | 5    | fork/branch + summarize     | 会话管理代差，工作量大                                                   | 确认     |
 | 6    | 行文件拆分                  | 长期风险，配合 P1/P2 一起做                                              | 推断     |
 
@@ -221,7 +221,7 @@ flowchart TD
 3. **IME 与隐藏层**：`display:none` / `invisible` 切换可能中断中文 composition。**待验证，中文必测**。
 4. **跨设备恢复**：滚动位置目前是本机 `timelineScrollAnchor`；手机远控 `web-remote-replayable` 是否需要等价恢复需单独确认。
 5. **隐藏期间流结束的终态**：当前靠 `visibilitychange` 补一次；若隐藏期间流结束，终态要等恢复才提交。需确认是否有低频兜底。
-6. **item 级窗口的正确性**：窗口化后 find-in-conversation / 复制 / 无障碍会受影响（assistant-ui 与 shadcn 都特意保留真实 DOM 行来支持 find-in-page）。需明确「窗口化 vs 查找」的取舍：ZCode 已有会话内查找，窗口化不能破坏它。
+6. **item 级窗口的正确性**：窗口化后 find-in-conversation / 复制 / 无障碍会受影响（assistant-ui 与 shadcn 都特意保留真实 DOM 行来支持 find-in-page）。需明确「窗口化 vs 查找」的取舍：YCode 已有会话内查找，窗口化不能破坏它。
 
 ### 6.2 验证计划
 
@@ -285,21 +285,21 @@ flowchart TD
 
 **已确认**
 
-- ZCode 已实现帧合并通知、层活动门控、视口探针、turnId 稳定 key、行高缓存、live tail 拆分（源码核查）。
+- YCode 已实现帧合并通知、层活动门控、视口探针、turnId 稳定 key、行高缓存、live tail 拆分（源码核查）。
 - `@tanstack/react-virtual` 锁定 3.13.23，不含 anchorTo / followOnAppend / scrollEndThreshold / useCachedMeasurements / takeSnapshot（node_modules 核查）。
 - 竞品证据：Codex 4 类缺陷、Devin 70%/86%、Roo #7052、Claude Code fullscreen、shadcn MessageScroller 策略、Activity 语义、TanStack 聊天 API 时间线、Safari 27 锚定、content-visibility、uSES 契约。
-- ZCode 文件规模（wc -l 核查）。
+- YCode 文件规模（wc -l 核查）。
 
 **推断**
 
-- 「单轮 item 级窗口」是 ZCode 最可能的性能缺口（基于 Codex 证据 + 代码结构，未实测）。
+- 「单轮 item 级窗口」是 YCode 最可能的性能缺口（基于 Codex 证据 + 代码结构，未实测）。
 - item 级窗口与会话内查找的取舍风险。
 - 行文件拆分的具体边界。
 - 会话管理模式差距的优先级排序。
 
 **未验证**
 
-- ZCode 巨型回合的实际 DOM 节点数与滚动帧分布（需跑 Playwright fixture）。
+- YCode 巨型回合的实际 DOM 节点数与滚动帧分布（需跑 Playwright fixture）。
 - `LayerSurface` 隐藏层内滚动容器的高度来源是否稳定。
 - 中文 IME 在层切换时的 composition 行为。
 - 跨设备（手机远控）滚动恢复是否已有等价实现。

@@ -1,9 +1,9 @@
 import { useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
-import type { SessionStoragePreview } from "@zcode/shared";
+import type { SessionStoragePreview } from "@ycode/shared";
 import { TaskStorageDialog } from "../../src/TaskStorageDialog.js";
 import type { TaskStorageService } from "../../src/hooks/useTaskStorage.js";
-import { ZCodeIntlProvider } from "../../src/i18n/IntlProvider.js";
+import { YCodeIntlProvider } from "../../src/i18n/IntlProvider.js";
 import "../../src/styles.css";
 
 const parameters = new URLSearchParams(location.search);
@@ -72,8 +72,8 @@ function Fixture() {
 }
 const root = createRoot(document.getElementById("root")!);
 root.render(
-  <ZCodeIntlProvider initialLocale={parameters.get("locale") === "zh-CN" ? "zh-CN" : "en-US"}>
+  <YCodeIntlProvider initialLocale={parameters.get("locale") === "zh-CN" ? "zh-CN" : "en-US"}>
     <Fixture />
-  </ZCodeIntlProvider>,
+  </YCodeIntlProvider>,
 );
 import.meta.hot?.dispose(() => root.unmount());

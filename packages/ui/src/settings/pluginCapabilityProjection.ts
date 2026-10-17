@@ -4,12 +4,12 @@ import {
 } from "@/settings/pluginStoreListing.js";
 import type {
   SkillSummary,
-  ZCodeCommand,
-  ZCodeInstalledPluginSummary,
-  ZCodePluginInfo,
-  ZCodePluginScope,
-} from "@zcode/shared";
-import { compareDocumentPluginPriority, isPluginCommand, isUserCommand } from "@zcode/shared";
+  YCodeCommand,
+  YCodeInstalledPluginSummary,
+  YCodePluginInfo,
+  YCodePluginScope,
+} from "@ycode/shared";
+import { compareDocumentPluginPriority, isPluginCommand, isUserCommand } from "@ycode/shared";
 import { pluginSearchMatches } from "@/settings/pluginSearch.js";
 
 function canonicalPluginName(value: string): string {
@@ -17,16 +17,16 @@ function canonicalPluginName(value: string): string {
 }
 
 export function selectBuiltInPlugins(
-  plugins: readonly ZCodePluginInfo[],
-  installedPlugins: readonly ZCodeInstalledPluginSummary[],
-): ZCodePluginInfo[] {
+  plugins: readonly YCodePluginInfo[],
+  installedPlugins: readonly YCodeInstalledPluginSummary[],
+): YCodePluginInfo[] {
   const installedIds = new Set(installedPlugins.map((plugin) => plugin.id));
   return plugins.filter((plugin) => plugin.source === "official" && !installedIds.has(plugin.id));
 }
 
 interface PluginSettingsGroups {
-  installed: ZCodePluginInfo[];
-  builtIn: ZCodePluginInfo[];
+  installed: YCodePluginInfo[];
+  builtIn: YCodePluginInfo[];
 }
 
 /**
@@ -34,7 +34,7 @@ interface PluginSettingsGroups {
  * 进入 Installed / Built-in，否则会出现“已安装分组 + 未安装状态”的矛盾行。
  */
 export function partitionPluginsForSettings(
-  plugins: readonly ZCodePluginInfo[],
+  plugins: readonly YCodePluginInfo[],
   builtInPluginIds: ReadonlySet<string>,
 ): PluginSettingsGroups {
   const materializedPlugins = plugins.filter((plugin) => plugin.packageStatus !== "missing");
@@ -47,11 +47,11 @@ export function partitionPluginsForSettings(
 }
 
 export function filterPluginsByQuery(
-  plugins: readonly ZCodePluginInfo[],
+  plugins: readonly YCodePluginInfo[],
   query: string,
   itemsById?: ReadonlyMap<string, StorePluginItem>,
   locale = "en-US",
-): ZCodePluginInfo[] {
+): YCodePluginInfo[] {
   const normalizedQuery = query.trim().toLocaleLowerCase();
   if (!normalizedQuery) return [...plugins];
   return plugins.filter((plugin) => {
@@ -71,10 +71,10 @@ export function filterPluginsByQuery(
 }
 
 export function selectPluginsForScope(
-  plugins: readonly ZCodePluginInfo[],
-  _installedPlugins: readonly ZCodeInstalledPluginSummary[],
-  _scope: ZCodePluginScope,
-): ZCodePluginInfo[] {
+  plugins: readonly YCodePluginInfo[],
+  _installedPlugins: readonly YCodeInstalledPluginSummary[],
+  _scope: YCodePluginScope,
+): YCodePluginInfo[] {
   // User / Workspace 已经由 plugins/list(configScope) 返回各自的配置投影。
   // 这里不能再按 enabledSource/rootSource 做“归属”过滤，否则 Workspace 会丢掉继承 User
   // 的 Host inventory，User 也会被当前 Workspace override 污染后的来源字段误删。
@@ -83,8 +83,8 @@ export function selectPluginsForScope(
 
 export function selectSkillsForScope(
   skills: readonly SkillSummary[],
-  scopedPlugins: readonly Pick<ZCodePluginInfo, "id" | "name" | "enabled">[],
-  scope: ZCodePluginScope,
+  scopedPlugins: readonly Pick<YCodePluginInfo, "id" | "name" | "enabled">[],
+  scope: YCodePluginScope,
 ): SkillSummary[] {
   const enabledPlugins = scopedPlugins.filter((plugin) => plugin.enabled);
   const scopedPluginIds = new Set(enabledPlugins.map((plugin) => plugin.id));
@@ -107,10 +107,10 @@ export function selectSkillsForScope(
 }
 
 export function selectCommandsForScope(
-  commands: readonly ZCodeCommand[],
-  scopedPlugins: readonly Pick<ZCodePluginInfo, "id" | "name" | "enabled">[],
-  scope: ZCodePluginScope,
-): ZCodeCommand[] {
+  commands: readonly YCodeCommand[],
+  scopedPlugins: readonly Pick<YCodePluginInfo, "id" | "name" | "enabled">[],
+  scope: YCodePluginScope,
+): YCodeCommand[] {
   const enabledPlugins = scopedPlugins.filter((plugin) => plugin.enabled);
   const scopedPluginIds = new Set(enabledPlugins.map((plugin) => plugin.id));
   const scopedPluginIdsByName = new Map<string, string[]>();

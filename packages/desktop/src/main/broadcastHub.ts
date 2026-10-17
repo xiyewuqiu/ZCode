@@ -5,8 +5,8 @@ import {
   broadcastMessageSchema,
   formatZodError,
   hostResponseMessageSchema,
-} from "@zcode/shared";
-import type { BroadcastMessage } from "@zcode/services";
+} from "@ycode/shared";
+import type { BroadcastMessage } from "@ycode/services";
 import { logger } from "./logger.js";
 
 /**

@@ -1,12 +1,12 @@
 import type {
-  ZCodeModelTrajectoryMessage,
-  ZCodeModelTrajectoryRecord,
-  ZCodeModelTrajectoryUsage,
-} from "@zcode/services";
+  YCodeModelTrajectoryMessage,
+  YCodeModelTrajectoryRecord,
+  YCodeModelTrajectoryUsage,
+} from "@ycode/services";
 import { Fragment } from "react";
 import { cn } from "@/components/lib/utils.js";
 import { Badge } from "@/components/ui/badge.js";
-import type { useZCodeIntl } from "@/i18n/IntlProvider.js";
+import type { useYCodeIntl } from "@/i18n/IntlProvider.js";
 import { ContentPartView, EmptyState, summarizeRecords } from "@/ModelTrajectoryPaneDetails.js";
 import { ExpandableTrajectoryMessage } from "@/ModelTrajectoryExpandableMessage.js";
 import { ModelTrajectoryErrorBlock } from "@/ModelTrajectoryErrorBlock.js";
@@ -20,7 +20,7 @@ import { TrajectorySectionTitle } from "@/ModelTrajectorySectionTitle.js";
 
 export { EmptyState, summarizeRecords } from "@/ModelTrajectoryPaneDetails.js";
 
-export type IntlShape = ReturnType<typeof useZCodeIntl>["intl"];
+export type IntlShape = ReturnType<typeof useYCodeIntl>["intl"];
 
 export function CallCard({
   record,
@@ -29,9 +29,9 @@ export function CallCard({
   expansionKeyPrefix,
   intl,
 }: {
-  record: ZCodeModelTrajectoryRecord;
+  record: YCodeModelTrajectoryRecord;
   index: number;
-  inputMessages: ZCodeModelTrajectoryMessage[];
+  inputMessages: YCodeModelTrajectoryMessage[];
   expansionKeyPrefix?: string;
   intl: IntlShape;
 }) {
@@ -113,8 +113,8 @@ export function CallCard({
   );
 }
 
-function SourceTitle({ record, intl }: { record: ZCodeModelTrajectoryRecord; intl: IntlShape }) {
-  const callSource: NonNullable<ZCodeModelTrajectoryRecord["callSource"]> = record.callSource ?? {
+function SourceTitle({ record, intl }: { record: YCodeModelTrajectoryRecord; intl: IntlShape }) {
+  const callSource: NonNullable<YCodeModelTrajectoryRecord["callSource"]> = record.callSource ?? {
     kind: "main",
   };
   const labelId = sourceLabelId(callSource);
@@ -133,7 +133,7 @@ function SourceTitle({ record, intl }: { record: ZCodeModelTrajectoryRecord; int
   );
 }
 
-function sourceLabelId(callSource: NonNullable<ZCodeModelTrajectoryRecord["callSource"]>): string {
+function sourceLabelId(callSource: NonNullable<YCodeModelTrajectoryRecord["callSource"]>): string {
   switch (callSource.querySource) {
     case "main_turn":
       return "modelTrajectory.source.main";
@@ -173,7 +173,7 @@ function MessageBlock({
   expansionKey,
   intl,
 }: {
-  message: ZCodeModelTrajectoryMessage;
+  message: YCodeModelTrajectoryMessage;
   callStartedAt: string;
   callDurationMs?: number;
   isAlt: boolean;
@@ -256,7 +256,7 @@ function ResponseBlock({
   expansionKeyPrefix,
   intl,
 }: {
-  response: NonNullable<ZCodeModelTrajectoryRecord["response"]>;
+  response: NonNullable<YCodeModelTrajectoryRecord["response"]>;
   callStartedAt: string;
   callDurationMs?: number;
   startRowIndex: number;
@@ -271,7 +271,7 @@ function ResponseBlock({
   }
 
   const rows: Array<{
-    message: ZCodeModelTrajectoryMessage;
+    message: YCodeModelTrajectoryMessage;
     roleLabel: string;
     key: string;
     visualRole?: "reasoning";
@@ -344,7 +344,7 @@ function ResponseMessageRow({
   expansionKey,
   intl,
 }: {
-  message: ZCodeModelTrajectoryMessage;
+  message: YCodeModelTrajectoryMessage;
   roleLabel: string;
   visualRole?: "reasoning";
   callStartedAt: string;
@@ -375,8 +375,8 @@ function CallMetadata({
   record,
   usage,
 }: {
-  record: ZCodeModelTrajectoryRecord;
-  usage?: ZCodeModelTrajectoryUsage;
+  record: YCodeModelTrajectoryRecord;
+  usage?: YCodeModelTrajectoryUsage;
 }) {
   const items: Array<{ text: string; title?: string }> = [];
   if (typeof usage?.inputTokens === "number") {

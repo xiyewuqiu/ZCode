@@ -12,7 +12,7 @@
  * 默认键位保持既有行为，零变化。
  */
 import { useEffect, useRef } from "react";
-import type { ShortcutCommandId, ZCodeConfigOption } from "@zcode/shared";
+import type { ShortcutCommandId, YCodeConfigOption } from "@ycode/shared";
 import {
   isShortcutRecordingActive,
   matchesShortcutBinding,
@@ -25,7 +25,7 @@ type ChatToolbarShortcutKey = "m" | "ctrlShiftM" | "t" | null;
 
 /** 按 config category 解析工具条热键槽位。 */
 function getChatToolbarShortcutKey(
-  category: ZCodeConfigOption["category"],
+  category: YCodeConfigOption["category"],
 ): ChatToolbarShortcutKey {
   switch (category) {
     case "model":
@@ -41,7 +41,7 @@ function getChatToolbarShortcutKey(
 
 /** 计算 select 选项的下一次循环取值（模式循环用）。 */
 export function getNextConfigSelectValue(
-  option: Pick<ZCodeConfigOption, "type" | "currentValue" | "options">,
+  option: Pick<YCodeConfigOption, "type" | "currentValue" | "options">,
 ): string | null {
   if (option.type !== "select" || !option.options?.length) {
     return null;
@@ -70,9 +70,9 @@ interface ToolbarShortcutState {
   hasAnyOption: boolean;
   toolbarDisabled: boolean;
   modelMenuDisabled: boolean;
-  modelOption?: ZCodeConfigOption;
-  modeOption?: ZCodeConfigOption;
-  thoughtOption?: ZCodeConfigOption;
+  modelOption?: YCodeConfigOption;
+  modeOption?: YCodeConfigOption;
+  thoughtOption?: YCodeConfigOption;
 }
 
 type ToolbarShortcutAction = "openModelMenu" | "cycleSessionMode" | "cycleThoughtLevel";
@@ -109,7 +109,7 @@ function resolveToolbarShortcutAction(
     action: ToolbarShortcutAction;
     commandId: ShortcutCommandId;
     expectedKey: ChatToolbarShortcutKey;
-    option?: ZCodeConfigOption;
+    option?: YCodeConfigOption;
     disabled?: boolean;
   }> = [
     {
@@ -157,9 +157,9 @@ export function useToolbarShortcutBindings(params: {
   hasAnyOption: boolean;
   toolbarDisabled: boolean;
   modelMenuDisabled: boolean;
-  modelOption?: ZCodeConfigOption;
-  modeOption?: ZCodeConfigOption;
-  thoughtOption?: ZCodeConfigOption;
+  modelOption?: YCodeConfigOption;
+  modeOption?: YCodeConfigOption;
+  thoughtOption?: YCodeConfigOption;
   onOpenModelMenu: () => void;
   /** Ctrl+Shift+M：参考 thought level，按选项顺序快速切换会话模式，不打开菜单。 */
   onCycleSessionMode: () => void;

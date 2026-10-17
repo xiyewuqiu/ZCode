@@ -1,12 +1,12 @@
 /* eslint-disable max-lines -- 远程连接向导的状态编排暂集中在同一组件，后续有独立拆分计划。 */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { createUuid, type RemoteTarget, type RemoteWorkspaceSessionEntry } from "@zcode/shared";
+import { createUuid, type RemoteTarget, type RemoteWorkspaceSessionEntry } from "@ycode/shared";
 import {
   TID_SSH_CONNECT_TRIGGER,
   TID_SSH_DIALOG,
   TID_SSH_ERROR,
   TID_SSH_SUCCESS,
-} from "@zcode/shared";
+} from "@ycode/shared";
 import { AlertTriangleIcon } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button.js";
 import { Dialog, DialogContent, DialogHeader } from "@/components/ui/dialog.js";
@@ -14,7 +14,7 @@ import { useCancelPendingRemoteConnection } from "@/hooks/useCancelPendingRemote
 import { useConfirmDialog } from "@/hooks/useConfirmDialog.js";
 import { useRemoteConnectionForm } from "@/hooks/useRemoteConnectionForm.js";
 import { useRemoteConnectionLogs } from "@/hooks/useRemoteConnectionLogs.js";
-import { useZCodeIntl } from "@/i18n/IntlProvider.js";
+import { useYCodeIntl } from "@/i18n/IntlProvider.js";
 import { getErrorMessage } from "@/lib/errorMessage.js";
 import {
   buildRemoteTarget,
@@ -82,7 +82,7 @@ export function RemoteConnectionDialog({
   preferredKind,
   preferredWslDistro,
 }: RemoteConnectionDialogProps) {
-  const { intl } = useZCodeIntl();
+  const { intl } = useYCodeIntl();
   const confirmDialog = useConfirmDialog();
   const cancelPendingRemoteConnection = useCancelPendingRemoteConnection();
   const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
@@ -591,8 +591,8 @@ export function RemoteConnectionDialog({
                       remoteMcpSyncService={directoryBrowserServices?.mcpSyncService ?? null}
                       localPluginSyncService={baseServices.pluginSyncService}
                       remotePluginSyncService={directoryBrowserServices?.pluginSyncService ?? null}
-                      localZCodeAgentService={baseServices.zcodeAgentService}
-                      remoteZCodeAgentService={directoryBrowserServices?.zcodeAgentService ?? null}
+                      localYCodeAgentService={baseServices.ycodeAgentService}
+                      remoteYCodeAgentService={directoryBrowserServices?.ycodeAgentService ?? null}
                       localWorkspacePath={localWorkspacePath}
                       selecting={selectingDirectory}
                       onSelect={(path) => {

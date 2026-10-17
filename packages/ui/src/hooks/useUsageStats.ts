@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { AppUsageRange, AppUsageSnapshot } from "@zcode/shared";
+import type { AppUsageRange, AppUsageSnapshot } from "@ycode/shared";
 import { logger } from "@/logger.js";
 import { useServices } from "@/hooks/useServices.js";
 

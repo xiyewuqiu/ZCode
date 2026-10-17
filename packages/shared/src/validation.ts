@@ -1,22 +1,22 @@
 import { databaseStartupControlSchema, databaseStartupStateSchema } from "./database-startup.js";
 /* eslint-disable max-lines -- 运行时 schema 当前集中在共享包入口，外部 relay payload 校验加入后先保持单一导出面。 */
 import { z } from "zod";
-import { zcodeProcessDiagnosticSchema } from "./process-diagnostic.js";
+import { ycodeProcessDiagnosticSchema } from "./process-diagnostic.js";
 import { browserCommandSchema } from "./browser-use/commands.js";
 import { browserCommandResultSchema } from "./browser-use/result.js";
 import { REMOTE_ASSET_INSTALL_MODES } from "./remoteAssetInstallMode.js";
 import { isKnownRemoteResourcePackageId } from "./remoteResourcePackages.js";
-import { zcodeProviderSchema } from "./providers.js";
-import { zcodeAgentProviderSchema } from "./zcode-agent-policy.js";
+import { ycodeProviderSchema } from "./providers.js";
+import { ycodeAgentProviderSchema } from "./ycode-agent-policy.js";
 import { modelSelectionSchema } from "./model-selection.js";
 import {
-  zcodeMcpTelemetryEventSchema,
-  zcodeMcpResourceSamplesSchema,
-  zcodeToolExecResourceSchema,
-  zcodeProcessResourceSampleSchema,
-} from "./zcode-protocol/index.js";
-import { zcodeTaskModeSchema } from "./zcode-task-mode-schema.js";
-import { errorAttributionSchema } from "./zcode-protocol-v4/snapshot.js";
+  ycodeMcpTelemetryEventSchema,
+  ycodeMcpResourceSamplesSchema,
+  ycodeToolExecResourceSchema,
+  ycodeProcessResourceSampleSchema,
+} from "./ycode-protocol/index.js";
+import { ycodeTaskModeSchema } from "./ycode-task-mode-schema.js";
+import { errorAttributionSchema } from "./ycode-protocol-v4/snapshot.js";
 import {
   taskOwnerCommandDeliverySchema,
   taskOwnerCommandRequestSchema,
@@ -32,7 +32,7 @@ import {
 } from "./task-realtime-core.js";
 
 export { WSL_USER_MAX_LENGTH, isValidWslUser, wslUserSchema } from "./wslUserValidation.js";
-export { zcodeTaskModeSchema } from "./zcode-task-mode-schema.js";
+export { ycodeTaskModeSchema } from "./ycode-task-mode-schema.js";
 import { wslUserSchema } from "./wslUserValidation.js";
 export {
   appSettingsOccupationEnum,
@@ -92,7 +92,7 @@ export const remoteTargetSchema = z.discriminatedUnion("kind", [
 ]);
 
 export const helloMessageSchema = z.object({
-  type: z.literal("zcode-hello"),
+  type: z.literal("ycode-hello"),
   version: z.string(),
   platform: z.string(),
   arch: z.string(),
@@ -100,7 +100,7 @@ export const helloMessageSchema = z.object({
 });
 
 export const helloAckMessageSchema = z.object({
-  type: z.literal("zcode-hello-ack"),
+  type: z.literal("ycode-hello-ack"),
   version: z.string(),
   clientId: nonEmptyStringSchema,
 });
@@ -180,7 +180,7 @@ export const hostInitLocalMessageSchema = z.object({
   workspaceIdentity: nonEmptyStringSchema.optional(),
   agentWarmupTargets: z.array(hostAgentWarmupTargetSchema).max(3).optional(),
   agentSpawnFallbackCwd: nonEmptyStringSchema.optional(),
-  zcodeBuiltinProviderConfigFilePath: nonEmptyStringSchema,
+  ycodeBuiltinProviderConfigFilePath: nonEmptyStringSchema,
   runtimeProcessEnvPatch: z
     .record(z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/), z.string())
     .optional(),
@@ -483,16 +483,16 @@ export const hostLogResponseSchema = z.object({
   message: z.string(),
 });
 
-export { zcodeProviderSchema };
+export { ycodeProviderSchema };
 
-export const zcodeTaskMigrationSourceSchema = z.enum(["claudeCode"]);
+export const ycodeTaskMigrationSourceSchema = z.enum(["claudeCode"]);
 
 export const hostAgentProcessSpawnedResponseSchema = z.object({
   type: z.literal("agent-process-spawned"),
   /** 进程泳道（mcp-status 等），旧 Host 不带该字段。 */
   lane: nonEmptyStringSchema.optional(),
   pid: z.number().int().positive(),
-  provider: zcodeProviderSchema,
+  provider: ycodeProviderSchema,
   workspacePath: nonEmptyStringSchema,
   command: z.string(),
   args: z.array(z.string()),
@@ -507,7 +507,7 @@ export const hostAgentProcessReadyResponseSchema = z.object({
   /** 进程泳道（mcp-status 等），旧 Host 不带该字段。 */
   lane: nonEmptyStringSchema.optional(),
   pid: z.number().int().positive(),
-  provider: zcodeProviderSchema,
+  provider: ycodeProviderSchema,
   workspacePath: nonEmptyStringSchema,
   readyAt: z.number().int().nonnegative(),
   startupDurationMs: z.number().int().nonnegative(),
@@ -521,7 +521,7 @@ export const hostAgentProcessExitedResponseSchema = z.object({
   /** 进程泳道（mcp-status 等），旧 Host 不带该字段。 */
   lane: nonEmptyStringSchema.optional(),
   pid: z.number().int().positive(),
-  provider: zcodeProviderSchema,
+  provider: ycodeProviderSchema,
   workspacePath: nonEmptyStringSchema,
   exitCode: z.number().int().nullable(),
   signal: z.string().nullable(),
@@ -544,7 +544,7 @@ export const hostAgentProcessErrorResponseSchema = z.object({
   /** 进程泳道（mcp-status 等），旧 Host 不带该字段。 */
   lane: nonEmptyStringSchema.optional(),
   pid: z.number().int().positive().nullable(),
-  provider: zcodeProviderSchema,
+  provider: ycodeProviderSchema,
   workspacePath: nonEmptyStringSchema,
   command: z.string(),
   args: z.array(z.string()),
@@ -564,11 +564,11 @@ export const hostAgentProcessExceptionResponseSchema = z
     type: z.literal("agent-process-exception"),
     lane: nonEmptyStringSchema.optional(),
     pid: z.number().int().positive(),
-    provider: zcodeProviderSchema,
+    provider: ycodeProviderSchema,
     workspacePath: nonEmptyStringSchema,
     runtimeGeneration: z.number().int().positive(),
     runtimeInstanceId: nonEmptyStringSchema,
-    diagnostic: zcodeProcessDiagnosticSchema,
+    diagnostic: ycodeProcessDiagnosticSchema,
   })
   .strict();
 export type HostAgentProcessExceptionResponse = z.infer<
@@ -584,7 +584,7 @@ export type HostAgentProcessExceptionResponse = z.infer<
  */
 
 /** `lane` 由 services 层按调用方补齐的进程泳道标签；协议侧只做可选字符串校验，不再枚举具体泳道。 */
-export const agentLaneResourceSampleSchema = zcodeProcessResourceSampleSchema
+export const agentLaneResourceSampleSchema = ycodeProcessResourceSampleSchema
   .extend({ lane: z.string().optional() })
   .strict();
 export type AgentLaneResourceSample = z.infer<typeof agentLaneResourceSampleSchema>;
@@ -597,7 +597,7 @@ export const hostAgentResourceSampleResponseSchema = z
     type: z.literal("agent-resource-sample"),
     runtimeSurface: z.enum(["local", "remote"]),
     environmentKey: resourceTelemetryEnvironmentKeySchema.optional(),
-    sample: zcodeProcessResourceSampleSchema,
+    sample: ycodeProcessResourceSampleSchema,
   })
   .strict();
 export type HostAgentResourceSampleResponse = z.infer<typeof hostAgentResourceSampleResponseSchema>;
@@ -611,7 +611,7 @@ export const nodeSelfResourceSampleSchema = z
   .object({
     /**
      * 整机归一化 CPU 百分比，100 表示所有逻辑核占满。
-     * 上限刻意放宽（与 CLI 的 `zcodeProcessResourceSampleSchema` 同口径）：读数异常时宁可让
+     * 上限刻意放宽（与 CLI 的 `ycodeProcessResourceSampleSchema` 同口径）：读数异常时宁可让
      * 样本带着离谱数值上去、由平台侧数值异常规则暴露，也不在客户端静默丢样本。
      */
     cpuPercent: z.number().finite().nonnegative().max(100_000),
@@ -647,7 +647,7 @@ export const hostMcpResourceSamplesResponseSchema = z
     type: z.literal("mcp-resource-samples"),
     runtimeSurface: z.enum(["local", "remote"]),
     environmentKey: resourceTelemetryEnvironmentKeySchema.optional(),
-    samples: zcodeMcpResourceSamplesSchema,
+    samples: ycodeMcpResourceSamplesSchema,
   })
   .strict();
 export type HostMcpResourceSamplesResponse = z.infer<typeof hostMcpResourceSamplesResponseSchema>;
@@ -656,7 +656,7 @@ export const hostToolExecResourceResponseSchema = z
   .object({
     type: z.literal("tool-exec-resource"),
     runtimeSurface: z.enum(["local", "remote"]),
-    sample: zcodeToolExecResourceSchema,
+    sample: ycodeToolExecResourceSchema,
   })
   .strict();
 export type HostToolExecResourceResponse = z.infer<typeof hostToolExecResourceResponseSchema>;
@@ -665,7 +665,7 @@ export const hostMcpTelemetryResponseSchema = z
   .object({
     type: z.literal("mcp-telemetry"),
     runtimeSurface: z.enum(["local", "remote"]),
-    event: zcodeMcpTelemetryEventSchema,
+    event: ycodeMcpTelemetryEventSchema,
   })
   .strict();
 export type HostMcpTelemetryResponse = z.infer<typeof hostMcpTelemetryResponseSchema>;
@@ -890,9 +890,9 @@ export const hostResponseMessageSchema = z.discriminatedUnion("type", [
   hostCronSchedulerWakeRequestResponseSchema,
 ]);
 
-export const zcodeTaskPersistStatusSchema = z.enum(["running", "completed", "error"]);
+export const ycodeTaskPersistStatusSchema = z.enum(["running", "completed", "error"]);
 
-export const zcodePromptImageAttachmentSchema = z.object({
+export const ycodePromptImageAttachmentSchema = z.object({
   kind: z.literal("image"),
   filename: z.string(),
   mimeType: z.string(),
@@ -903,7 +903,7 @@ export const zcodePromptImageAttachmentSchema = z.object({
 
 // 附件 TypeScript 联合类型新增 video 后，手写的持久化运行时 schema 未同步，
 // session 恢复解析会拒绝含视频的用户消息。字段与 image 的 inline/local 引用语义保持一致。
-export const zcodePromptVideoAttachmentSchema = z.object({
+export const ycodePromptVideoAttachmentSchema = z.object({
   kind: z.literal("video"),
   filename: z.string(),
   mimeType: z.string(),
@@ -912,7 +912,7 @@ export const zcodePromptVideoAttachmentSchema = z.object({
   localPath: z.string().optional(),
 });
 
-export const zcodePromptPdfAttachmentSchema = z.object({
+export const ycodePromptPdfAttachmentSchema = z.object({
   kind: z.literal("pdf"),
   filename: z.string(),
   mimeType: z.string(),
@@ -921,7 +921,7 @@ export const zcodePromptPdfAttachmentSchema = z.object({
   localPath: z.string().optional(),
 });
 
-export const zcodePromptFileAttachmentSchema = z.object({
+export const ycodePromptFileAttachmentSchema = z.object({
   kind: z.literal("file"),
   filename: z.string(),
   mimeType: z.string(),
@@ -931,14 +931,14 @@ export const zcodePromptFileAttachmentSchema = z.object({
   localPath: z.string().optional(),
 });
 
-export const zcodePromptAttachmentSchema = z.discriminatedUnion("kind", [
-  zcodePromptImageAttachmentSchema,
-  zcodePromptVideoAttachmentSchema,
-  zcodePromptPdfAttachmentSchema,
-  zcodePromptFileAttachmentSchema,
+export const ycodePromptAttachmentSchema = z.discriminatedUnion("kind", [
+  ycodePromptImageAttachmentSchema,
+  ycodePromptVideoAttachmentSchema,
+  ycodePromptPdfAttachmentSchema,
+  ycodePromptFileAttachmentSchema,
 ]);
 
-export const zcodePersistedToolCallSchema = z.object({
+export const ycodePersistedToolCallSchema = z.object({
   toolName: z.string().optional(),
   title: z.string().optional(),
   kind: z.string().optional(),
@@ -960,7 +960,7 @@ export const zcodePersistedToolCallSchema = z.object({
     .optional(),
 });
 
-const zcodePersistedMessagePartSchema = z.discriminatedUnion("type", [
+const ycodePersistedMessagePartSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("content"), content: z.string() }),
   z.object({ type: z.literal("thought"), content: z.string() }),
   z.object({
@@ -969,7 +969,7 @@ const zcodePersistedMessagePartSchema = z.discriminatedUnion("type", [
   }),
 ]);
 
-export const zcodePersistedMessageSchema = z.object({
+export const ycodePersistedMessageSchema = z.object({
   id: z.string().optional(),
   role: z.enum(["user", "assistant"]),
   content: z.string(),
@@ -982,10 +982,10 @@ export const zcodePersistedMessageSchema = z.object({
   durationMs: z.number().int().nonnegative().optional(),
   interrupted: z.boolean().optional(),
   feedback: z.enum(["like", "dislike"]).optional(),
-  attachments: z.array(zcodePromptAttachmentSchema).optional(),
-  tools: z.array(zcodePersistedToolCallSchema).optional(),
+  attachments: z.array(ycodePromptAttachmentSchema).optional(),
+  tools: z.array(ycodePersistedToolCallSchema).optional(),
   thought: z.string().optional(),
-  parts: z.array(zcodePersistedMessagePartSchema).optional(),
+  parts: z.array(ycodePersistedMessagePartSchema).optional(),
   checkpointState: z.enum(["partial"]).optional(),
   checkpointReason: z.enum(["tool_completed", "part_boundary", "periodic"]).optional(),
   checkpointUpdatedAt: z.number().int().nonnegative().optional(),
@@ -1013,9 +1013,9 @@ export const zcodePersistedMessageSchema = z.object({
     .optional(),
 });
 
-export const zcodeTaskGoalStatusSchema = z.enum(["active", "paused", "budget_limited", "complete"]);
+export const ycodeTaskGoalStatusSchema = z.enum(["active", "paused", "budget_limited", "complete"]);
 
-export const zcodeTaskTargetChangedActionSchema = z.enum([
+export const ycodeTaskTargetChangedActionSchema = z.enum([
   "set",
   "status_updated",
   "cleared",
@@ -1025,16 +1025,16 @@ export const zcodeTaskTargetChangedActionSchema = z.enum([
   "summary_updated",
 ]);
 
-export const zcodeTaskTargetChangedSourceSchema = z.enum(["command", "tool", "runtime"]);
+export const ycodeTaskTargetChangedSourceSchema = z.enum(["command", "tool", "runtime"]);
 
-export const zcodeTaskGoalSchema = z.object({
+export const ycodeTaskGoalSchema = z.object({
   sessionID: nonEmptyStringSchema,
   targetID: nonEmptyStringSchema,
   objective: nonEmptyStringSchema,
   // 2.15.0 之前的 /goal 历史任务没有写 summaryTitle。
   // 读取 task index 老数据时要补成 null，否则整个任务列表会被运行时 schema 拒绝。
   summaryTitle: z.string().min(1).nullable().default(null),
-  status: zcodeTaskGoalStatusSchema,
+  status: ycodeTaskGoalStatusSchema,
   tokenBudget: z.number().int().positive().nullable(),
   tokensUsed: z.number().int().nonnegative(),
   timeUsedSeconds: z.number().int().nonnegative(),
@@ -1047,18 +1047,18 @@ export const zcodeTaskGoalSchema = z.object({
   }),
 });
 
-export const zcodeTaskGoalChangedPatchSchema = z.object({
-  action: zcodeTaskTargetChangedActionSchema,
-  source: zcodeTaskTargetChangedSourceSchema,
-  target: zcodeTaskGoalSchema.nullable(),
-  previousTarget: zcodeTaskGoalSchema.nullable().optional(),
+export const ycodeTaskGoalChangedPatchSchema = z.object({
+  action: ycodeTaskTargetChangedActionSchema,
+  source: ycodeTaskTargetChangedSourceSchema,
+  target: ycodeTaskGoalSchema.nullable(),
+  previousTarget: ycodeTaskGoalSchema.nullable().optional(),
 });
 
-export const zcodeTaskTargetStatusSchema = zcodeTaskGoalStatusSchema;
-export const zcodeTaskTargetSchema = zcodeTaskGoalSchema;
-export const zcodeTaskTargetChangedPatchSchema = zcodeTaskGoalChangedPatchSchema;
+export const ycodeTaskTargetStatusSchema = ycodeTaskGoalStatusSchema;
+export const ycodeTaskTargetSchema = ycodeTaskGoalSchema;
+export const ycodeTaskTargetChangedPatchSchema = ycodeTaskGoalChangedPatchSchema;
 
-export const zcodeTaskMetaSchema = z.object({
+export const ycodeTaskMetaSchema = z.object({
   taskId: nonEmptyStringSchema,
   traceId: nonEmptyStringSchema,
   title: z.string(),
@@ -1068,19 +1068,19 @@ export const zcodeTaskMetaSchema = z.object({
   workspacePurpose: z.enum(["project", "conversation"]).optional(),
   createdAt: z.number().int().nonnegative(),
   updatedAt: z.number().int().nonnegative(),
-  mode: zcodeTaskModeSchema,
+  mode: ycodeTaskModeSchema,
   model: z.string().optional(),
   thoughtLevel: nonEmptyStringSchema.optional(),
   runtimeEpoch: z.number().int().nonnegative().optional(),
-  provider: zcodeAgentProviderSchema.optional(),
-  migrationSource: zcodeTaskMigrationSourceSchema.optional(),
+  provider: ycodeAgentProviderSchema.optional(),
+  migrationSource: ycodeTaskMigrationSourceSchema.optional(),
   forkedFromTaskId: nonEmptyStringSchema.optional(),
   // cron automation 身份：随 meta_json 一起持久化（单一来源），同时在写入时投影到 tasks 表
   // cron_automation_id 索引列，供按 automation 反查 session。runId 属于 automation_runs /
   // 投递 metadata，不属于 task 表。
   cronAutomationId: nonEmptyStringSchema.optional(),
   unreadAt: z.number().int().nonnegative().optional(),
-  status: zcodeTaskPersistStatusSchema.optional(),
+  status: ycodeTaskPersistStatusSchema.optional(),
   lastError: z
     .object({
       code: z.string().optional(),
@@ -1107,20 +1107,20 @@ export const zcodeTaskMetaSchema = z.object({
       ),
     })
     .optional(),
-  target: zcodeTaskGoalSchema.nullable().optional(),
+  target: ycodeTaskGoalSchema.nullable().optional(),
 });
 
-export const zcodeTaskIndexEntrySchema = z.object({
+export const ycodeTaskIndexEntrySchema = z.object({
   workspaceHash: nonEmptyStringSchema,
   taskId: nonEmptyStringSchema,
 });
 
-export const zcodePinnedTasksFileSchema = z.object({
+export const ycodePinnedTasksFileSchema = z.object({
   version: z.literal("1"),
-  tasks: z.array(zcodeTaskIndexEntrySchema),
+  tasks: z.array(ycodeTaskIndexEntrySchema),
 });
 
-const zcodePersistedFileSnapshotSchema = z.object({
+const ycodePersistedFileSnapshotSchema = z.object({
   path: z.string(),
   beforeContent: z.string().nullable(),
   afterContent: z.string(),
@@ -1138,21 +1138,21 @@ const zcodePersistedFileSnapshotSchema = z.object({
     .optional(),
 });
 
-const zcodePersistedFileChangeSchema = z.object({
+const ycodePersistedFileChangeSchema = z.object({
   turnIndex: z.number().int().nonnegative(),
-  snapshots: z.array(zcodePersistedFileSnapshotSchema),
+  snapshots: z.array(ycodePersistedFileSnapshotSchema),
   fileState: z.enum(["applied", "reverted"]).optional(),
 });
 
-const zcodePersistedTurnCheckpointSchema = z.object({
+const ycodePersistedTurnCheckpointSchema = z.object({
   turnIndex: z.number().int().nonnegative(),
   baseFileCheckpointId: nonEmptyStringSchema,
   resultFileCheckpointId: nonEmptyStringSchema.optional(),
 });
 
-export const zcodeSessionFileSchema = z.object({
-  meta: zcodeTaskMetaSchema,
-  messages: z.array(zcodePersistedMessageSchema),
-  fileChanges: z.array(zcodePersistedFileChangeSchema).optional(),
-  turnCheckpoints: z.array(zcodePersistedTurnCheckpointSchema).optional(),
+export const ycodeSessionFileSchema = z.object({
+  meta: ycodeTaskMetaSchema,
+  messages: z.array(ycodePersistedMessageSchema),
+  fileChanges: z.array(ycodePersistedFileChangeSchema).optional(),
+  turnCheckpoints: z.array(ycodePersistedTurnCheckpointSchema).optional(),
 });

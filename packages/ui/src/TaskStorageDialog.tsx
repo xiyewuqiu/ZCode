@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import type { SessionStoragePreview } from "@zcode/shared";
+import type { SessionStoragePreview } from "@ycode/shared";
 import { Database, HardDrive, LoaderCircle } from "lucide-react";
 import { Button } from "@/components/ui/button.js";
 import {
@@ -15,7 +15,7 @@ import {
   type TaskStorageTarget,
   type TaskStorageService,
 } from "@/hooks/useTaskStorage.js";
-import { useZCodeIntl } from "@/i18n/IntlProvider.js";
+import { useYCodeIntl } from "@/i18n/IntlProvider.js";
 
 function bytes(value: number): string {
   if (value < 1024) return `${value} B`;
@@ -34,7 +34,7 @@ export function TaskStorageDialog({
   service: TaskStorageService;
   onClose: () => void;
 }) {
-  const { intl } = useZCodeIntl();
+  const { intl } = useYCodeIntl();
   const t = (id: string, values?: Record<string, string | number>) =>
     intl.formatMessage({ id: `taskStorage.${id}` }, values);
   const state = useTaskStorage(target, service);

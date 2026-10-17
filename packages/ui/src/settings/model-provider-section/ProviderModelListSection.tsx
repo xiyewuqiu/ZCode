@@ -3,14 +3,14 @@ import {
   TID_MODEL_PROVIDER_MODEL_DELETE_BUTTON,
   TID_MODEL_PROVIDER_MODEL_INPUT,
   testId,
-} from "@zcode/shared";
+} from "@ycode/shared";
 import { InfoIcon, Plus } from "lucide-react";
-import type { ModelConnectivityResult } from "@zcode/shared";
+import type { ModelConnectivityResult } from "@ycode/shared";
 import { Button } from "@/components/ui/button.js";
-import { useZCodeIntl } from "@/i18n/IntlProvider.js";
+import { useYCodeIntl } from "@/i18n/IntlProvider.js";
 import { useServices } from "@/hooks/useServices.js";
 import type { ProviderSettingsFormModel } from "@/lib/providerSettingsFormTypes.js";
-import type { ProviderConfigObject } from "@zcode/provider";
+import type { ProviderConfigObject } from "@ycode/provider";
 import { ProviderModelDialog } from "./ProviderModelDialog.js";
 import { ProviderModelRow } from "./ProviderModelRow.js";
 import { SortableProviderModelList } from "./SortableProviderModelList.js";
@@ -64,7 +64,7 @@ export function ProviderModelListSection({
   onReorderModelIds?: (modelIds: string[]) => void;
   settingsRevision?: number;
 }) {
-  const { intl } = useZCodeIntl();
+  const { intl } = useYCodeIntl();
   const { providerSettingsService } = useServices();
   const addDialog = useModelEditorDialog({
     providerId,

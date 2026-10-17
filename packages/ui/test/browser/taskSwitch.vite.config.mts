@@ -6,11 +6,11 @@ export default defineConfig({
   resolve: {
     alias: [
       {
-        find: "@/hooks/useZCodeSessionService.js",
+        find: "@/hooks/useYCodeSessionService.js",
         replacement: resolve(import.meta.dirname, "taskSwitchMocks.ts"),
       },
       {
-        find: "@/lib/zcodeSessionProjection.js",
+        find: "@/lib/ycodeSessionProjection.js",
         replacement: resolve(import.meta.dirname, "taskSwitchMocks.ts"),
       },
       ...(base.resolve!.alias as { find: string | RegExp; replacement: string }[]),

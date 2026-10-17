@@ -9,10 +9,10 @@ import {
   type KeyboardEvent,
 } from "react";
 import { defaultRangeExtractor, useVirtualizer } from "@tanstack/react-virtual";
-import type { ZCodeSessionEndedSubagent } from "@zcode/shared";
-import type { RunningSubagentSummary } from "@zcode/shared/zcode-protocol-v4";
+import type { YCodeSessionEndedSubagent } from "@ycode/shared";
+import type { RunningSubagentSummary } from "@ycode/shared/ycode-protocol-v4";
 import { Button } from "@/components/ui/button.js";
-import { useZCodeIntl } from "@/i18n/IntlProvider.js";
+import { useYCodeIntl } from "@/i18n/IntlProvider.js";
 import { SubagentDirectoryRow, type SubagentDirectoryItem } from "./SubagentDirectoryRow.js";
 
 type Entry =
@@ -32,7 +32,7 @@ export const SubagentDirectoryList = memo(function SubagentDirectoryList({
   onOpen,
 }: {
   running: readonly RunningSubagentSummary[];
-  ended: readonly ZCodeSessionEndedSubagent[];
+  ended: readonly YCodeSessionEndedSubagent[];
   endedTotal: number;
   loading: boolean;
   error: string | null;
@@ -41,7 +41,7 @@ export const SubagentDirectoryList = memo(function SubagentDirectoryList({
   onRetry: () => void;
   onOpen: (item: SubagentDirectoryItem) => void;
 }) {
-  const { intl } = useZCodeIntl();
+  const { intl } = useYCodeIntl();
   const hintId = useId();
   const scrollRef = useRef<HTMLDivElement>(null);
   // 目录固定为两行，仅观察字体标尺；逐行测量会与插入锚点补偿争用 scrollTop。

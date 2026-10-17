@@ -11,7 +11,7 @@ export function useSessionSubagents(options: {
   workspaceIdentity?: string;
   workspacePath: string;
 }) {
-  const { zcodeAgentService } = useServices();
+  const { ycodeAgentService } = useServices();
   const { workspacePath, remoteSessionId, sessionId } = options;
   const workspaceIdentity = options.workspaceIdentity?.trim() || undefined;
   const enabled = options.enabled !== false && Boolean(sessionId);
@@ -21,10 +21,10 @@ export function useSessionSubagents(options: {
       new SessionSubagentsQuery(
         async (endedLimit, endedCursor) => {
           if (!sessionId) throw new Error("session_id_missing");
-          if (typeof zcodeAgentService?.listSessionSubagents !== "function") {
+          if (typeof ycodeAgentService?.listSessionSubagents !== "function") {
             throw new Error("subagent_directory_unavailable");
           }
-          return zcodeAgentService.listSessionSubagents({
+          return ycodeAgentService.listSessionSubagents({
             workspacePath,
             ...(workspaceIdentity ? { workspaceIdentity } : {}),
             ...(remoteSessionId ? { remoteSessionId } : {}),
@@ -40,7 +40,7 @@ export function useSessionSubagents(options: {
             workspaceKey: workspaceIdentity || workspacePath,
           }),
       ),
-    [remoteSessionId, sessionId, workspaceIdentity, workspacePath, zcodeAgentService],
+    [remoteSessionId, sessionId, workspaceIdentity, workspacePath, ycodeAgentService],
   );
   const state = useSyncExternalStore(query.subscribe, query.getSnapshot, query.getSnapshot);
   useEffect(() => {

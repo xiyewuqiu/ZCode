@@ -10,7 +10,7 @@ import { createWindowsDesktopTray } from "../src/main/desktopTray.js";
 
 async function main() {
   assert.equal(process.platform, "win32", "This native smoke test requires Windows");
-  const profile = process.env.ZCODE_WINDOW_SMOKE_PROFILE;
+  const profile = process.env.YCODE_WINDOW_SMOKE_PROFILE;
   assert.ok(profile, "Use run-window-chrome.mjs to create an isolated profile");
   app.setPath("userData", profile);
   let window: BrowserWindow | undefined;
@@ -70,7 +70,7 @@ async function main() {
     await hidden;
     assert.equal(window.isVisible(), false);
     const tray = createWindowsDesktopTray({
-      iconPath: process.env.ZCODE_WINDOW_SMOKE_ICON,
+      iconPath: process.env.YCODE_WINDOW_SMOKE_ICON,
       getLocale: () => "en-US",
       showCurrentWindow: () => window?.showInactive(),
       executeDesktopCommand: async () => {},

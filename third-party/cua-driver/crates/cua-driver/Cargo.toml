@@ -25,7 +25,7 @@ httparse = "1.10.1"
 base64 = { workspace = true }
 uuid = { workspace = true }
 zeroize = { workspace = true }
-# ZCode: kept for the remaining functional GitHub reads — `skills.rs` downloads
+# YCode: kept for the remaining functional GitHub reads — `skills.rs` downloads
 # the versioned skill-pack release asset, `version_check.rs` reads the public
 # releases feed. Telemetry no longer uses this crate (the PostHog client was
 # removed); see crates/cua-driver/src/telemetry.rs.

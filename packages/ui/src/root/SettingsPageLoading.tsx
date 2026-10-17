@@ -2,7 +2,7 @@ import { ArrowLeftIcon } from "lucide-react";
 import { Button } from "@/components/ui/button.js";
 import { DesktopWindowControls } from "@/DesktopWindowControls.js";
 import { DesktopWindowFrame } from "@/DesktopWindowFrame.js";
-import { useZCodeIntl } from "@/i18n/IntlProvider.js";
+import { useYCodeIntl } from "@/i18n/IntlProvider.js";
 
 export function SettingsPageLoading({
   isDesktop,
@@ -15,7 +15,7 @@ export function SettingsPageLoading({
   isWindowsDesktop?: boolean;
   onBack?: () => void;
 }) {
-  const { intl } = useZCodeIntl();
+  const { intl } = useYCodeIntl();
   const label = intl.formatMessage({ id: "common.loading" });
   return (
     <DesktopWindowFrame

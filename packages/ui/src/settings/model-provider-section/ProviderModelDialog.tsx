@@ -11,10 +11,10 @@ import {
 } from "@/components/ui/dialog.js";
 import { Input } from "@/components/ui/input.js";
 import { cn } from "@/components/lib/utils.js";
-import { useZCodeIntl } from "@/i18n/IntlProvider.js";
+import { useYCodeIntl } from "@/i18n/IntlProvider.js";
 import { isImeComposingKeyEvent } from "@/lib/imeComposition.js";
 import { TECHNICAL_INPUT_ATTRIBUTES } from "@/lib/technicalInputAttributes.js";
-import type { ModelConfigObject } from "@zcode/provider";
+import type { ModelConfigObject } from "@ycode/provider";
 import type { ProviderModelDraftErrorField, ProviderModelDraftValues } from "./modelDraft.js";
 import {
   BooleanModelOption,
@@ -73,7 +73,7 @@ export function ProviderModelDialog({
   modelDefaultsLoaded?: boolean;
   onModelIdBlur?: () => void;
 }) {
-  const { intl } = useZCodeIntl();
+  const { intl } = useYCodeIntl();
   const [validationAttempt, setValidationAttempt] = useState(0);
   const commit = async () => {
     const result = await onCommit();

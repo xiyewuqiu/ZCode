@@ -5,13 +5,13 @@ import type {
   AppSettings,
   ProviderFamilyDomain,
   ProviderFamilyConnectionSelectionSettings,
-} from "@zcode/shared";
+} from "@ycode/shared";
 import {
   appSettingsPatchSchema,
   appSettingsSchema,
   formatLogPrefix,
   formatZodError,
-} from "@zcode/shared";
+} from "@ycode/shared";
 import type { ISettingService } from "./setting.js";
 import { normalizeSettingsPatch } from "#src/setting/normalizeSettingsPatch.js";
 import { copyDataDirectory, getDataBaseDir, validateDataBaseDirTarget } from "../paths.js";
@@ -28,7 +28,7 @@ import {
   type LegacyTeamConnection,
 } from "#src/setting/legacyAccountConnectionSettings.js";
 const MAX_RECENT_PROJECTS = 10;
-const DEFAULT_PROJECT_NAME = "ZCodeProject";
+const DEFAULT_PROJECT_NAME = "YCodeProject";
 const SETTINGS_PARSE_RETRY_DELAY_MS = 300;
 const SETTINGS_PARSE_RETRY_COUNT = 3;
 // get() 读缓存 TTL。多进程写 setting.json（Main/Host 各持服务实例）无法感知彼此写入，
@@ -38,7 +38,7 @@ const SETTINGS_CACHE_TTL_MS = 1_500;
 const log = (...args: unknown[]) =>
   console.log(formatLogPrefix("settingService", process.pid), ...args);
 const debugLog = (...args: unknown[]) => {
-  // NODE_ENV 来自用户 shell 时会误导服务层 debug 开关；统一使用 ZCODE_RUNTIME_ENV。
+  // NODE_ENV 来自用户 shell 时会误导服务层 debug 开关；统一使用 YCODE_RUNTIME_ENV。
   if (!isEffectiveDevelopmentNodeEnv()) {
     return;
   }
@@ -49,7 +49,7 @@ function resolveUserHomeDir() {
   // 独立桌面 Dev 实例已设置自己的 home，设置服务却仍写真实 HOME，
   // 导致启动迁移和外观操作污染其他实例。与 Electron 的显式 home 覆盖保持一致。
   const envHome =
-    process.env.ZCODE_DESKTOP_HOME_DIR?.trim() ||
+    process.env.YCODE_DESKTOP_HOME_DIR?.trim() ||
     process.env.HOME?.trim() ||
     process.env.USERPROFILE?.trim();
   return envHome && envHome.length > 0 ? envHome : homedir();
@@ -254,7 +254,10 @@ export function createSettingServiceWithMigrations(): {
   let cachedAtMs = 0;
   let cacheEpoch = 0;
   // epoch 未变化（读盘期间无新写入入队）时回填缓存；返回值恒为本次读取结果。
-  const noteCacheFreshIfCurrent = (epochAtReadStart: number, settings: AppSettings): AppSettings => {
+  const noteCacheFreshIfCurrent = (
+    epochAtReadStart: number,
+    settings: AppSettings,
+  ): AppSettings => {
     if (epochAtReadStart === cacheEpoch) {
       cachedSettings = settings;
       cachedAtMs = Date.now();
@@ -372,7 +375,7 @@ export function createSettingServiceWithMigrations(): {
       const targetBaseDir = newDir?.trim() || homedir();
       const validation = validateDataBaseDirTarget(targetBaseDir);
       if (!validation.ok) {
-        // Windows 安装目录由安装器/自动更新管理，把 .zcode/v2 放进去可能在升级时被覆盖。
+        // Windows 安装目录由安装器/自动更新管理，把 .ycode/v2 放进去可能在升级时被覆盖。
         // 迁移前在 service 层拦截，避免 UI 入口变化或 RPC 调用绕过前端判断。
         const error = new Error(`${validation.code}: ${validation.forbiddenDir}`);
         (error as Error & { code: string }).code = validation.code;

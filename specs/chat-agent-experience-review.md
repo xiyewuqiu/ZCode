@@ -34,7 +34,7 @@
    浏览器 layout effect 记录确认切 B 首次 commit 仍返回 Task A；现 render 按请求身份过滤结果，
    同时隔离 taskId、workspace identity、路径、连接和 service 实例。列表已有 meta 时不再进行无用 state 清理。
    首帧、同 taskId 跨 identity、同 identity 换连接、乱序回包、列表来源、草稿和失败回归通过。
-7. **Shell 订阅范围（待测量）**：`useWorkspaceShellZCodeState` 已用浅比较裁剪字段，
+7. **Shell 订阅范围（待测量）**：`useWorkspaceShellYCodeState` 已用浅比较裁剪字段，
    但 `useWorkspaceActiveTaskState` 仍订阅整个 workspaceState。不能据此直接认定真实卡顿，
    需要以无关任务更新时的 Header/Shell 渲染次数验证收益。
 

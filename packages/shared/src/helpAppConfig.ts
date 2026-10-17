@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { buildZCodeEndpointUrls } from "./zcodeEndpoint.js";
+import { buildYCodeEndpointUrls } from "./ycodeEndpoint.js";
 import { getCommunityUrlFromConfigs, getFeedbackUrlFromConfig } from "./remoteAppConfig.js";
 
 const helpConfigSchema = z.object({
@@ -24,7 +24,7 @@ export function buildHelpAppConfigUrl(
   version: string,
   platform?: string,
 ): string {
-  const url = new URL("/api/v1/client/configs", buildZCodeEndpointUrls(endpoint).origin);
+  const url = new URL("/api/v1/client/configs", buildYCodeEndpointUrls(endpoint).origin);
   url.searchParams.set("app_version", version);
   if (platform) url.searchParams.set("platform", platform);
   return url.toString();

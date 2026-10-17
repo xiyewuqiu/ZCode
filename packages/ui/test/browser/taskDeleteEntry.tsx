@@ -1,7 +1,7 @@
 import { createRoot } from "react-dom/client";
 import { StrictMode } from "react";
-import type { IServiceAccessor } from "@zcode/services";
-import type { SessionStoragePreview } from "@zcode/shared";
+import type { IServiceAccessor } from "@ycode/services";
+import type { SessionStoragePreview } from "@ycode/shared";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -12,7 +12,7 @@ import {
 import { TaskActionMenuContent } from "../../src/TaskActionMenuContent.js";
 import { TaskStorageDialogHost } from "../../src/TaskStorageDialogHost.js";
 import { ServiceProvider } from "../../src/hooks/useServices.js";
-import { ZCodeIntlProvider, useZCodeIntl } from "../../src/i18n/IntlProvider.js";
+import { YCodeIntlProvider, useYCodeIntl } from "../../src/i18n/IntlProvider.js";
 import { TabStoreProvider } from "../../src/store/TabStoreProvider.js";
 import { useTaskStorageDialogStore } from "../../src/store/taskStorageDialogStore.js";
 import "../../src/styles.css";
@@ -34,7 +34,7 @@ const preview: SessionStoragePreview = {
 
 // 只提供删除链路需要的两个方法，其余服务不参与该入口。
 const services = {
-  zcodeTaskService: {
+  ycodeTaskService: {
     previewTaskStorage: async () => {
       metrics.previews++;
       return structuredClone(preview);
@@ -60,7 +60,7 @@ const services = {
 const noop = () => {};
 
 function Fixture() {
-  const { intl } = useZCodeIntl();
+  const { intl } = useYCodeIntl();
   const readOnly = params.has("readonly");
   return (
     <div className="h-screen bg-background p-4 text-foreground">
@@ -119,9 +119,9 @@ root.render(
   <StrictMode>
     <ServiceProvider services={services}>
       <TabStoreProvider>
-        <ZCodeIntlProvider initialLocale={params.get("locale") === "zh-CN" ? "zh-CN" : "en-US"}>
+        <YCodeIntlProvider initialLocale={params.get("locale") === "zh-CN" ? "zh-CN" : "en-US"}>
           <Fixture />
-        </ZCodeIntlProvider>
+        </YCodeIntlProvider>
       </TabStoreProvider>
     </ServiceProvider>
   </StrictMode>,

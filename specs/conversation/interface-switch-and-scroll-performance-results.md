@@ -55,7 +55,7 @@ Node 单测：`frameNotificationScheduler.test.ts`、`layerActivityProjection.te
 - 定向 `tsc -p packages/ui`：通过。
 - 根 `pnpm typecheck`：未通过，错误全部在 `packages/desktop/src/main/desktopRemoteSessions.ts`（13 条）
   与 `desktopHostProcess.ts`（10 条），内容为缺失模块 `./providerProvisioningEnvironmentCoordinator.js`
-  与 `@zcode/shared` 未导出的 `ProviderProvisioningTrigger`。这两个文件不是本轮改动，
+  与 `@ycode/shared` 未导出的 `ProviderProvisioningTrigger`。这两个文件不是本轮改动，
   工作区里也不存在该模块，属于既有基线失败；本轮涉及的 rpc / shared / services / ui 全部编译通过。
 - 根 `pnpm lint`：0 错误、58 条警告（低于既有基线 63 条），本轮文件无新增警告。
 - `pnpm architecture:check --changed`：violations 0、baseline 0、new 0。
@@ -142,7 +142,7 @@ spec 规则 6 要求「chat / automations / plugin-store 首次访问后保持�
 
 - 根 `pnpm typecheck`：`packages/desktop/src/main/` 的 `desktopRemoteSessions.ts` 与
   `desktopHostProcess.ts` 报缺失模块 `./providerProvisioningEnvironmentCoordinator.js`、
-  `@zcode/shared` 未导出 `ProviderProvisioningTrigger`，以及 `off-peak-*` / `network-telemetry-batch`
+  `@ycode/shared` 未导出 `ProviderProvisioningTrigger`，以及 `off-peak-*` / `network-telemetry-batch`
   类型无交集——属「移除账号体系与厂商特性」提交的残留。
 - `packages/ui/test/browser/shellPerformance.tsx` 引用已被「移除会话分享」提交删除的
   `../../src/v4/useConversationShareModel.js`，导致 `tsc -p test/tsconfig.long-conversation.json`
@@ -188,7 +188,7 @@ spec 规则 6 要求「chat / automations / plugin-store 首次访问后保持�
 
 - 根 `pnpm typecheck`：**EXIT 0**（清理前为失败）。
 - `pnpm exec tsc -p packages/desktop/tsconfig.scheduler.json`：EXIT 0（清理前 7 错误）。
-- `pnpm --filter @zcode/desktop exec tsup`（main/preload/host/scheduler 全量打包）：**EXIT 0**
+- `pnpm --filter @ycode/desktop exec tsup`（main/preload/host/scheduler 全量打包）：**EXIT 0**
   （清理前因 `./offPeakDispatchSettlement.js` 缺失而构建失败）。
 - `tsc -p packages/ui/test/tsconfig.long-conversation.json`：EXIT 0（清理前 3 错误）。
 - `pnpm lint`：0 错误、52 警告（清理前 58）。
@@ -202,10 +202,10 @@ spec 规则 6 要求「chat / automations / plugin-store 首次访问后保持�
 定义」的自底向上顺序分四片实施：UI、services、CLI、shared，每片独立 `tsc` 验证，最后统一收口。
 
 清除范围：UI 任务标记/分组/i18n；services 的 `taskIndexRepo` 投影列、回填与归组、
-`automationToolPolicy` 与 adapter 死分支、`IZCodeTaskService` 的参数；CLI 的 turn 守卫与
+`automationToolPolicy` 与 adapter 死分支、`IYCodeTaskService` 的参数；CLI 的 turn 守卫与
 `offPeakTurn` / `offPeakQueueHold` / `includeOffPeak` 死信号及协议透传；shared 的 off-peak schema /
 类型 / 协议字段 / test-id / channel；以及 `offpeak_queued` 限流原因链。另顺带修复了同批「账号/遥测
-移除」在 CLI 侧留下的 `logout` / telemetry 残留（含 `zcode --help` 帮助文案里的 logout 条目）。
+移除」在 CLI 侧留下的 `logout` / telemetry 残留（含 `ycode --help` 帮助文案里的 logout 条目）。
 
 **刻意保留三类**（附理由，非遗漏）：
 

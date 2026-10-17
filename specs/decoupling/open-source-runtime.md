@@ -2,9 +2,9 @@
 
 ## 产品语义
 
-- 目标形态：安装即用，运行期不依赖任何厂商私有后端（`zcode.z.ai`、`bigmodel.cn`、`api.z.ai` 及其 CDN 清单接口）。
+- 目标形态：安装即用，运行期不依赖任何厂商私有后端（`ycode.z.ai`、`bigmodel.cn`、`api.z.ai` 及其 CDN 清单接口）。
 - 客户端不再向任何厂商端点发送遥测：启动、日活、性能帧、渲染轨迹、网络窗口、崩溃富化、CLI OTLP 全部删除。删除范围包含"已经不发送但代码仍在"的半拆除状态。
-- 移除账号体系：删除登录页、账号凭据仓储（`oauth:*` / `zcodejwttoken`）、JWT 失效与重认证链路，以及依赖账号的权益判定、Start Plan 额度、闲时任务、用量统计通道。模型提供方完全由用户在设置页自带 API Key 配置，模型列表由用户 provider 配置驱动。
+- 移除账号体系：删除登录页、账号凭据仓储（`oauth:*` / `ycodejwttoken`）、JWT 失效与重认证链路，以及依赖账号的权益判定、Start Plan 额度、闲时任务、用量统计通道。模型提供方完全由用户在设置页自带 API Key 配置，模型列表由用户 provider 配置驱动。
 - 内置供应商（Z.ai / BigModel）与其内置模型名单作为运行期概念删除，仅保留用户自建 provider；历史迁移表与遥测白名单按"不再有新数据也需要"处理。
 - 反馈改为直连 GitHub Issues：不再上传对象存储、不再有后端 ticket，按钮打开仓库 Issues 并预填版本与脱敏线索。
 - 自动更新直连 GitHub Releases：stable 通道读 `latest`，preview 通道读 prerelease；移除私有 manifest provider 与强更（`/api/v1/client/configs` 的 `minimalVersion`）能力。
@@ -72,15 +72,15 @@ sequenceDiagram
 **删除**
 
 - `packages/ui/src/WelcomeScreen.tsx`、`packages/ui/src/login/LoginApiKeyForm.tsx`、`login/LoginApiKeyForm.helpers.ts`（登录屏与 API Key 首登表单整体删除）。
-- `packages/ui/src/root/useRootSessionEffects.ts`、`root/zcodeJwtInvalidRestartMarker.ts`（登录态落定与 JWT 失效重启标记）。
+- `packages/ui/src/root/useRootSessionEffects.ts`、`root/ycodeJwtInvalidRestartMarker.ts`（登录态落定与 JWT 失效重启标记）。
 - `packages/ui/src/root/useProviderAvailabilityLoginEntryGuard.ts`（登录入口守卫）。
-- `packages/shared/src/oauth.ts` 的 `ZCODE_JWT_INVALID_BROADCAST_CHANNEL`（已无消费方）。
+- `packages/shared/src/oauth.ts` 的 `YCODE_JWT_INVALID_BROADCAST_CHANNEL`（已无消费方）。
 - `packages/shared/src/test-ids.ts` 的 7 个 `TID_LOGIN_*` 与 `TID_LOGOUT_BUTTON`。
 - 相应 i18n：`sidebar.profile.notLoggedIn`（zh-CN/en-US）。
 
 **改写**
 
-- store（`packages/ui/src/store/index.ts`）：删除 `user`/`authSessionSeq`/`isRestoringOAuthSession`/`apiKeyLoginSuccessSeq`/`lastApiKeyLoginModel` 及其 setter；`createZCodeStore` 不再接受 options，`StoreProvider` 不再接受 `initialIsRestoringOAuthSession`。
+- store（`packages/ui/src/store/index.ts`）：删除 `user`/`authSessionSeq`/`isRestoringOAuthSession`/`apiKeyLoginSuccessSeq`/`lastApiKeyLoginModel` 及其 setter；`createYCodeStore` 不再接受 options，`StoreProvider` 不再接受 `initialIsRestoringOAuthSession`。
 - `Root.tsx`：删除 `welcomeScreenOpenReason` 三态与 `WelcomeScreenOpenReason` 类型、登录/退出处理（`handleOpenLoginEntry`/`handleWelcomeScreenComplete`/`handleReauthenticationRequired`）、`onLogin`/`onLogout`/`user` 透传、`isResolvingStartupAuthState`，以及登录屏渲染分支。
 - 启动门禁（`lib/rootStartupGate.ts`）：不再接受账号态与登录页条件，`shouldEnableProviderAvailabilityLoginEntryGuard`（恒为 true）删除。
 - 新增 `root/useProviderAvailabilityStartupCheck.ts`：由登录守卫改写为纯启动可用性检查（去掉 `user`/`isRestoringOAuthSession` 入参与恒真 `enabled` 开关）。
@@ -100,7 +100,7 @@ sequenceDiagram
 - `corepack pnpm lint`：0 错误、39 warnings（低于本轮改动前的 61）。
 - `corepack pnpm architecture:check --changed`：0 violations / 0 baseline / 0 new。
 - `corepack pnpm exec tsx --tsconfig packages/ui/tsconfig.json --test packages/ui/test/*.test.ts`：33/33 通过。
-- 全仓检索 `isRestoringOAuthSession|markApiKeyLoginSuccess|WelcomeScreen|useRootSessionEffects|zcodeJwtInvalidRestartMarker|useProviderAvailabilityLoginEntryGuard|TID_LOGIN_|TID_LOGOUT_BUTTON|ZCODE_JWT_INVALID_BROADCAST_CHANNEL`：0 命中。
+- 全仓检索 `isRestoringOAuthSession|markApiKeyLoginSuccess|WelcomeScreen|useRootSessionEffects|ycodeJwtInvalidRestartMarker|useProviderAvailabilityLoginEntryGuard|TID_LOGIN_|TID_LOGOUT_BUTTON|YCODE_JWT_INVALID_BROADCAST_CHANNEL`：0 命中。
 
 **本章未做、需要后续决策或处理**
 
@@ -114,10 +114,10 @@ sequenceDiagram
 在登录 UI（WelcomeScreen/LoginApiKeyForm）、账号态 store（user/authSessionSeq/setUser、OAuth 恢复标记、JWT 失效重启标记）、`WorkspaceSidebarFooter` 账号菜单（改偏好入口）、quickpick 登出命令移除后，本批把"账号派生"的服务端与协议面整体端掉：
 
 - **闲时 Off-Peak 全删**：services 的 task/repo/service/runtime/serverClient/mockGateway、UI 的任务列表/编辑/模板/资格/通知/store、desktop 的派发计划与调度结算、CLI 的 port/tool/retry、协议方法（offPeakCreate/offPeakList/workspaceUpdateOffPeakToolPolicy）、`offPeakToolEnabled/offPeakTaskId/offPeakRunType` 参数透传、`AutomationsSection` 内嵌整块（tab 收敛为仅 scheduled）、`validation.ts` 协议 schema 与工具注册。
-- **官方 Server MCP 全删**（厂商托管、账号鉴权）：services 的 credentials/issuanceAudit、shared 的 auth/tool-error 协议面、zcode-protocol 的 auth schema 与方法、adapter 的 official-auth 与 `mcp/index` 内整套鉴权 fetch/stdio meta/诊断表、bootstrap 的 auth-port、UI 的错误码横幅分支。
+- **官方 Server MCP 全删**（厂商托管、账号鉴权）：services 的 credentials/issuanceAudit、shared 的 auth/tool-error 协议面、ycode-protocol 的 auth schema 与方法、adapter 的 official-auth 与 `mcp/index` 内整套鉴权 fetch/stdio meta/诊断表、bootstrap 的 auth-port、UI 的错误码横幅分支。
 - **Provider Provisioning 全删**（团队配置下发）：Source/Target/共享协议/HTTP 网关 gate/client 代理/desktop 协调器，`node.ts` 的装配与 WeakMap 侧表，`process-provider-registry-runtime.ts` 重写为纯 Registry 运行时。
 - **账号运行时**：`standalone-account-provider-runtime`、`auth-logout`、`legacyTeamOrganizationResolver`、`onboardingRecord` 的登录态 userId（改可选注入）、`agentTelemetry` 改可选、动态工作流灰度改恒 fail-closed。
-- **P1 漏网清尾**：`desktopRuntimeEnv` 的 OTEL env 捕获与身份注入、node.ts 的 `buildAgentTelemetrySpawnEnv`/telemetryProfile、CLI 的 `telemetry-bootstrap`/`prepareZCodeTelemetryEnv`/`createModelTelemetry`/本地 TTFT（local-ttft、gateway 的 LocalTtftRecorder/envelope.ttft/clock/transport.ttftRelated）、`local-turn-preparation`、`processResourceTelemetry` 常量。
+- **P1 漏网清尾**：`desktopRuntimeEnv` 的 OTEL env 捕获与身份注入、node.ts 的 `buildAgentTelemetrySpawnEnv`/telemetryProfile、CLI 的 `telemetry-bootstrap`/`prepareYCodeTelemetryEnv`/`createModelTelemetry`/本地 TTFT（local-ttft、gateway 的 LocalTtftRecorder/envelope.ttft/clock/transport.ttftRelated）、`local-turn-preparation`、`processResourceTelemetry` 常量。
 
 验证：全仓 `tsc -b`（桌面 11 个 tsproject + CLI 5 个 tsproject）0 错误；`lint` 0 错误 / 58 warnings（基线 63）；`architecture:check --changed` 0 violations。约 40 个实现文件物理删除，95 个文件重新格式化。
 
@@ -127,10 +127,10 @@ sequenceDiagram
 
 - `packages/desktop/package.json`：删除 `@arms/rum-electron`、`@opentelemetry/api`、`@opentelemetry/exporter-metrics-otlp-proto`、`@opentelemetry/exporter-trace-otlp-proto`、`@opentelemetry/resources`、`@opentelemetry/sdk-metrics`、`@opentelemetry/sdk-trace-base`。
 - 根 `package.json`：删除 `pnpm.patchedDependencies` 里的 `@arms/rum-electron@0.0.3`；`patches/@arms__rum-electron@0.0.3.patch` 删除（该补丁只为 ARMS RUM 存在）。
-- `apps/zcode-cli/packages/bootstrap/package.json`：删除 `@zcode/telemetry` workspace 依赖。
+- `apps/ycode-cli/packages/bootstrap/package.json`：删除 `@ycode/telemetry` workspace 依赖。
 - `pnpm-lock.yaml`：同步更新（-410 行）。`@arms/rum-electron` 及其带出的 `@arms/rum-browser`、`@arms/rum-core` 已从锁文件彻底消失。
 - `third-party/npm-overrides.json`：删除 3 条 @arms 许可 override（保留会让下一次清单重生成直接抛 `Stale npm notice override`），并删除它们引用的 3 个 `third-party/upstream/*.txt`。
-- `third-party/inventory.json`：重算 `inputs` 哈希并剔除 6 条已删除文件条目（`apps/zcode-cli/packages/telemetry/package.json`、`packages/rpc/src/network-telemetry-middleware.ts`、`@arms` 补丁与 3 个 upstream 记录）。
+- `third-party/inventory.json`：重算 `inputs` 哈希并剔除 6 条已删除文件条目（`apps/ycode-cli/packages/telemetry/package.json`、`packages/rpc/src/network-telemetry-middleware.ts`、`@arms` 补丁与 3 个 upstream 记录）。
 - 保留 `@opentelemetry/api@1.9.0`：它由 `ai@6.0.159`（Vercel AI SDK）传递引入，是**无导出器的空实现 API**，不产生任何网络上报。
 
 **环境限制（重要，需在无此限制的环境补跑一次）**：本机 `pnpm -r ls --prod --json --depth Infinity` 稳定触发 `EMFILE`（沙箱对子进程句柄的硬上限，串行化 `UV_THREADPOOL_SIZE=1` 与 `--depth 1` 均复现，与 safe-delete shim 无关），因此无法执行 `node scripts/licenses.mjs notices` 全量重生成。本次改用等价修复：按 `readVerifiedNotices` **完全相同的哈希规则**（UTF-8 文本、CRLF→LF 归一化后 sha256）重算 `inventory.inputs`，剔除了已删除文件的条目。已验证 `readVerifiedNotices(root)` 与 `{ requireComplete: true }` 两种模式均通过，`inventory.json` 只变 11 增 18 删。
@@ -144,18 +144,18 @@ sequenceDiagram
 在第一批删掉实现与调用点之后，这一批清掉"已经没人用、但仍然占体积/占协议面"的残留：
 
 - `packages/shared`：删除 `telemetry.ts`、`telemetryRedaction.ts`、`localTtft.ts`、`processResourceTelemetry.ts`、`sessionCreateTelemetry.ts`、`remoteUsageTelemetry.ts`、`rendererActionTrace.ts`；随之清理 `channels.ts` 上的 telemetry/ARMS/RendererHeapSample/渲染轨迹/E2E 采集通道常量与类型映射、`platform.ts` 上的 `reportTelemetryEvent`/`reportArmsCustomEvent`/`getRendererActionTraceConfig`/`onRendererActionTraceConfigChanged`/`reportRendererActionTraceBatch`/`reportLocalTtftBatch`/`reportRendererHeapSample` 与 `connectTrigger` 字段、`env.ts` 的开关与 ARMS 环境映射、`index.ts` 的对应导出。
-- 协议：`zcode-protocol-v4` 与 `zcode-protocol` 移除本地 TTFT 合同（`commandEnvelope.ttft`、ACK 的 `ttftExcluded`、`commandsQueryParams.clock`、`transport.ttft`/`ttftRelated`、`v4/telemetry/local-ttft` topic）。这意味着**不再有任何本地时钟字段被写进发往远端的协议包**。
-- `packages/desktop`：`preload/index.ts` 删除 telemetry/ARMS/RendererHeapSample/渲染轨迹/E2E 采集桥与 `__zcodeFinalArmsCustomEventsE2E`；`renderer/src/desktopPlatform.ts` 与 `renderer/src/main.tsx` 删除对应实现与 bootstrap；`shared/armsRumBridgeForward.ts` 与 `main/rendererActionTraceBroker.ts`、`main/rendererActionTraceRollout.ts` 删除。
+- 协议：`ycode-protocol-v4` 与 `ycode-protocol` 移除本地 TTFT 合同（`commandEnvelope.ttft`、ACK 的 `ttftExcluded`、`commandsQueryParams.clock`、`transport.ttft`/`ttftRelated`、`v4/telemetry/local-ttft` topic）。这意味着**不再有任何本地时钟字段被写进发往远端的协议包**。
+- `packages/desktop`：`preload/index.ts` 删除 telemetry/ARMS/RendererHeapSample/渲染轨迹/E2E 采集桥与 `__ycodeFinalArmsCustomEventsE2E`；`renderer/src/desktopPlatform.ts` 与 `renderer/src/main.tsx` 删除对应实现与 bootstrap；`shared/armsRumBridgeForward.ts` 与 `main/rendererActionTraceBroker.ts`、`main/rendererActionTraceRollout.ts` 删除。
 - `packages/client/src/globals.d.ts`、`packages/web/src/main.tsx`：删除窗口类型与 Web 端空实现。
 - 会话资源采样：`processResourceRoleClassifier.ts` 不再依赖已删的共享角色类型，改为就地声明 Chromium 角色集合；`agentLaneResourceSampleSchema` 的 `lane` 改为可选字符串。
-- 发送与渲染链路：`ConversationComposer` 删除 `telemetrySeed`/`sendClickId` 落定链、`SessionPane` 删除 supervisor 租约与 `openTrigger`/`telemetryVisible`/`telemetryDraftConfig`、`sessionDataLayer` 删除 `openKind`、`App.tsx` 的 heap 采样出口、`agentConversationTransport` 的 TTFT 校准；`zcodeAgentService`/`zcodeAgent`/`zcodeAgentConnectionScope` 删除 `onDynamicLocalTtftFacts` 与协议包 TTFT 剥离逻辑。
+- 发送与渲染链路：`ConversationComposer` 删除 `telemetrySeed`/`sendClickId` 落定链、`SessionPane` 删除 supervisor 租约与 `openTrigger`/`telemetryVisible`/`telemetryDraftConfig`、`sessionDataLayer` 删除 `openKind`、`App.tsx` 的 heap 采样出口、`agentConversationTransport` 的 TTFT 校准；`ycodeAgentService`/`ycodeAgent`/`ycodeAgentConnectionScope` 删除 `onDynamicLocalTtftFacts` 与协议包 TTFT 剥离逻辑。
 - 验证：`pnpm typecheck` 0 错误；`pnpm lint` 0 错误、61 warnings（基线 63）；`pnpm architecture:check --changed` 0 violations / 0 baseline / 0 new；改动文件已格式化。
 
 **本批未做、需要单独处理的三项**：
 
-1. 依赖摘除（`@arms/rum-electron`、6 个 `@opentelemetry/*`、CLI 的 `@zcode/telemetry`）已确认代码零引用，但删除 `package.json` 条目会让 `pnpm-lock.yaml` 过期，而 CI 使用 `--frozen-lockfile`。必须在允许跑 `pnpm install --lockfile-only` 的环境同步锁文件，同时更新 `patches/`、`third-party/inventory.json` 与 `THIRD-PARTY-NOTICES.md`。代码已不引用这些包，因此这一步不影响功能，只影响安装体积与清单一致性。
-2. 会话遥测事实流（`zcode-protocol-v4/telemetry.ts` 的 `conversationTelemetryFact` + `createConversationTelemetryService` + CLI `taskActivityTracker`）仍存活，消费方（UI 附件）已删，属于下一批。
-3. 厂商端点与凭据类残留（`zcodeEndpoint.ts`、`zcode-source-headers.ts`、`device/deviceMid.ts`、`feedback/*HttpClient`、`conversation-share/*`、`remoteCdn.ts`、`manifestUpdateProvider.ts`、`agentTelemetryEnv.ts`、CLI `official-coding-plan-gateway.ts`）属于 P2/P3/P4。
+1. 依赖摘除（`@arms/rum-electron`、6 个 `@opentelemetry/*`、CLI 的 `@ycode/telemetry`）已确认代码零引用，但删除 `package.json` 条目会让 `pnpm-lock.yaml` 过期，而 CI 使用 `--frozen-lockfile`。必须在允许跑 `pnpm install --lockfile-only` 的环境同步锁文件，同时更新 `patches/`、`third-party/inventory.json` 与 `THIRD-PARTY-NOTICES.md`。代码已不引用这些包，因此这一步不影响功能，只影响安装体积与清单一致性。
+2. 会话遥测事实流（`ycode-protocol-v4/telemetry.ts` 的 `conversationTelemetryFact` + `createConversationTelemetryService` + CLI `taskActivityTracker`）仍存活，消费方（UI 附件）已删，属于下一批。
+3. 厂商端点与凭据类残留（`ycodeEndpoint.ts`、`ycode-source-headers.ts`、`device/deviceMid.ts`、`feedback/*HttpClient`、`conversation-share/*`、`remoteCdn.ts`、`manifestUpdateProvider.ts`、`agentTelemetryEnv.ts`、CLI `official-coding-plan-gateway.ts`）属于 P2/P3/P4。
 
 ### 2026-10-01 P1 第一批（客户端上报链路整体移除）
 
@@ -165,7 +165,7 @@ sequenceDiagram
 - Desktop main/host/renderer：ARMS 引导与身份、资源/网络/稳定性/MCP/数据库启动/体积扫描采集、进程采样链（`processResource*`）、本地 TTFT 导出、renderer action trace 与 app telemetry 桥、host 与 scheduler 的资源遥测。
 - `packages/rpc`：网络遥测中间件（含 `emitNetworkTelemetryObservation`），同步清理 `services` 适配器的调用点。
 - `packages/services`：`telemetry/telemetryCore.ts` 与 `createTelemetryUserIdLoader` / `createTelemetryAuthorizationLoader` / `createTelemetryMarketingParamsLoader`。
-- CLI：`apps/zcode-cli/packages/telemetry/**` 整包与 `telemetry-bootstrap`，以及 `create-app` / `runtime-cleanup` / `zcode-protocol-entrypoint` 的装配。
+- CLI：`apps/ycode-cli/packages/telemetry/**` 整包与 `telemetry-bootstrap`，以及 `create-app` / `runtime-cleanup` / `ycode-protocol-entrypoint` 的装配。
 - 会话发送链路：移除 `telemetrySeed` / `sendClickId` / `localTtft` 观测与 `envelope.ttft` 写入（该字段会把本地时钟写进协议包），删除 `SessionPane` 的 supervisor 租约、`openTrigger` / `telemetryVisible` / `telemetryDraftConfig` 等只为埋点存在的 props 与 `sessionDataLayer` 的 `openKind`。
 
 验证：`pnpm typecheck` 通过（0 错误）；`pnpm lint` 0 错误、65 个既有 warnings（基线 63）；`pnpm architecture:check --changed` 0 violations / 0 baseline / 0 new；改动文件已用仓库格式化器处理。
@@ -182,8 +182,8 @@ sequenceDiagram
    - `packages/ui/src/v4/ConversationComposer.tsx`：`telemetrySeed` / `sendClickId` 落定链、`telemetryDraftConfig`、`telemetryVisible`、`heldQueueConfirmation.telemetrySeed`、`localTtft` 观测点共约 40 处。
    - `packages/ui/src/v4/SessionPane.tsx`：`useScopedConversationTelemetrySupervisor` 租约、`useSessionOpenArmsTelemetry`、`reportSessionCreate`、`envelope.ttft` 写入（会把本地 TTFT 写进协议包，属"发往远端"）共约 30 处。
 4. **桌面端**：`desktop/src/main` 遥测与 `processResource*` 采样链、`desktop/src/host/**Telemetry*`、`desktop/src/shared/armsRumShared.*`、`desktop/src/renderer/{userActionTraceBootstrap,localTtftBootstrap}.ts`；其中 `desktopStabilityTelemetry` 的崩溃监听需改为直接调用 `registerCrashEventMonitor`，`processResourceRoleClassifier`/`processResourceAppTotals` 供资源管理窗口，必须保留。
-5. **`services` 与 `rpc` 同批**：删 `rpc/network-telemetry-middleware.ts` 会连带 `services/src/zcode-agent/zcodeTaskServiceAdapter.ts` 的 `emitNetworkTelemetryObservation`，两者必须同批；删 `services/src/telemetry/telemetryCore.ts` 会连带 `desktop/src/main/index.ts` 的 `createTelemetryCore` 装配。
-6. **CLI**：`apps/zcode-cli/packages/telemetry/**` + `bootstrap/src/telemetry-bootstrap.ts` + `create-app.ts` / `runtime-cleanup.ts` / `zcode-protocol-entrypoint.ts` 装配；`adapters/src/mcp/telemetry.ts`、`adapters/src/exec/bash-resource-telemetry.ts`、`adapters/src/model/runner-telemetry.ts` 承载本地诊断，**保留**。
+5. **`services` 与 `rpc` 同批**：删 `rpc/network-telemetry-middleware.ts` 会连带 `services/src/ycode-agent/ycodeTaskServiceAdapter.ts` 的 `emitNetworkTelemetryObservation`，两者必须同批；删 `services/src/telemetry/telemetryCore.ts` 会连带 `desktop/src/main/index.ts` 的 `createTelemetryCore` 装配。
+6. **CLI**：`apps/ycode-cli/packages/telemetry/**` + `bootstrap/src/telemetry-bootstrap.ts` + `create-app.ts` / `runtime-cleanup.ts` / `ycode-protocol-entrypoint.ts` 装配；`adapters/src/mcp/telemetry.ts`、`adapters/src/exec/bash-resource-telemetry.ts`、`adapters/src/model/runner-telemetry.ts` 承载本地诊断，**保留**。
 7. **最后才动 `shared`**：`channels.ts` 通道常量与契约表、`platform.ts` 的 `reportTelemetryEvent`/`reportArmsCustomEvent`、`validation.ts` 的 `armsCustomEventPayloadSchema`、`telemetry.ts`/`localTtft.ts`/`processResourceTelemetry.ts`/`sessionCreateTelemetry.ts`/`remoteUsageTelemetry.ts`、`env.ts` 的遥测开关；同步 `desktop/src/preload`、`client/src/globals.d.ts`、`web/src/main.tsx` 空实现与 `@arms/*` 依赖、patch、`third-party/inventory.json`。
 8. 每步结束执行：`pnpm typecheck`、`pnpm lint`、`pnpm architecture:check --changed`；删除导出前用 `pnpm dep:refs` 确认无引用。
 

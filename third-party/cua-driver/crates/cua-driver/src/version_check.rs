@@ -19,7 +19,7 @@
 //! - **Cache-first.** A 20-hour-old cache short-circuits the network call
 //!   entirely. This bounds outbound requests to roughly one per machine
 //!   per day even on a hot reload loop.
-//! - **Opt-in only (ZCode vendor change).** Upstream enabled this check by
+//! - **Opt-in only (YCode vendor change).** Upstream enabled this check by
 //!   default and offered an opt-out. This build is default-**off**: the GitHub
 //!   releases API is only contacted when `CUA_DRIVER_RS_UPDATE_CHECK` is set to
 //!   a truthy value (`1`/`true`/`yes`/`on`). The persisted config
@@ -47,7 +47,7 @@ const CACHE_FILE_NAME: &str = "version_check.json";
 /// migrations. Nothing in this module writes here.
 const LEGACY_HOME_SUBDIRECTORY: &str = ".cua-driver-rs";
 
-/// Single-invocation opt-*in* env var (ZCode vendor change: the check used to be
+/// Single-invocation opt-*in* env var (YCode vendor change: the check used to be
 /// on by default and this var was an opt-out). Recognised values mirror the
 /// telemetry opt-out grammar: `1|true|yes|on` enables the check, everything else
 /// — falsy values, unrecognised values, and unset — leaves it off.
@@ -85,7 +85,7 @@ const RELEASES_URL: &str = "https://api.github.com/repos/trycua/cua/releases?per
 ///
 /// No-op when:
 /// - `CUA_DRIVER_RS_UPDATE_CHECK` env var is unset or not a truthy value
-///   (ZCode vendor change: default off — only an explicit opt-in fetches)
+///   (YCode vendor change: default off — only an explicit opt-in fetches)
 /// - The persisted config flag `update_check_enabled` is `false`
 /// - `CARGO_PKG_VERSION` has a pre-release suffix (source / dev build —
 ///   nothing on GitHub will be "newer" in a meaningful way)
@@ -501,7 +501,7 @@ fn format_banner(
 /// 2. Persisted config `update_check_enabled` (false → off)
 /// 3. Built `CARGO_PKG_VERSION` is a pre-release (`-dev`, `-rc.1`, …) → off
 ///
-/// ZCode vendor note: upstream defaulted this check to **on**, which made every
+/// YCode vendor note: upstream defaulted this check to **on**, which made every
 /// `mcp`/`serve`/`doctor` launch reach out to `api.github.com`. This build ships
 /// to an environment with zero tolerance for outbound reporting, so the default
 /// is inverted: the check only runs when `CUA_DRIVER_RS_UPDATE_CHECK` is set to a
@@ -1282,7 +1282,7 @@ mod tests {
 
     #[test]
     fn unset_or_unrecognised_env_var_leaves_check_off() {
-        // ZCode vendor change: the check is default-off. Only an explicit truthy
+        // YCode vendor change: the check is default-off. Only an explicit truthy
         // value may turn it on; "unset" and garbage values must both stay off so a
         // typo can never re-enable outbound GitHub traffic.
         let _g = ENV_LOCK.lock().unwrap();
@@ -1377,7 +1377,7 @@ mod tests {
 
     #[test]
     fn config_flag_true_or_missing_leaves_check_on() {
-        // Force the env opt-in on (ZCode vendor change: default is off), then assert the
+        // Force the env opt-in on (YCode vendor change: default is off), then assert the
         // persisted config flag can still veto the check and that a missing/true flag
         // does not block it.
         let _g = ENV_LOCK.lock().unwrap();

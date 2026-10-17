@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { IZCodeTaskService } from "@zcode/services";
+import type { IYCodeTaskService } from "@ycode/services";
 import { createWindowHostControllerRuntime } from "../src/host/windowHostControllerService.js";
 
 test("storage confirmation binds to the remote source; replaced/offline sources cannot receive deletion", async () => {
@@ -25,7 +25,7 @@ test("storage confirmation binds to the remote source; replaced/offline sources 
       ownedFileCount: 0,
       blockers: [],
     }),
-    purgeTaskStorage: async (params: Parameters<IZCodeTaskService["purgeTaskStorage"]>[0]) => {
+    purgeTaskStorage: async (params: Parameters<IYCodeTaskService["purgeTaskStorage"]>[0]) => {
       assert.equal(params.expectedRevision, "revision");
       assert.equal(params.workspaceIdentity, "remote-workspace");
       calls++;
@@ -40,7 +40,7 @@ test("storage confirmation binds to the remote source; replaced/offline sources 
         databaseFreeBytes: 0,
       };
     },
-  } as unknown as IZCodeTaskService;
+  } as unknown as IYCodeTaskService;
   const runtime = createWindowHostControllerRuntime({
     createId: () => "test-id",
     resolveSource: () => ({

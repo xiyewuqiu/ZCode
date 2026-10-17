@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { IZCodeTaskService } from "@zcode/services";
-import type { SessionStoragePreview, SessionPurgeResult } from "@zcode/shared";
+import type { IYCodeTaskService } from "@ycode/services";
+import type { SessionStoragePreview, SessionPurgeResult } from "@ycode/shared";
 import { removeTaskFromTaskCaches } from "@/lib/taskListMetaSync.js";
 
-export type TaskStorageTarget = Parameters<IZCodeTaskService["previewTaskStorage"]>[0];
-export type TaskStorageService = Pick<IZCodeTaskService, "previewTaskStorage" | "purgeTaskStorage">;
+export type TaskStorageTarget = Parameters<IYCodeTaskService["previewTaskStorage"]>[0];
+export type TaskStorageService = Pick<IYCodeTaskService, "previewTaskStorage" | "purgeTaskStorage">;
 
 export function useTaskStorage(target: TaskStorageTarget, service: TaskStorageService) {
   const { taskId, workspacePath, workspaceIdentity } = target;

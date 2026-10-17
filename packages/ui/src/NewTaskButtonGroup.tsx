@@ -1,7 +1,7 @@
 import { MessageCirclePlus } from "lucide-react";
-import { TID_TASK_NEW_BUTTON } from "@zcode/shared";
+import { TID_TASK_NEW_BUTTON } from "@ycode/shared";
 import { cn } from "@/components/lib/utils.js";
-import { useZCodeIntl } from "@/i18n/IntlProvider.js";
+import { useYCodeIntl } from "@/i18n/IntlProvider.js";
 import { useShortcutCommandLabel } from "@/shortcuts/useShortcutBindings.js";
 
 export function NewTaskButtonGroup({
@@ -11,7 +11,7 @@ export function NewTaskButtonGroup({
   onCreateTask: () => void;
   disabled?: boolean;
 }) {
-  const { intl } = useZCodeIntl();
+  const { intl } = useYCodeIntl();
   const newTaskShortcutLabel = useShortcutCommandLabel("newTask");
   return (
     <div

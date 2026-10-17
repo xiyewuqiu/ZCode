@@ -14,6 +14,6 @@
 //! linked and the search path is unused. Dropping the build script therefore
 //! removes a host requirement without changing what is linked.
 //!
-//! ZCode choice: replace the build script with nothing, via `[patch.crates-io]`
+//! YCode choice: replace the build script with nothing, via `[patch.crates-io]`
 //! in the workspace `Cargo.toml`, so the checkout builds on any Windows host.
 //! See `third-party/cua-driver/README.md` ("Windows build environment").

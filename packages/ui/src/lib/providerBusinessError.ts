@@ -1,5 +1,5 @@
 /**
- * zcode-plan / Coding Plan 业务错误码与前端处理约定。
+ * ycode-plan / Coding Plan 业务错误码与前端处理约定。
  *
  * | 场景           | code | HTTP | 前端处理 |
  * |----------------|------|------|----------|
@@ -36,17 +36,17 @@ export type ProviderBusinessErrorUiAction =
   | "upgrade";
 
 const PROVIDER_BUSINESS_ERROR_MESSAGE_IDS: Record<ProviderBusinessErrorCode, string> = {
-  "1006": "zcode.error.providerBusiness.1006",
-  "1005": "zcode.error.providerBusiness.1005",
-  "3006": "zcode.error.providerBusiness.3006",
-  "3002": "zcode.error.providerBusiness.3002",
-  "3001": "zcode.error.providerBusiness.3001",
-  "3007": "zcode.error.providerBusiness.3007",
-  "3008": "zcode.error.providerBusiness.3008",
-  "3009": "zcode.error.providerBusiness.3009",
-  "3010": "zcode.error.providerBusiness.3010",
-  "2007": "zcode.error.providerBusiness.2007",
-  "429": "zcode.error.providerBusiness.429",
+  "1006": "ycode.error.providerBusiness.1006",
+  "1005": "ycode.error.providerBusiness.1005",
+  "3006": "ycode.error.providerBusiness.3006",
+  "3002": "ycode.error.providerBusiness.3002",
+  "3001": "ycode.error.providerBusiness.3001",
+  "3007": "ycode.error.providerBusiness.3007",
+  "3008": "ycode.error.providerBusiness.3008",
+  "3009": "ycode.error.providerBusiness.3009",
+  "3010": "ycode.error.providerBusiness.3010",
+  "2007": "ycode.error.providerBusiness.2007",
+  "429": "ycode.error.providerBusiness.429",
 };
 
 const PROVIDER_BUSINESS_ERROR_UI_ACTIONS: Record<

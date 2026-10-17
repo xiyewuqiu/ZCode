@@ -76,7 +76,7 @@
     "Offscreen search lost model content",
   );
   await until(() => {
-    const highlights = CSS.highlights.get("zcode-v4-conversation-find-active");
+    const highlights = CSS.highlights.get("ycode-v4-conversation-find-active");
     const match = highlights && [...highlights][0];
     if (!match || !match.toString().includes(query)) return false;
     const rect = match.getBoundingClientRect();

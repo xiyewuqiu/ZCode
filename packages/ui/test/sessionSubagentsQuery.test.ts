@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { ZCodeSessionEndedSubagent, ZCodeSessionSubagentsResult } from "@zcode/shared";
+import type { YCodeSessionEndedSubagent, YCodeSessionSubagentsResult } from "@ycode/shared";
 import { SessionSubagentsQuery } from "../src/hooks/sessionSubagentsQuery.js";
 
 function deferred<T>() {
@@ -12,7 +12,7 @@ function deferred<T>() {
   });
   return { promise, resolve, reject };
 }
-const item = (id: number): ZCodeSessionEndedSubagent => ({
+const item = (id: number): YCodeSessionEndedSubagent => ({
   childSessionId: `child-${id}`,
   subagentType: "test",
   title: `Agent ${id}`,
@@ -22,12 +22,12 @@ function page(
   items = [item(1)],
   total = items.length,
   nextCursor?: string,
-): ZCodeSessionSubagentsResult {
+): YCodeSessionSubagentsResult {
   return { revision: 1, running: [], childSessionIds: [], ended: { items, total, nextCursor } };
 }
 
 test("in-flight invalidations coalesce into one refresh without overlapping requests", async () => {
-  const first = deferred<ZCodeSessionSubagentsResult>();
+  const first = deferred<YCodeSessionSubagentsResult>();
   let calls = 0;
   const query = new SessionSubagentsQuery(async () =>
     ++calls === 1 ? first.promise : page([item(2)]),
@@ -45,7 +45,7 @@ test("in-flight invalidations coalesce into one refresh without overlapping requ
 });
 
 test("a released generation neither publishes nor continues paging after reactivation", async () => {
-  const old = deferred<ZCodeSessionSubagentsResult>();
+  const old = deferred<YCodeSessionSubagentsResult>();
   let calls = 0;
   const query = new SessionSubagentsQuery(async () =>
     ++calls === 1 ? old.promise : page([item(2)]),
@@ -74,8 +74,8 @@ test("invalidation between result publication and request cleanup is not lost", 
 });
 
 test("old scope completion cannot unlock or overwrite another scope", async () => {
-  const old = deferred<ZCodeSessionSubagentsResult>();
-  const next = deferred<ZCodeSessionSubagentsResult>();
+  const old = deferred<YCodeSessionSubagentsResult>();
+  const next = deferred<YCodeSessionSubagentsResult>();
   const a = new SessionSubagentsQuery(() => old.promise);
   const b = new SessionSubagentsQuery(() => next.promise);
   a.activate();
@@ -123,7 +123,7 @@ test("refresh preserves loaded depth, batches 100 items, and reuses unchanged re
 });
 
 test("refresh arriving during loadMore is retained and duplicate page items are removed", async () => {
-  const more = deferred<ZCodeSessionSubagentsResult>();
+  const more = deferred<YCodeSessionSubagentsResult>();
   const initial = Array.from({ length: 20 }, (_, index) => item(index));
   let calls = 0;
   const query = new SessionSubagentsQuery(async () => {

@@ -8,7 +8,7 @@
     "importRevision": null,
     "provenance": "The original copy revision is not recorded in the current checkout; this pinned license reference is not asserted to be the original import version.",
     "roots": ["packages/ui/src/components/ui", "packages/ui/src/styles.css"],
-    "scope": "Upstream-derived portions only; ZCode-specific files in the same directory are not attributed to the upstream project.",
+    "scope": "Upstream-derived portions only; YCode-specific files in the same directory are not attributed to the upstream project.",
     "license": "MIT"
   },
   {
@@ -20,7 +20,7 @@
     "importRevision": null,
     "provenance": "The original copy revision is not recorded in the current checkout; this pinned license reference is not asserted to be the original import version.",
     "roots": ["packages/ui/src/components/ai-elements", ".agents/skills/ai-elements"],
-    "scope": "Upstream-derived UI components, skill instructions, reference documentation and example scripts only; locally adapted for ZCode imports, styling and agent workflow. Original import revision not recorded.",
+    "scope": "Upstream-derived UI components, skill instructions, reference documentation and example scripts only; locally adapted for YCode imports, styling and agent workflow. Original import revision not recorded.",
     "license": "Apache-2.0",
     "modifiedFiles": [
       "packages/ui/src/components/ai-elements/agent.tsx",
@@ -166,7 +166,7 @@
   },
   {
     "id": "Fig autocomplete registry",
-    "roots": ["apps/zcode-cli/packages/core/src/tool/handlers/generated/bash-command-registry.ts"],
+    "roots": ["apps/ycode-cli/packages/core/src/tool/handlers/generated/bash-command-registry.ts"],
     "license": "MIT",
     "source": "https://raw.githubusercontent.com/withfig/autocomplete/aef52acff84c45edde61ae610cc2c964802b9a38/LICENSE",
     "file": "third-party/upstream/5129f8779dca579cfcb235570688a2f15822b270575e04f27ef906aabbcc0355.txt",
@@ -196,7 +196,7 @@
     "importRevision": null,
     "provenance": "Original import revision is not recorded. This pinned upstream license/source reference is not asserted to be the original import version.",
     "roots": [".agents/skills/agent-browser", ".agents/skills/dogfood", ".agents/skills/electron"],
-    "scope": "Upstream-derived instructions, reference documents and shell templates; locally adapted for the ZCode workspace. Reference release v0.20.0 contains all three skills.",
+    "scope": "Upstream-derived instructions, reference documents and shell templates; locally adapted for the YCode workspace. Reference release v0.20.0 contains all three skills.",
     "license": "Apache-2.0",
     "modifiedFiles": [
       ".agents/skills/agent-browser/SKILL.md",
@@ -221,9 +221,9 @@
     "roots": [
       "packages/rpc/src",
       "packages/rpc/examples",
-      "packages/shared/src/zcode-protocol-v4/wire-codec.ts"
+      "packages/shared/src/ycode-protocol-v4/wire-codec.ts"
     ],
-    "scope": "Upstream-derived IPC, serialization, buffer, lifecycle and event portions only. Local RPC extensions, transports and envelope measurement are ZCode adaptations; inclusion does not attribute all local code to Microsoft.",
+    "scope": "Upstream-derived IPC, serialization, buffer, lifecycle and event portions only. Local RPC extensions, transports and envelope measurement are YCode adaptations; inclusion does not attribute all local code to Microsoft.",
     "license": "MIT"
   },
   {
@@ -236,7 +236,7 @@
     "provenance": "Original import revision is not recorded. This pinned upstream license/source reference is not asserted to be the original import version.",
     "roots": [
       "packages/ui/src/lib/builtinSkillI18n.ts",
-      "apps/zcode-cli/packages/superpowers-plugin/LICENSE"
+      "apps/ycode-cli/packages/superpowers-plugin/LICENSE"
     ],
     "scope": "Superpowers-derived skill descriptions and their translations only; unrelated descriptions from other projects in this file are not covered. The former bundled plugin implementation has been removed; only its retained license remains.",
     "license": "MIT"
@@ -259,8 +259,28 @@
     "sha256": "c0779290c1d4783169aa3dbfb55feb505e563ef8a004bbf55298ceffcfbda8d9",
     "importRevision": "27a318c3a616f9ff19d24fe2acca7517c5f8fa7b",
     "provenance": "Snapshot is the byte-exact upstream LICENSE.md at the vendored revision (MIT, Copyright (c) 2025 Cua AI, Inc., 1069 bytes). third-party/cua-driver/LICENSE carries the same text with Windows CRLF endings; the two are byte-identical once those endings are normalized to LF.",
-    "roots": [ "third-party/cua-driver/.cargo", "third-party/cua-driver/.gitignore", "third-party/cua-driver/CHANGELOG.md", "third-party/cua-driver/Cargo.lock", "third-party/cua-driver/Cargo.toml", "third-party/cua-driver/LICENSE", "third-party/cua-driver/README.md", "third-party/cua-driver/Skills", "third-party/cua-driver/UPSTREAM-README.md", "third-party/cua-driver/UPSTREAM-REVISION", "third-party/cua-driver/VERSION", "third-party/cua-driver/crates", "third-party/cua-driver/examples", "third-party/cua-driver/include", "third-party/cua-driver/rust-toolchain.toml", "third-party/cua-driver/scripts", "third-party/cua-driver/test-apps", "third-party/cua-driver/tests", "third-party/cua-driver/vendor" ],
-    "scope": "Vendored copy of the upstream Cargo workspace at libs/cua-driver/rust; it is built locally into packages/desktop/bundled-tools/<platformKey>/cua-driver and shipped as resources/tools/cua-driver. Cargo target/ output is git-ignored, so it is not part of this list. ZCode modifications: telemetry.rs rewritten as an inert no-op, telemetry-only plumbing removed from main.rs/cli.rs, version_check.rs default flipped to opt-in so the vendored build no longer contacts the GitHub releases API on startup, and the vendor/msvc-spectre-libs build patch crate. Full change list in third-party/cua-driver/README.md. NOT covered by this entry: the transitive Rust crate licenses of the statically linked binary, which still need a separate sources inventory.",
+    "roots": [
+      "third-party/cua-driver/.cargo",
+      "third-party/cua-driver/.gitignore",
+      "third-party/cua-driver/CHANGELOG.md",
+      "third-party/cua-driver/Cargo.lock",
+      "third-party/cua-driver/Cargo.toml",
+      "third-party/cua-driver/LICENSE",
+      "third-party/cua-driver/README.md",
+      "third-party/cua-driver/Skills",
+      "third-party/cua-driver/UPSTREAM-README.md",
+      "third-party/cua-driver/UPSTREAM-REVISION",
+      "third-party/cua-driver/VERSION",
+      "third-party/cua-driver/crates",
+      "third-party/cua-driver/examples",
+      "third-party/cua-driver/include",
+      "third-party/cua-driver/rust-toolchain.toml",
+      "third-party/cua-driver/scripts",
+      "third-party/cua-driver/test-apps",
+      "third-party/cua-driver/tests",
+      "third-party/cua-driver/vendor"
+    ],
+    "scope": "Vendored copy of the upstream Cargo workspace at libs/cua-driver/rust; it is built locally into packages/desktop/bundled-tools/<platformKey>/cua-driver and shipped as resources/tools/cua-driver. Cargo target/ output is git-ignored, so it is not part of this list. YCode modifications: telemetry.rs rewritten as an inert no-op, telemetry-only plumbing removed from main.rs/cli.rs, version_check.rs default flipped to opt-in so the vendored build no longer contacts the GitHub releases API on startup, and the vendor/msvc-spectre-libs build patch crate. Full change list in third-party/cua-driver/README.md. NOT covered by this entry: the transitive Rust crate licenses of the statically linked binary, which still need a separate sources inventory.",
     "license": "MIT"
   }
 ]
