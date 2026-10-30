@@ -72,6 +72,26 @@ corepack pnpm exec tsc -p packages/ui/test/tsconfig.long-conversation.json
 
 浏览器入口复用本机 Edge 和已有 playwright-core，不需要账号。覆盖 2,000 条目录的桌面、390px 手机、260px 窄屏，完整问题搜索、序号定位、键盘首尾/翻页、输入法保护、焦点恢复、失败重试及过期异步结果隔离；真实 Timeline fixture 另测 5,000 段工作记录中的跳转、流式选择保持和同路径工作区切换。中英文与深色截图位于 `.tmp/conversation-outline/`。加载异常使用受控 fixture 注入，不代表真实远程链路验收。
 
+## per-key 订阅时间线基准
+
+保持 Vite 测试服务运行后，从仓库根目录执行：
+
+```powershell
+node packages/ui/test/browser/run-keyed-publication.mjs
+```
+
+`keyedPublicationBench.html` 用真实的 `KeyedPublication` 与
+`useConversationProjection` / `useConversationTimelineProjection` 挂两个消费者，
+逐帧推送 rows / queue / status / optimistic 四类写入，比较整店订阅（改造前）与
+时间线 keyed 订阅（改造后）的通知和 React 渲染次数。使用本机 Edge，可用
+`YCODE_TEST_BROWSER_CHANNEL=chrome` 切换；不启动 Electron、Host 或真实 Agent。
+
+同一读面的 headless 通知计数可直接运行：
+
+```powershell
+pnpm exec tsx --tsconfig packages/ui/tsconfig.json --test packages/ui/test/conversationProjectionKeys.test.ts
+```
+
 ## 长会话测试入口
 
 从仓库根目录启动独立测试页，无需服务端、账号或真实会话数据：

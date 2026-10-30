@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { YCodeElicitationRequest, YCodePermissionOption, YCodeProvider } from "@ycode/shared";
 import type { ConversationSnapshot } from "@ycode/shared/ycode-protocol-v4";
 import { ElicitationDialog } from "@/ElicitationDialog.js";
 import { PermissionDialog } from "@/PermissionDialog.js";
+import { workflowSessionModelOf } from "@/components/workflow-timeline/workflowRunSettings.js";
 import { useOptionalPlatform } from "@/hooks/usePlatform.js";
 import { useYCodeIntl } from "@/i18n/IntlProvider.js";
 import { usePendingInteractionTaskNotifications } from "@/hooks/useTaskNotifications.js";
@@ -108,6 +109,11 @@ export function V4InteractionDialogs({
     ) ?? null;
   const workspaceHookReview = currentSnapshot?.pendingInteractions.find(
     (interaction) => interaction.payload.kind === "workspaceHookReview",
+  );
+  // 工作流确认窗里「会话模型」那一项的名字（与 run 卡「配置」弹层同一个来源）。
+  const workflowSessionModel = useMemo(
+    () => workflowSessionModelOf(currentSnapshot?.config),
+    [currentSnapshot?.config],
   );
   const notificationEnabled = useYCodeStoreWithDefault((state) => state.notificationEnabled, true);
   const localElicitationDraft = useYCodeSessionStore((state) => {
@@ -311,6 +317,9 @@ export function V4InteractionDialogs({
         key={pending.interactionId}
         request={request}
         workspacePath={workspacePath}
+        {...(workspaceIdentity === undefined ? {} : { workspaceIdentity })}
+        {...(remoteSessionId === undefined ? {} : { remoteSessionId })}
+        {...(workflowSessionModel === undefined ? {} : { workflowSessionModel })}
         provider={provider}
         responding={
           permissionResponse?.interactionId === pending.interactionId && permissionResponse.pending
@@ -320,14 +329,22 @@ export function V4InteractionDialogs({
             ? intl.formatMessage({ id: "chat.permission.responseFailed" })
             : undefined
         }
-        onRespond={(_requestId, option: YCodePermissionOption, feedback?: string) => {
+        onRespond={(
+          _requestId,
+          option: YCodePermissionOption,
+          feedback?: string,
+          content?: Record<string, unknown>,
+        ) => {
           if (permissionResponseFlight.current === pending.interactionId) return;
           const interactionId = pending.interactionId;
           permissionResponseFlight.current = interactionId;
           setPermissionResponse({ interactionId, pending: true, failed: false });
+          // content：工作流确认窗里改过的设置，只在放行应答上（docs/dynamic-workflow/launch.md
+          // 「Adjusting the settings in the window」）。
           void resolveInteraction(interactionId, {
             optionId: option.optionId,
             ...(feedback ? { freeText: feedback } : {}),
+            ...(content === undefined ? {} : { content }),
           }).then((accepted) => {
             if (permissionResponseFlight.current !== interactionId) return;
             permissionResponseFlight.current = null;

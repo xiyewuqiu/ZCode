@@ -28,6 +28,7 @@ import type {
 import {
   Component,
   createContext,
+  createElement,
   forwardRef,
   isValidElement,
   memo,
@@ -38,9 +39,18 @@ import {
   useState,
 } from "react";
 import type { BundledTheme } from "shiki";
-import { defaultRehypePlugins, defaultRemarkPlugins, Streamdown } from "streamdown";
+import {
+  defaultRehypePlugins,
+  defaultRemarkPlugins,
+  Streamdown,
+  type StreamdownProps,
+} from "streamdown";
 import type { Pluggable, PluggableList } from "unified";
 import { CodeBlock, CodeBlockHeader } from "@/components/ai-elements/code-block.js";
+import {
+  StreamingMarkdownDocument,
+  type StreamingMarkdownRenderers,
+} from "@/components/ai-elements/streamingMarkdownDocument.js";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -987,6 +997,53 @@ function trimCodeFenceTrailingNewlines(codeText: string): string {
   return codeText.replace(/\n+$/, "");
 }
 
+interface MessageCodeBlockProps {
+  code: string;
+  language: string;
+  codeBlockTheme: BundledTheme;
+  appTheme: Theme;
+  fontSizePx: number;
+  wrapLongLines: boolean;
+  forceCodeWrap: boolean;
+  enableSyntaxHighlighting: boolean;
+  renderMermaid: boolean;
+}
+
+/** 流式正文与普通 fenced code 共用同一代码块外观；未闭合围栏也复用它。 */
+function MessageCodeBlock({
+  code,
+  language,
+  codeBlockTheme,
+  appTheme,
+  fontSizePx,
+  wrapLongLines,
+  forceCodeWrap,
+  enableSyntaxHighlighting,
+  renderMermaid,
+}: MessageCodeBlockProps) {
+  return (
+    <CodeBlock
+      className="my-4 border border-border bg-card"
+      code={code}
+      // 流式消息里的代码围栏会被反复拆分/重挂载。
+      // 高亮等消息完成后再启动，避免 async highlighter 和消息流更新叠加触发 React #185。
+      enableSyntaxHighlighting={enableSyntaxHighlighting}
+      fontSizePx={fontSizePx}
+      language={language}
+      renderMermaid={renderMermaid}
+      theme={codeBlockTheme}
+      appTheme={appTheme}
+      wrapLongLines={wrapLongLines}
+    >
+      <CodeBlockHeader
+        className="pl-3 pr-2 pt-2"
+        language={language}
+        showWrapButton={!forceCodeWrap}
+      />
+    </CodeBlock>
+  );
+}
+
 function isExternalWebHref(href: string): boolean {
   try {
     const protocol = new URL(href).protocol;
@@ -1559,25 +1616,17 @@ export const MessageResponse = memo(
           const language = getCodeLanguage(codeClassName);
 
           return (
-            <CodeBlock
-              className="my-4 border border-border bg-card"
+            <MessageCodeBlock
+              appTheme={theme}
               code={codeText}
-              // 流式消息里的代码围栏会被 Streamdown 反复拆分/重挂载。
-              // 高亮等消息完成后再启动，避免 async highlighter 和消息流更新叠加触发 React #185。
+              codeBlockTheme={codeBlockTheme}
               enableSyntaxHighlighting={!renderStreaming}
               fontSizePx={codePreviewSettings.fontSizePx}
+              forceCodeWrap={forceCodeWrap}
               language={language}
               renderMermaid={!renderStreaming}
-              theme={codeBlockTheme}
-              appTheme={theme}
               wrapLongLines={wrapLongLines}
-            >
-              <CodeBlockHeader
-                className="pl-3 pr-2 pt-2"
-                language={language}
-                showWrapButton={!forceCodeWrap}
-              />
-            </CodeBlock>
+            />
           );
         },
         blockquote: MarkdownBlockquote,
@@ -1610,6 +1659,52 @@ export const MessageResponse = memo(
       ],
     );
 
+    // 流式增量渲染与完成态整篇渲染共用同一套 Streamdown 选项。
+    // 该对象只随真正影响渲染结果的依赖变化，避免每个 chunk 丢弃冻结元素缓存。
+    const streamdownChunkProps = useMemo<Omit<StreamdownProps, "children" | "mode">>(
+      () => ({
+        components: messageComponents,
+        parseIncompleteMarkdown: true,
+        linkSafety: messageLinkSafety,
+        plugins: streamdownPlugins,
+        controls: STREAMDOWN_CONTROLS,
+        rehypePlugins: messageRehypePlugins,
+        remarkPlugins: messageRemarkPlugins,
+        shikiTheme,
+        animated: false,
+        isAnimating: false,
+      }),
+      [messageComponents, messageRemarkPlugins, shikiTheme],
+    );
+    const streamingRenderers = useMemo<StreamingMarkdownRenderers>(
+      () => ({
+        renderChunk: (source, mode, key) =>
+          createElement(Streamdown, { ...streamdownChunkProps, key, mode }, source),
+        renderOpenFence: (fence) => (
+          <MessageCodeBlock
+            key={`fence-${fence.key}`}
+            appTheme={theme}
+            code={trimCodeFenceTrailingNewlines(fence.code)}
+            codeBlockTheme={codeBlockTheme}
+            enableSyntaxHighlighting={false}
+            fontSizePx={codePreviewSettings.fontSizePx}
+            forceCodeWrap={forceCodeWrap}
+            language={fence.language}
+            renderMermaid={false}
+            wrapLongLines={wrapLongLines}
+          />
+        ),
+      }),
+      [
+        codeBlockTheme,
+        codePreviewSettings.fontSizePx,
+        forceCodeWrap,
+        streamdownChunkProps,
+        theme,
+        wrapLongLines,
+      ],
+    );
+
     return (
       <MessageResponseMarkdownBoundary
         className={fallbackClassName}
@@ -1617,42 +1712,54 @@ export const MessageResponse = memo(
         resetKey={boundaryResetKey}
         scope={boundaryScope}
       >
-        <Streamdown
-          key={streamdownRenderKey}
-          className={responseClassName}
-          // Streamdown 自身是 memo，比较函数不看 components。app light/dark 切换时
-          // codeBlockTheme 只存在于自定义 code renderer 闭包里，若不改 key，当前 task 已挂载的
-          // markdown 代码块不会重新执行 renderer；切换 task 触发重建后才会恢复正确主题。
-          // Artifact reader/session 同样只存在于 img renderer 闭包里。权限上下文变化时必须重挂载
-          // markdown 子树，释放旧 blob URL，并确保后续读取只使用当前会话的 reader。
-          // 已结束消息之前也一直走 streaming mode，会触发 remend 对正文做“未闭合 markdown 补全”。
-          // 遇到 `./src/**/*` 这类代码片段时，remend 会误判成未闭合粗体并在末尾补出 `**`。
-          // 性能优化曾让长历史消息也启用 block streaming 模式复用分块缓存；虚拟滚动/懒渲染会
-          // 频繁重挂载历史消息，生产上遇到部分 markdown 会在 Streamdown 内部触发 React #185。
-          // 这里重新收敛为：只有真实流式输出走 streaming 解析，完成态一律 static。
-          mode={streamdownMode}
-          components={messageComponents}
-          parseIncompleteMarkdown={streaming}
-          // Streamdown 内置 code renderer 的 highlighted-body 会在代码高亮结果和 raw fallback
-          // 之间反复 setState，部分历史消息恢复时会触发 React #185。这里保留 markdown 解析能力，
-          // 但代码块改走本项目自己的稳定 CodeBlock 渲染器。
-          // 说明：这里继续关掉 Streamdown 默认链接行为，统一改由上面的自定义 a 渲染器接管。
-          // 这样工作区文件链接和 http/https 外链都能走我们自己的安全分流，其它协议仍保持不可点击。
-          linkSafety={messageLinkSafety}
-          plugins={streamdownPlugins}
-          controls={STREAMDOWN_CONTROLS}
-          // Streamdown 的 harden 插件会在自定义 a renderer 之前把 file:// 标成 [blocked]。
-          // 这里先把 file URI 规整成本地路径 href，让后续 resolveMarkdownFileLink 统一走预览/文件树打开逻辑。
-          rehypePlugins={messageRehypePlugins}
-          remarkPlugins={messageRemarkPlugins}
-          shikiTheme={shikiTheme}
-          // markdown 正文流式淡入会在重渲染时让历史文本整段重新闪烁。
-          // 这里保留 streaming 解析模式，但彻底关闭 Streamdown/正文 rehype 动画。
-          animated={false}
-          isAnimating={false}
-        >
-          {targetMarkdown}
-        </Streamdown>
+        {renderStreaming ? (
+          <StreamingMarkdownDocument
+            // 渲染身份变化（主题、代码设置、workspace、reader 等）必须重建冻结元素，
+            // 否则缓存里的闭包会保留旧主题或旧附件 reader。
+            key={streamdownRenderKey}
+            className={cn(responseClassName, "space-y-4 whitespace-normal")}
+            identity={streamdownRenderKey}
+            markdown={targetMarkdown}
+            renderers={streamingRenderers}
+          />
+        ) : (
+          <Streamdown
+            key={streamdownRenderKey}
+            className={responseClassName}
+            // Streamdown 自身是 memo，比较函数不看 components。app light/dark 切换时
+            // codeBlockTheme 只存在于自定义 code renderer 闭包里，若不改 key，当前 task 已挂载的
+            // markdown 代码块不会重新执行 renderer；切换 task 触发重建后才会恢复正确主题。
+            // Artifact reader/session 同样只存在于 img renderer 闭包里。权限上下文变化时必须重挂载
+            // markdown 子树，释放旧 blob URL，并确保后续读取只使用当前会话的 reader。
+            // 已结束消息之前也一直走 streaming mode，会触发 remend 对正文做“未闭合 markdown 补全”。
+            // 遇到 `./src/**/*` 这类代码片段时，remend 会误判成未闭合粗体并在末尾补出 `**`。
+            // 性能优化曾让长历史消息也启用 block streaming 模式复用分块缓存；虚拟滚动/懒渲染会
+            // 频繁重挂载历史消息，生产上遇到部分 markdown 会在 Streamdown 内部触发 React #185。
+            // 这里重新收敛为：只有真实流式输出走 streaming 解析，完成态一律 static。
+            mode={streamdownMode}
+            components={messageComponents}
+            parseIncompleteMarkdown={streaming}
+            // Streamdown 内置 code renderer 的 highlighted-body 会在代码高亮结果和 raw fallback
+            // 之间反复 setState，部分历史消息恢复时会触发 React #185。这里保留 markdown 解析能力，
+            // 但代码块改走本项目自己的稳定 CodeBlock 渲染器。
+            // 说明：这里继续关掉 Streamdown 默认链接行为，统一改由上面的自定义 a 渲染器接管。
+            // 这样工作区文件链接和 http/https 外链都能走我们自己的安全分流，其它协议仍保持不可点击。
+            linkSafety={messageLinkSafety}
+            plugins={streamdownPlugins}
+            controls={STREAMDOWN_CONTROLS}
+            // Streamdown 的 harden 插件会在自定义 a renderer 之前把 file:// 标成 [blocked]。
+            // 这里先把 file URI 规整成本地路径 href，让后续 resolveMarkdownFileLink 统一走预览/文件树打开逻辑。
+            rehypePlugins={messageRehypePlugins}
+            remarkPlugins={messageRemarkPlugins}
+            shikiTheme={shikiTheme}
+            // markdown 正文流式淡入会在重渲染时让历史文本整段重新闪烁。
+            // 这里保留 streaming 解析模式，但彻底关闭 Streamdown/正文 rehype 动画。
+            animated={false}
+            isAnimating={false}
+          >
+            {targetMarkdown}
+          </Streamdown>
+        )}
       </MessageResponseMarkdownBoundary>
     );
   },

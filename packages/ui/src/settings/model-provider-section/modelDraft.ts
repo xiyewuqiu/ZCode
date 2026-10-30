@@ -1,6 +1,9 @@
 /* oxlint-disable eslint(max-lines) -- 草稿值、投影规则与稀疏 Overlay 提交共享同一字段映射，拆开会复制出第二套规则。 */
 import type { ProviderSettingsFormModel } from "@/lib/providerSettingsFormTypes.js";
-import type { ModelInputFormatData } from "@ycode/shared/model-config";
+import type {
+  ModelApiFormatData,
+  ModelInputFormatData,
+} from "@ycode/shared/model-config";
 import {
   EnumOptionSpecConfig,
   extractManualModelConfig,
@@ -13,6 +16,8 @@ export type ProviderModelInputFormatDraft = ModelInputFormatData;
 /** 模型编辑弹窗的唯一草稿形态：字符串输入 + 字段来源标记，提交时才物化为稀疏 Overlay。 */
 export interface ProviderModelDraftValues {
   idValue: string;
+  /** "inherit" 表示不写个人 apiFormat，继续使用 Provider 默认协议。 */
+  apiFormatValue: ModelApiFormatData | "inherit";
   contextWindowValue: string;
   maxOutputTokensValue: string;
   inputFormatValue: ProviderModelInputFormatDraft;
@@ -146,6 +151,7 @@ export function createProviderModelDraftValues(
   const inputFormat = properties?.inputFormat;
   return {
     idValue: model.modelId,
+    apiFormatValue: model.personalConfig.apiFormat ?? "inherit",
     // 编辑器只把 Personal Overlay 当作真实输入；继承值由 UI 作为 placeholder 展示。
     contextWindowValue:
       model.personalConfig.properties?.contextWindow == null
@@ -306,6 +312,9 @@ export function resolveProviderModelDraftCommit({
   };
   if (Object.keys(personalProperties).length === 0)
     deleteMutable(sparsePersonalConfig, "properties");
+  // “继承”必须删除个人字段，不能把 Provider 当前默认值冻结进个人配置。
+  if (draft.apiFormatValue === "inherit") deleteMutable(sparsePersonalConfig, "apiFormat");
+  else assignMutable(sparsePersonalConfig, "apiFormat", draft.apiFormatValue);
 
   const inheritedMaxOption = inherited?.optionSpecs?.maxOutputTokens;
   // Option Spec 不再拥有 default；该输入框唯一表达模型硬上限 max。
@@ -378,6 +387,8 @@ export function resolveProviderModelDraftCommit({
           optionSpecs: effectiveOptionSpecs,
         },
       });
+  const effectiveApiFormat =
+    draft.apiFormatValue === "inherit" ? currentModel.config.apiFormat : draft.apiFormatValue;
   return {
     status: "commit",
     model: {
@@ -389,6 +400,7 @@ export function resolveProviderModelDraftCommit({
       config: {
         ...currentModel.config,
         enabled: effectiveEnabled,
+        ...(effectiveApiFormat == null ? {} : { apiFormat: effectiveApiFormat }),
         properties: effectiveProperties,
         optionSpecs: effectiveOptionSpecs,
       },
@@ -397,6 +409,7 @@ export function resolveProviderModelDraftCommit({
 }
 
 const CONFIG_VALUE_FIELDS = [
+  "apiFormatValue",
   "supportsJsonSchemaOutputValue",
   "supportsNativeWebSearchValue",
   "supportsMidConversationSystemValue",
@@ -405,6 +418,7 @@ const CONFIG_VALUE_FIELDS = [
 
 function personalDraftFieldKeys(config: ModelConfigObject): string[] {
   const result: string[] = [];
+  if (config.apiFormat != null) result.push("apiFormatValue");
   for (const key of [
     "supportsJsonSchemaOutput",
     "supportsNativeWebSearch",
@@ -443,6 +457,7 @@ function materializeEditorManagedPersonalConfig({
   // 只提取可编辑叶子；隐藏请求映射必须来自当前身份规则，不能由旧模型草稿冻结。
   return extractManualModelConfig({
     ...preserveEnabledPersonalConfig(current),
+    ...(effective.apiFormat == null ? {} : { apiFormat: effective.apiFormat }),
     properties: effective.properties,
     optionSpecs: effective.optionSpecs,
   });

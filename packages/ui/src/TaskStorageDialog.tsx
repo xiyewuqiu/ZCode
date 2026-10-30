@@ -39,8 +39,20 @@ export function TaskStorageDialog({
     intl.formatMessage({ id: `taskStorage.${id}` }, values);
   const state = useTaskStorage(target, service);
   const [confirmedPreview, setConfirmedPreview] = useState<SessionStoragePreview | null>(null);
+  const [confirmedOptimize, setConfirmedOptimize] = useState(false);
   const cancelRef = useRef<HTMLButtonElement>(null);
-  const { preview, result, error, busy } = state;
+  const {
+    preview,
+    result,
+    error,
+    busy,
+    databaseStats,
+    optimization,
+    databaseError,
+    databaseBusy,
+    refreshDatabase,
+    optimizeDatabase,
+  } = state;
   const complete = result?.state === "purged";
   const retry =
     result?.state === "cleanup-pending" ||
@@ -53,6 +65,9 @@ export function TaskStorageDialog({
     confirmedPreview === preview &&
     !busy &&
     !complete;
+  // 整理是全局共享库操作：预览/删除进行中、统计未就绪或用户未确认都不可执行。
+  const canOptimize =
+    Boolean(databaseStats) && confirmedOptimize && databaseBusy === null && busy !== "purge";
   return (
     <Dialog
       open
@@ -116,6 +131,7 @@ export function TaskStorageDialog({
                 <label className="flex items-start gap-2 rounded-lg border border-card-border p-3">
                   <input
                     type="checkbox"
+                    data-testid="task-storage-delete-confirm"
                     className="mt-0.5 size-4 shrink-0 accent-destructive"
                     disabled={Boolean(busy)}
                     checked={confirmedPreview === preview}
@@ -126,6 +142,121 @@ export function TaskStorageDialog({
               )}
             </>
           ) : null}
+          <div className="space-y-3 rounded-lg border border-card-border bg-surface p-3">
+            <div className="flex items-center gap-2">
+              <Database className="size-4 text-foreground-subtle" aria-hidden="true" />
+              <p className="font-medium">{t("database.title")}</p>
+            </div>
+            <p className="text-foreground-subtle">{t("database.description")}</p>
+            {databaseStats ? (
+              <div className="space-y-2">
+                <div className="grid grid-cols-1 gap-2 min-[360px]:grid-cols-3">
+                  <div>
+                    <p className="text-foreground-subtle">{t("database.size")}</p>
+                    <p className="font-medium tabular-nums">{bytes(databaseStats.databaseBytes)}</p>
+                    <p className="text-ui-caption text-foreground-subtle">
+                      {t("database.wal", { bytes: bytes(databaseStats.walBytes) })}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-foreground-subtle">{t("database.pages")}</p>
+                    <p className="font-medium tabular-nums">
+                      {t("database.pagesValue", {
+                        count: databaseStats.pageCount,
+                        size: bytes(databaseStats.pageSize),
+                      })}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-foreground-subtle">{t("database.freelist")}</p>
+                    <p className="font-medium tabular-nums">{bytes(databaseStats.freelistBytes)}</p>
+                    <p className="text-ui-caption text-foreground-subtle">
+                      {t("database.freelistValue", { count: databaseStats.freelistCount })}
+                    </p>
+                  </div>
+                </div>
+                <p className="text-ui-caption text-foreground-subtle">
+                  {t("database.mode", {
+                    autoVacuum: databaseStats.autoVacuum,
+                    journal: databaseStats.journalMode,
+                  })}
+                </p>
+              </div>
+            ) : databaseBusy === "load" ? (
+              <p role="status" className="flex items-center gap-2">
+                <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" />
+                {t("database.loading")}
+              </p>
+            ) : null}
+            {optimization ? (
+              <div
+                role="status"
+                className={
+                  optimization.status === "optimized" && !optimization.reason
+                    ? "space-y-1 text-success"
+                    : "space-y-1 text-warning"
+                }
+              >
+                <p>
+                  {optimization.status === "optimized"
+                    ? t(`database.action.${optimization.action}`, {
+                        reclaimed: bytes(optimization.reclaimedBytes),
+                      })
+                    : t(`database.refused.${optimization.reason ?? "database-busy"}`)}
+                </p>
+                {optimization.reason === "freelist-low" ? (
+                  <p>{t("database.action.freelist-low")}</p>
+                ) : null}
+                <p>
+                  {t("database.beforeAfter", {
+                    before: bytes(optimization.before.databaseBytes),
+                    after: bytes(optimization.after.databaseBytes),
+                  })}
+                </p>
+              </div>
+            ) : null}
+            {databaseError ? (
+              <div role="alert" className="space-y-1 text-destructive">
+                <p>{t("database.failed")}</p>
+                <p className="break-all text-ui-caption">{databaseError}</p>
+              </div>
+            ) : null}
+            <label className="flex items-start gap-2">
+              <input
+                type="checkbox"
+                data-testid="task-storage-optimize-confirm"
+                className="mt-0.5 size-4 shrink-0 accent-brand"
+                disabled={Boolean(databaseBusy) || busy === "purge"}
+                checked={confirmedOptimize}
+                onChange={(event) => setConfirmedOptimize(event.target.checked)}
+              />
+              <span>{t("database.confirm")}</span>
+            </label>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={Boolean(databaseBusy) || busy === "purge"}
+                onClick={() => {
+                  setConfirmedOptimize(false);
+                  void refreshDatabase();
+                }}
+              >
+                {t("database.refresh")}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={!canOptimize}
+                onClick={() => {
+                  setConfirmedOptimize(false);
+                  void optimizeDatabase();
+                }}
+              >
+                {databaseBusy === "optimize" ? t("database.optimizing") : t("database.optimize")}
+              </Button>
+            </div>
+          </div>
           {result ? (
             <div role="status" className={complete ? "text-success" : "text-warning"}>
               <p>{t(complete ? "complete" : "pending", { count: result.pendingFileCount })}</p>

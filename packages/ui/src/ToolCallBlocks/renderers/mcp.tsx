@@ -18,6 +18,7 @@ import { useYCodeIntl } from "@/i18n/IntlProvider.js";
 import { ToolLayout } from "@/ToolCallBlocks/ToolLayout.js";
 import { ToolSnapshotFieldNotice } from "@/ToolCallBlocks/ToolSnapshotFieldNotice.js";
 import type { ToolCallBlockRenderContext } from "@/ToolCallBlocks/shared.js";
+import { PluginUiToolCallCard } from "@/plugin-ui/PluginUiToolCallBlock.js";
 
 interface McpToolPresentation {
   kind: "mcp_tool";
@@ -197,6 +198,7 @@ export function McpToolCallBlock(context: ToolCallBlockRenderContext) {
       // MCP 详情之前先展示 description 和参数，用户展开后仍像 API 调试器。
       // 参考 BUA，把结果作为一级内容；调用元数据收进透明的二级折叠区。
       <div className="mb-2 space-y-3 py-1" data-testid="mcp-expanded-content">
+        <PluginUiToolCallCard context={context} />
         {visibleError ? (
           <section className="space-y-1.5">
             <h4 className="text-ui-base font-medium text-destructive">{resultLabel}</h4>

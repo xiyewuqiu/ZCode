@@ -33,6 +33,7 @@ import {
   ModelEditorAdvanced,
   ModelSmartConfigSwitch,
 } from "./ProviderModelDialogParts.js";
+import { ProviderModelApiFormatSelect } from "./ProviderModelApiFormatSelect.js";
 
 function selectFocusedInputText(event: Pick<FocusEvent<HTMLInputElement>, "currentTarget">) {
   event.currentTarget.select();
@@ -296,6 +297,18 @@ export function ProviderModelDialog({
                     overrideFields={activeOverrides}
                   />
                 </div>
+              </div>
+            </ModelSettingsGroup>
+            <ModelSettingsGroup group="request">
+              <div>
+                <div className="mb-1 block text-ui-base text-foreground-subtle">
+                  {intl.formatMessage({ id: "settings.modelProvider.apiFormat" })}
+                </div>
+                <ProviderModelApiFormatSelect
+                  value={draft.apiFormatValue}
+                  overridden={overridden("apiFormatValue")}
+                  onChange={(apiFormatValue) => onDraftChange({ apiFormatValue })}
+                />
               </div>
             </ModelSettingsGroup>
             <ModelSettingsGroup group="capabilities">

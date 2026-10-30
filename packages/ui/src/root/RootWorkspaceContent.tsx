@@ -36,7 +36,7 @@ interface RootWorkspaceContentProps {
   handleBackFromSettings: () => void;
   reconnectingRemoteWorkspaceKeys: AppProps["reconnectingRemoteWorkspaceKeys"];
   remoteWorkspaceErrorByWorkspaceKey: AppProps["remoteWorkspaceErrorByWorkspaceKey"];
-  reconnectingRemoteWorkspaceLogsByWorkspaceKey: AppProps["reconnectingRemoteWorkspaceLogsByWorkspaceKey"];
+  reconnectingRemoteWorkspaceLogsByWorkspaceKey?: AppProps["reconnectingRemoteWorkspaceLogsByWorkspaceKey"];
   remoteConnectionLogs?: AppProps["remoteConnectionLogs"];
   allowOpenWorkspace: NonNullable<RootProps["allowOpenWorkspace"]>;
   isDesktop?: RootProps["isDesktop"];

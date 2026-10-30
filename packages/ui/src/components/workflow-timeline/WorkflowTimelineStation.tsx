@@ -7,13 +7,16 @@ import {
   RAIL_ROW,
   STATION_PITCH,
   STATION_WIDTH,
+  TAIL_STUB,
   stationX,
   type TimelineLayout,
 } from "./timeline-geometry.js";
 import { railKey } from "./timeline-ledge.js";
 import type { TypewriterState } from "./use-typewriter.js";
+import { HoleFillMark, HoleWaitingMeta } from "./WorkflowHoleParts.js";
 import { StationMeta } from "./WorkflowStationMeta.js";
 import { stationLampClass } from "./WorkflowTimelineLedge.js";
+import { slideClass, slideStyle, type FillSlide } from "./use-fill-growth.js";
 
 /**
  * 站头：名字 + 元数据，一枚没有背景的
@@ -41,6 +44,9 @@ export function StationHead({
   onSelect?: () => void;
 }) {
   const pending = station.status === undefined || station.status === "pending";
+  // 留白站（docs/dynamic-workflow/presentation.md「Holes on the timeline」）：等待时元数据位写「等待补全」；
+  // 无阶段的补全在名字之后放一枚笔标。类型（hole<T> 的 T）是编译契约，不上界面。
+  const hole = station.hole;
   const head = (
     <>
       <span
@@ -52,7 +58,12 @@ export function StationHead({
         {name}
         {caret}
       </span>
-      <StationMeta station={station} />
+      {hole?.state === "filled" ? <HoleFillMark holeId={hole.siteId} /> : null}
+      {hole?.state === "waiting" ? (
+        <HoleWaitingMeta hole={hole} />
+      ) : (
+        <StationMeta station={station} />
+      )}
     </>
   );
   return onSelect === undefined ? (
@@ -97,11 +108,14 @@ interface RowProps {
 export function WorkflowStationRow({
   draft,
   folded,
+  fresh,
   fullNames,
   onSelectStation,
   pen,
   rails,
+  slide,
   stations,
+  tailStub,
   titleOf,
   top,
   width,
@@ -112,6 +126,12 @@ export function WorkflowStationRow({
   pen: TypewriterState;
   top: number;
   width: number;
+  /** 补全的生长（`use-fill-growth.ts`）：下标大于 `after` 的站带 `wf-slide`，从 −shift 滑到位。 */
+  slide?: FillSlide;
+  /** 末站是尾巴留白：`open` 在它之后画 40px 淡出的虚线残段，`filled` 只留余地。 */
+  tailStub?: "open" | "filled";
+  /** 刚接进 run 的补全所写的站：灯落地、轨道段长出（`wf-land` / `wf-rail-grow`）。 */
+  fresh?: ReadonlySet<string>;
 }) {
   const n = stations.length;
   return (
@@ -122,24 +142,42 @@ export function WorkflowStationRow({
         const name = draft ? full.slice(0, pen.shown[i] ?? 0) : full;
         const penHere = draft && i === n - 1;
         const foldClass = cn("wf-foldable", folded.has(i) && "wf-folded");
+        const landing = draft || (station.fill !== undefined && fresh?.has(station.fill) === true);
+        const last = i === n - 1;
         return (
           <div
-            className="flex h-6 min-w-0 items-center"
+            className={cn(
+              "flex h-6 min-w-0 items-center",
+              station.ghost && "wf-ghost",
+              slideClass(i, slide),
+            )}
+            data-fill={station.fill}
             data-station-folded={folded.has(i) ? "true" : undefined}
+            data-station-ghost={station.ghost ? "true" : undefined}
+            data-station-hole={station.hole?.state}
             data-station-status={station.status ?? "pending"}
             data-testid="workflow-timeline-station"
             key={station.id}
-            style={{ width: i < n - 1 ? STATION_PITCH : STATION_WIDTH }}
+            style={{
+              ...slideStyle(i, slide),
+              width: !last
+                ? STATION_PITCH
+                : STATION_WIDTH + (tailStub === undefined ? 0 : TAIL_STUB),
+            }}
           >
             <span
               aria-hidden
               className={cn(
-                stationLampClass(station.status),
+                stationLampClass(station.status, station.hole),
                 "mx-3",
                 foldClass,
-                draft && "wf-land",
+                landing && "wf-land",
               )}
-              data-lamp={station.status ?? "pending"}
+              data-lamp={
+                station.hole !== undefined && station.hole.state !== "filled"
+                  ? `hole-${station.hole.state}`
+                  : (station.status ?? "pending")
+              }
             />
             <StationHead
               caret={
@@ -164,21 +202,32 @@ export function WorkflowStationRow({
                 ? {}
                 : { onSelect: () => onSelectStation(station) })}
             />
-            {i < n - 1 ? (
+            {!last ? (
               <span
                 aria-hidden
                 className={cn(
                   "wf-ink relative h-0 min-w-3 flex-1 rounded-full border-t border-foreground-subtlest",
-                  draft && "wf-rail-grow",
+                  landing && "wf-rail-grow",
                   rail === undefined && "invisible",
                   // 行进的段照常画底线，再叠一道不动的光（`.wf-rail-march::after`）：朝着灯渐亮。
                   rail?.ink === "march" && "wf-rail-march",
+                  // 触到开着的留白的段是虚线：那里还不是代码。
+                  rail?.dashed && "border-dashed",
                 )}
+                data-rail-dashed={rail?.dashed ? "true" : undefined}
                 data-rail-from={i}
                 data-rail-ink={rail?.ink ?? "none"}
                 data-rail-to={i + 1}
                 data-testid="workflow-timeline-rail"
                 style={{ marginLeft: 10, marginRight: -6 }}
+              />
+            ) : tailStub === "open" ? (
+              // 尾巴留白：轨道在它之后再跑 40px 并淡出——脚本的结尾还没有写下。
+              <span
+                aria-hidden
+                className="wf-tail-stub h-0 shrink-0 border-t border-dashed border-foreground-subtlest"
+                data-testid="workflow-timeline-tail-stub"
+                style={{ marginLeft: 10, width: TAIL_STUB }}
               />
             ) : null}
           </div>
@@ -198,20 +247,28 @@ export function WorkflowStationPlatform({
   fullNames,
   layout,
   onSelectStation,
+  slide,
   stations,
   titleOf,
-}: RowProps & { layout: TimelineLayout }) {
+}: RowProps & { layout: TimelineLayout; slide?: FillSlide }) {
   return (
     <>
       {stations.map((station, i) => (
         <div
-          className="absolute flex h-6 min-w-0 items-center"
+          className={cn(
+            "absolute flex h-6 min-w-0 items-center",
+            station.ghost && "wf-ghost",
+            slideClass(i, slide),
+          )}
+          data-fill={station.fill}
           data-station-folded={folded.has(i) ? "true" : undefined}
+          data-station-hole={station.hole?.state}
           data-station-status={station.status ?? "pending"}
           data-station-track={station.track}
           data-testid="workflow-timeline-station"
           key={station.id}
           style={{
+            ...slideStyle(i, slide),
             left: stationX(i, layout.inset) + CAPTION_X,
             top: layout.capY - PLATFORM_ROW / 2,
             width: STATION_WIDTH - CAPTION_X,

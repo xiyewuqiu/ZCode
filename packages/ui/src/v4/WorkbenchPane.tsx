@@ -305,6 +305,8 @@ export interface WorkbenchShellBinding {
 interface WorkbenchLeafPaneProps {
   paneId: string;
   rect: RectExpr;
+  /** 完整视图浮窗形态的定位覆盖：只显示焦点 pane，其余 pane 保留挂载但不可见。 */
+  styleOverride?: CSSProperties;
   focused: boolean;
   showFocusIndicator: boolean;
   canSplit: boolean;
@@ -340,6 +342,7 @@ function workspaceBadgeFor(scope: PaneWorkspaceScope): PaneWorkspaceBadge {
 export function WorkbenchLeafPane({
   paneId,
   rect,
+  styleOverride,
   focused,
   showFocusIndicator,
   canSplit,
@@ -380,7 +383,7 @@ export function WorkbenchLeafPane({
     shell.remoteSessionId,
   ]);
 
-  const style = useMemo(() => rectStyle(rect), [rect]);
+  const style = useMemo(() => styleOverride ?? rectStyle(rect), [rect, styleOverride]);
 
   const handleSplitRight = useCallback(() => {
     onSplit?.(paneId, "row", scope);

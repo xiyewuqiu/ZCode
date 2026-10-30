@@ -110,6 +110,24 @@ export function useModelProviders(target: {
     [commitProviderSettingsView, providerSettingsService],
   );
 
+  const addPersonalModels = useCallback(
+    (
+      providerId: string,
+      models: readonly {
+        modelId: string;
+        config: ProviderSettingsFormProvider["models"][number]["personalConfig"];
+      }[],
+      useRecommendedConfig?: boolean,
+    ) =>
+      providerSettingsService
+        .addPersonalModels(providerId, models, useRecommendedConfig)
+        .then((view) => {
+          commitProviderSettingsView(view);
+          return view;
+        }),
+    [commitProviderSettingsView, providerSettingsService],
+  );
+
   const savePersonalModelDraft = useCallback(
     async (input: Parameters<typeof providerSettingsService.savePersonalModelDraft>[0]) => {
       const view = await providerSettingsService.savePersonalModelDraft(input);
@@ -225,6 +243,7 @@ export function useModelProviders(target: {
     saveProvider,
     createPersonalProvider,
     addPersonalModel,
+    addPersonalModels,
     savePersonalModelDraft,
     setPersonalModelEnabled,
     deletePersonalModel,

@@ -10,6 +10,7 @@ import {
 } from "react";
 import type {
   AppSettings,
+  AppToolSearchMode,
   IntegratedTerminalShellOption,
   IntegratedTerminalShellSelection,
   Locale,
@@ -49,6 +50,8 @@ import { HooksSection } from "@/settings/HooksSection.js";
 import { WorkspaceFileSearchSection } from "@/settings/WorkspaceFileSearchSection.js";
 import { MemorySettingsSection } from "@/settings/MemorySettingsSection.js";
 import { BrowserSettingsSection } from "@/settings/BrowserSettingsSection.js";
+import { DevicesSection } from "@/settings/DevicesSection.js";
+import { SourceServerManagementPanel } from "@/settings/SourceServerManagementPanel.js";
 import { ComputerUseSection } from "@/settings/ComputerUseSection.js";
 import { ComputerControlSection } from "@/settings/ComputerControlSection.js";
 import { ShortcutSettingsSection } from "@/settings/ShortcutSettingsSection.js";
@@ -281,6 +284,7 @@ export function SettingsPage({
     return [...names];
   }, [sharedSettings?.recentProjects, workspaceTabs]);
   const memoryEnabled = sharedSettings?.memoryEnabled === true;
+  const toolSearchMode = sharedSettings?.toolSearchMode ?? "off";
   const nativeSearchEnhancementsEnabled = sharedSettings?.nativeSearchEnhancementsEnabled !== false;
   const askUserQuestionAutoResolutionEnabled =
     sharedSettings?.askUserQuestionAutoResolutionEnabled !== false;
@@ -425,20 +429,26 @@ export function SettingsPage({
     },
     [services.settingService],
   );
+  const handleToolSearchModeChange = useCallback(
+    async (mode: AppToolSearchMode) => {
+      await updateSharedSettings({ toolSearchMode: mode });
+    },
+    [updateSharedSettings],
+  );
   const handleNativeSearchEnhancementsEnabledChange = useCallback(
-    async (enabled: boolean) => {},
+    async () => {},
     [updateSharedSettings],
   );
   const handleAskUserQuestionAutoResolutionEnabledChange = useCallback(
-    async (enabled: boolean) => {},
+    async () => {},
     [updateSharedSettings],
   );
   const handleModelIoFullRetentionEnabledChange = useCallback(
-    async (enabled: boolean) => {},
+    async () => {},
     [updateSharedSettings],
   );
   const handleMemoryEnabledChange = useCallback(
-    async (enabled: boolean) => {},
+    async () => {},
     [updateSharedSettings],
   );
   const handleHttpProxyChange = useCallback(
@@ -497,7 +507,7 @@ export function SettingsPage({
   );
   // keep-awake：走 useSettings 统一写盘 + syncAppSettings，和 Automations/创建页入口共享同一状态源。
   const handleKeepAwakeWhileRunningChange = useCallback(
-    async (enabled: boolean) => {},
+    async () => {},
     [updateSharedSettings],
   );
   const handleDesktopChromiumHardwareAccelerationChange = useCallback(
@@ -905,6 +915,7 @@ export function SettingsPage({
                             terminalFontFamily={terminalFontFamily}
                             integratedTerminalShell={integratedTerminalShell}
                             integratedTerminalShellOptions={integratedTerminalShellOptions}
+                            toolSearchMode={toolSearchMode}
                             nativeSearchEnhancementsEnabled={nativeSearchEnhancementsEnabled}
                             httpProxy={httpProxy}
                             httpProxyNoProxy={httpProxyNoProxy}
@@ -937,6 +948,7 @@ export function SettingsPage({
                             }
                             onTerminalFontFamilyChange={handleTerminalFontFamilyChange}
                             onIntegratedTerminalShellChange={handleIntegratedTerminalShellChange}
+                            onToolSearchModeChange={handleToolSearchModeChange}
                             onNativeSearchEnhancementsEnabledChange={
                               handleNativeSearchEnhancementsEnabledChange
                             }
@@ -1103,6 +1115,17 @@ export function SettingsPage({
                             workspacePath={activeWorkspacePath}
                             workspaceIdentity={activeWorkspaceIdentity}
                           />
+                        ) : activeSection === "devices" ? (
+                          localHostServices.sourceServerManagementService ? (
+                            <SourceServerManagementPanel
+                              management={localHostServices.sourceServerManagementService}
+                              settings={sharedSettings}
+                              onUpdateSettings={updateSharedSettings}
+                              workspaceTabs={workspaceTabs}
+                            />
+                          ) : (
+                            <DevicesSection />
+                          )
                         ) : activeSection === "browser" ? (
                           <BrowserSettingsSection
                             isDesktop={Boolean(isDesktop)}

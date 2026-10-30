@@ -512,6 +512,8 @@ export function createWorkspaceSlice(set: SetFn) {
       provider?: YCodeProvider,
       workspaceIdentity?: string,
       options?: {
+        projectId?: string | null;
+        taskGroupId?: string | null;
         groupedDraftPlacement?: GroupedDraftTaskPlacement;
         createSource?: SessionCreateSource;
       },
@@ -591,6 +593,8 @@ export function createWorkspaceSlice(set: SetFn) {
               ...current,
               activeTaskId: null,
               groupedDraftTask: nextGroupedDraftTask,
+              draftProjectId: options?.projectId ?? null,
+              draftTaskGroupId: options?.taskGroupId ?? null,
               draftCreateSource:
                 options?.createSource ?? (options?.groupedDraftPlacement ? "group" : "session"),
               draftRuntime: { status: "idle", error: null },

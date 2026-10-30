@@ -12,8 +12,16 @@ import type { TaskChatMessage } from "@/lib/taskChatMessageTypes.js";
 import { useServices } from "@/hooks/useServices.js";
 import { createAgentConversationTransport } from "@/v4/agentConversationTransport.js";
 import { SessionDataLayer, type SessionLease } from "@/v4/sessionDataLayer.js";
-import { useConversationProjection } from "@/v4/useConversationProjection.js";
+import { useConversationProjectionSelector } from "@/v4/useConversationProjection.js";
+import type {
+  ConversationProjectionKey,
+  ConversationStoreState,
+} from "@/v4/conversationProjectionStore.js";
 import { toolCallRowToLegacyNode } from "@/v4/toolCallRowAdapter.js";
+
+/** 只依赖 rows 窗口：state.updated（queue/status/usage 等）不唤醒 treemapping。 */
+const ROWS_WINDOW_KEYS: readonly ConversationProjectionKey[] = ["rows.window"];
+const selectRowsWindow = (state: ConversationStoreState) => state.snapshot?.rows.window;
 
 const ASSISTANT_TURN_ROW_KINDS = new Set<ConversationRow["kind"]>([
   "assistantText",
@@ -92,7 +100,6 @@ export function useTreemappingConversationMessage(params: {
     };
   }, [layer, sessionId]);
 
-  const state = useConversationProjection(lease);
-  const rows = state.snapshot?.rows.window;
+  const rows = useConversationProjectionSelector(lease, selectRowsWindow, ROWS_WINDOW_KEYS);
   return useMemo(() => (rows ? buildTreemappingMessageFromRows(rows) : null), [rows]);
 }

@@ -22,6 +22,18 @@ interface TabPersistenceRestoreLifecycle {
   fullyCompleted: boolean;
 }
 
+/**
+ * 活动目录选择的写回门禁。
+ *
+ * 这个对象由 Root 在本地窗口内共享给远程 session 流程：恢复未完成或失败时，
+ * 远程连接状态变化只能更新内存，不能把半份 tab 快照写回全局 settings。
+ */
+export interface WorkspacePersistenceGate {
+  canPersist: boolean;
+  restoreFailed: boolean;
+  onCanPersist?: () => void | Promise<void>;
+}
+
 interface TabPersistenceRestoreResult {
   /** 恢复期间识别出的 app-owned 路径，不得回填为最近项目。 */
   excludedRecentProjectPaths?: readonly string[];

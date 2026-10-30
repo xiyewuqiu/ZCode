@@ -17,12 +17,14 @@ import {
   isWorkflowAmendPredecessorLive,
   readWorkflowAmendPredecessor,
   readWorkflowAmendScriptInherited,
+  readWorkflowAdjustableSettings,
   readWorkflowAmendTarget,
   readWorkflowMaxConcurrency,
   readWorkflowName,
   readWorkflowSaved,
   readWorkflowScript,
   readWorkflowSubagentModel,
+  workflowScriptNamesModels,
   type WorkflowSavedSource,
 } from "@/ToolCallBlocks/renderers/createWorkflowInput.js";
 import {
@@ -32,6 +34,10 @@ import {
 } from "@/components/workflow-timeline/subagent-model-label.js";
 import { useWorkflowSubagentModelProviderName } from "@/hooks/useWorkflowSubagentModelProviderName.js";
 import { useYCodeIntl } from "@/i18n/IntlProvider.js";
+import { WorkflowAskSettings } from "@/components/workflow-timeline/WorkflowAskSettingsLines.js";
+import { WorkflowAskPlainSettings } from "@/components/workflow-timeline/WorkflowAskSettingsParts.js";
+import type { WorkflowAskSettingsContent } from "@/components/workflow-timeline/workflowAskSettings.js";
+import { WorkflowPermissionHoles } from "@/WorkflowPermissionHoles.js";
 import { isAmendWorkflowToolCall } from "@/lib/workflowToolNames.js";
 
 /**
@@ -110,12 +116,28 @@ function WorkflowSavedSourceBadge({ saved }: { saved: WorkflowSavedSource }) {
  * 是决策关键内容且不可折叠，脚本是审计细节层。
  */
 export function WorkflowPermissionBlock({
+  onSettingsBlockedChange,
+  onSettingsChange,
+  remoteSessionId,
   request,
+  sessionModel,
+  settingsDisabled = false,
+  workspaceIdentity,
   workspacePath,
 }: {
   request: YCodePermissionRequest;
-  /** 会话模型清单的作用域（PermissionDialog 给）：只用来把 provider id 换成 provider 名。 */
+  /** 会话模型清单的作用域（PermissionDialog 给）：模型菜单与 provider 名都从它读。 */
   workspacePath?: string;
+  workspaceIdentity?: string;
+  remoteSessionId?: string;
+  /** 会话当前模型：「会话模型」那一项的名字。 */
+  sessionModel?: { providerId: string; modelId: string };
+  /** 用户在窗里改了设置：只含改过的字段；全改回去即 undefined。 */
+  onSettingsChange?: (content: WorkflowAskSettingsContent | undefined) => void;
+  /** 所选子代理模型不可用：Allow 要等用户换一个。 */
+  onSettingsBlockedChange?: (blocked: boolean) => void;
+  /** 应答在途：控件与选项一起禁用。 */
+  settingsDisabled?: boolean;
 }) {
   const { intl } = useYCodeIntl();
 
@@ -139,6 +161,11 @@ export function WorkflowPermissionBlock({
   // 而且比它更该说出口——批准的是「让这些子代理跑在另一个模型上」。入参到这里已被 resolveInput
   // 解析成规范串，所以窗上这个 id 就是真会被用上的那个。主代理不受影响，文案因此只说子代理。
   const subagentModel = readWorkflowSubagentModel(request.raw);
+  // agent 说这台宿主能应用哪些调整（docs/dynamic-workflow/launch.md「Adjusting the settings in the
+  // window」）；缺席（旧 agent）即只画调用设了的字段，纯文本——agent 会丢掉的改动，窗里就不提供。
+  const adjustable = readWorkflowAdjustableSettings(request.raw);
+  // 模型清单要有作用域才读得到；读不到时模型那一行退成一句话，上界照样可调。
+  const hasModelScope = Boolean(workspacePath?.trim() || workspaceIdentity?.trim());
   // 规范串只进 tooltip：屏幕上说模型名（必要时加思考强度），拼名规则与模型菜单同一条。
   const subagentModelProviderName = useWorkflowSubagentModelProviderName(workspacePath);
   const describedSubagentModel = useMemo(
@@ -233,41 +260,48 @@ export function WorkflowPermissionBlock({
         </div>
       )}
 
-      {/* 并发上限：模型只在用户开口要求时才写这个字段，所以它在场就是**用户自己提的条件**——
-          与 lineage 行同族的一句次要事实，紧随其后、排在来源徽标之前。缺席即不留位置。 */}
-      {maxConcurrency === undefined ? null : (
-        <p
-          className="min-w-0 text-ui-xs text-foreground-subtlest"
-          data-testid="workflow-permission-max-concurrency"
-        >
-          {intl.formatMessage(
-            { id: "chat.permission.workflow.maxConcurrency" },
-            { count: String(maxConcurrency) },
-          )}
-        </p>
-      )}
+      {/* 留白行（docs/dynamic-workflow/presentation.md「Holes on the timeline」）：还开着的留白与它们
+          的名字，外加一句「运行到留白处会暂停」。 */}
+      <WorkflowPermissionHoles holes={causalityGraph?.holes} />
 
-      {/* 子代理模型：与并发上限同族，紧跟其后——两行都是「用户给这次 run 定下的条件」，
-          而这一条更该说出口：批准的是让这些子代理跑在另一个模型上。主代理不受影响。 */}
-      {describedSubagentModel === undefined ? null : (
-        <p
-          className="min-w-0 text-ui-xs text-foreground-subtlest"
-          data-testid="workflow-permission-subagent-model"
-          title={workflowSubagentModelTooltip(
-            intl.formatMessage.bind(intl),
-            describedSubagentModel,
-          )}
-        >
-          {intl.formatMessage(
-            { id: "chat.permission.workflow.subagentModel" },
-            {
-              model: workflowSubagentModelText(
-                intl.formatMessage.bind(intl),
-                describedSubagentModel,
-              ),
-            },
-          )}
-        </p>
+      {/* 两项 run 设置：与 lineage 行同族的「这次 run 受什么约束」，紧随其后、排在来源徽标之前。
+          可调时两句总在（没动过也说出将会发生什么）；按 requestId 重挂，换请求即回到新入参的起点。 */}
+      {adjustable === undefined ? (
+        <WorkflowAskPlainSettings
+          maxConcurrency={maxConcurrency}
+          scriptNamesModels={workflowScriptNamesModels(request.raw)}
+          subagentModel={
+            describedSubagentModel === undefined
+              ? undefined
+              : {
+                  text: workflowSubagentModelText(
+                    intl.formatMessage.bind(intl),
+                    describedSubagentModel,
+                  ),
+                  tooltip: workflowSubagentModelTooltip(
+                    intl.formatMessage.bind(intl),
+                    describedSubagentModel,
+                  ),
+                }
+          }
+        />
+      ) : (
+        <WorkflowAskSettings
+          adjustable={{ ...adjustable, subagentModel: adjustable.subagentModel && hasModelScope }}
+          disabled={settingsDisabled}
+          key={request.requestId}
+          input={request.raw}
+          scope={{
+            workspacePath: workspacePath ?? "",
+            ...(workspaceIdentity === undefined ? {} : { workspaceIdentity }),
+            ...(remoteSessionId === undefined ? {} : { remoteSessionId }),
+            ...(sessionModel === undefined ? {} : { sessionModel }),
+          }}
+          {...(onSettingsChange === undefined ? {} : { onContentChange: onSettingsChange })}
+          {...(onSettingsBlockedChange === undefined
+            ? {}
+            : { onBlockedChange: onSettingsBlockedChange })}
+        />
       )}
 
       {saved ? <WorkflowSavedSourceBadge saved={saved} /> : null}

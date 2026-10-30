@@ -13,6 +13,7 @@ import {
   type ConversationSnapshot,
   type ConversationOpenTiming,
   type ConversationTopicFrame,
+  type RowsWindow,
   type SessionModelTransition,
   type ToolCallRow,
   type TopicFrameDeliveryKind,
@@ -22,6 +23,7 @@ import {
   appFrameNotificationScheduler,
   type FrameNotificationScheduler,
 } from "@/lib/frameNotificationScheduler.js";
+import { KeyedPublication, type PublicationLane } from "@/lib/keyedPublication.js";
 import type { ConversationTurnNavigatorHydrationResult } from "@/v4/conversationTurnNavigatorHelpers.js";
 import type { ConversationTransport } from "@/v4/transport.js";
 import { uiMemoryDiagnosticsRegistry } from "@/lib/memoryDiagnostics.js";
@@ -154,6 +156,180 @@ const INITIAL_STATE: ConversationStoreState = {
   turnNavigatorDirectoryRevision: 0,
 };
 
+/**
+ * conversation store 的订阅 key。
+ *
+ * snapshot 的每个顶层字段都是独立 key：delta 只改其中一个（streaming text 只动
+ * rows、state.updated 只动 patch 在场的键），订阅者因此不会被无关 token 唤醒。
+ * `snapshot` 是整快照身份 key，`rows.window` 对应 snapshot.rows；其余非 snapshot
+ * 字段各自成 key。
+ */
+const SNAPSHOT_FIELD_KEYS = [
+  "availability",
+  "backgroundWorks",
+  "config",
+  "control",
+  "goal",
+  "inputRouting",
+  "meta",
+  "modelTransition",
+  "pendingCommands",
+  "pendingInteractions",
+  "plan",
+  "queue",
+  "revision",
+  "sharedContextImport",
+  "subagents",
+  "usage",
+  "workflowRuns",
+  "workspaceHookAdmission",
+] as const;
+
+/**
+ * 会话身份与水位 key。
+ *
+ * 这些值虽然位于 snapshot 顶层，但独立成 key 后，SessionPane 的读面无需订阅整快照
+ * 身份就能区分「同一 epoch 的增量」与「换会话/换代数」：
+ * - sessionId / logEpoch 只在 snapshot 整体替换时变化；
+ * - seq 是帧水位，delta 应用后推进。
+ */
+const SNAPSHOT_IDENTITY_KEYS = ["sessionId", "logEpoch", "seq"] as const;
+
+type ConversationSnapshotFieldKey = (typeof SNAPSHOT_FIELD_KEYS)[number];
+type ConversationSnapshotIdentityKey = (typeof SNAPSHOT_IDENTITY_KEYS)[number];
+
+export type ConversationProjectionKey =
+  | "snapshot"
+  | "rows.window"
+  | ConversationSnapshotIdentityKey
+  | ConversationSnapshotFieldKey
+  | "status"
+  | "subscriptionId"
+  | "lastError"
+  | "optimistic"
+  | "sessionPlans"
+  | "planDirectoryRevision"
+  | "plansLoading"
+  | "loadingOlder"
+  | "openTiming"
+  | "rendererTiming"
+  | "turnNavigatorDirectoryRevision";
+
+const CONVERSATION_PROJECTION_KEYS: readonly ConversationProjectionKey[] = [
+  "snapshot",
+  "rows.window",
+  ...SNAPSHOT_IDENTITY_KEYS,
+  ...SNAPSHOT_FIELD_KEYS,
+  "status",
+  "subscriptionId",
+  "lastError",
+  "optimistic",
+  "sessionPlans",
+  "planDirectoryRevision",
+  "plansLoading",
+  "loadingOlder",
+  "openTiming",
+  "rendererTiming",
+  "turnNavigatorDirectoryRevision",
+];
+
+const STATE_FIELD_KEY: Readonly<Record<string, ConversationProjectionKey>> = {
+  status: "status",
+  subscriptionId: "subscriptionId",
+  lastError: "lastError",
+  openTiming: "openTiming",
+  rendererTiming: "rendererTiming",
+  optimisticCommands: "optimistic",
+  loadingOlder: "loadingOlder",
+  sessionPlans: "sessionPlans",
+  planDirectoryRevision: "planDirectoryRevision",
+  plansLoading: "plansLoading",
+  turnNavigatorDirectoryRevision: "turnNavigatorDirectoryRevision",
+};
+
+/** snapshot 缺失时所有 snapshot 字段 key 的哨兵值；首帧到达必须让它们全部变化。 */
+const NO_SNAPSHOT = Symbol("conversation-projection.no-snapshot");
+
+function readConversationProjectionKey(
+  state: ConversationStoreState,
+  key: ConversationProjectionKey,
+): unknown {
+  switch (key) {
+    case "snapshot":
+      return state.snapshot;
+    case "status":
+      return state.status;
+    case "subscriptionId":
+      return state.subscriptionId;
+    case "lastError":
+      return state.lastError;
+    case "optimistic":
+      return state.optimisticCommands;
+    case "sessionPlans":
+      return state.sessionPlans;
+    case "planDirectoryRevision":
+      return state.planDirectoryRevision;
+    case "plansLoading":
+      return state.plansLoading;
+    case "loadingOlder":
+      return state.loadingOlder;
+    case "openTiming":
+      return state.openTiming;
+    case "rendererTiming":
+      return state.rendererTiming;
+    case "turnNavigatorDirectoryRevision":
+      return state.turnNavigatorDirectoryRevision;
+    case "rows.window":
+      return state.snapshot ? state.snapshot.rows : NO_SNAPSHOT;
+    // 身份/水位 key 显式分支，避免与 snapshot 字段 key 共用 default 读取路径后
+    // 在类型收窄上把 sessionId/logEpoch/seq 当成可写字段。
+    case "sessionId":
+      return state.snapshot ? state.snapshot.sessionId : NO_SNAPSHOT;
+    case "logEpoch":
+      return state.snapshot ? state.snapshot.logEpoch : NO_SNAPSHOT;
+    case "seq":
+      return state.snapshot ? state.snapshot.seq : NO_SNAPSHOT;
+    default:
+      return state.snapshot ? state.snapshot[key] : NO_SNAPSHOT;
+  }
+}
+
+/**
+ * 计算本轮真正变化的 key。
+ *
+ * - snapshot 整体替换（snapshot 帧）→ 全部 snapshot key 变脏（规则 1：整体替换）；
+ * - delta 帧 → 按字段引用比较，未触碰的字段仍是旧引用，因此不通知；
+ * - 非 snapshot 字段 → patch 值与旧状态引用比较。
+ */
+function conversationDirtyKeys(
+  previous: ConversationStoreState,
+  next: ConversationStoreState,
+  patch: Partial<ConversationStoreState>,
+  snapshotMode: "replace" | "diff",
+): ConversationProjectionKey[] {
+  const dirty: ConversationProjectionKey[] = [];
+  for (const field of Object.keys(patch) as (keyof ConversationStoreState)[]) {
+    if (field === "snapshot") continue;
+    const key = STATE_FIELD_KEY[field];
+    if (key !== undefined && !Object.is(previous[field], next[field])) dirty.push(key);
+  }
+  if (Object.is(previous.snapshot, next.snapshot)) return dirty;
+  dirty.push("snapshot");
+  if (snapshotMode === "replace") {
+    dirty.push("rows.window", ...SNAPSHOT_IDENTITY_KEYS, ...SNAPSHOT_FIELD_KEYS);
+    return dirty;
+  }
+  // delta 只推进 seq 时，identity key 里只有 seq 变脏；sessionId/logEpoch 引用比较后静默。
+  for (const field of SNAPSHOT_IDENTITY_KEYS) {
+    if (!Object.is(previous.snapshot?.[field], next.snapshot?.[field])) dirty.push(field);
+  }
+  for (const field of SNAPSHOT_FIELD_KEYS) {
+    if (!Object.is(previous.snapshot?.[field], next.snapshot?.[field])) dirty.push(field);
+  }
+  if (!Object.is(previous.snapshot?.rows, next.snapshot?.rows)) dirty.push("rows.window");
+  return dirty;
+}
+
 const TERMINAL_PLAN_STATUSES: ReadonlySet<ToolCallRow["status"]> = new Set([
   "success",
   "error",
@@ -226,11 +402,16 @@ function logSubagentProjectionTransition(
  * 还有更早历史可拉 ⇔ 窗口首行不是全序首行（firstRowId 判定）。
  * 纯函数供 store/组件共用；快照缺失/空窗口/未知 firstRowId 一律 false。
  */
+export function hasOlderRowsInWindow(rows: RowsWindow | null | undefined): boolean {
+  if (!rows) return false;
+  const first = rows.window[0];
+  if (!first || rows.firstRowId === null) return false;
+  return first.rowId > rows.firstRowId;
+}
+
+/** 快照版本；时间线只持有 rows 窗口，走 hasOlderRowsInWindow 即可避免依赖整快照。 */
 export function hasOlderRows(snapshot: ConversationSnapshot | null): boolean {
-  if (!snapshot) return false;
-  const first = snapshot.rows.window[0];
-  if (!first || snapshot.rows.firstRowId === null) return false;
-  return first.rowId > snapshot.rows.firstRowId;
+  return hasOlderRowsInWindow(snapshot?.rows);
 }
 
 /**
@@ -281,7 +462,8 @@ uiMemoryDiagnosticsRegistry.register("projection", () => {
 
 export class ConversationProjectionStore {
   private state: ConversationStoreState = INITIAL_STATE;
-  private readonly listeners = new Set<() => void>();
+  /** 每 key 发布通道；整店订阅等价于登记全部 key（兼容旧消费者）。 */
+  private readonly publication: KeyedPublication<ConversationProjectionKey>;
   private readonly modelTransitionListeners = new Set<
     (transition: SessionModelTransition) => void
   >();
@@ -339,6 +521,11 @@ export class ConversationProjectionStore {
     options: { scheduler?: FrameNotificationScheduler } = {},
   ) {
     this.scheduler = options.scheduler ?? appFrameNotificationScheduler;
+    this.publication = new KeyedPublication({
+      allKeys: CONVERSATION_PROJECTION_KEYS,
+      readKey: (key) => readConversationProjectionKey(this.state, key),
+      scheduler: this.scheduler,
+    });
     liveProjectionStores.add(this);
     this.offAssemblyFault = transport.onAssemblyFault((fault) => {
       if (fault.topic === this.topic) {
@@ -378,9 +565,14 @@ export class ConversationProjectionStore {
     return { ...this.sessionOpenRendererTiming };
   }
 
+  /** 兼容整店订阅：任一 key 真正变化时通知（现有组件无需改写）。 */
   subscribe(listener: () => void): () => void {
-    this.listeners.add(listener);
-    return () => this.listeners.delete(listener);
+    return this.publication.subscribe(listener);
+  }
+
+  /** 只订阅指定 key；未变脏的 key 不会唤醒 listener。 */
+  subscribeKeys(keys: Iterable<ConversationProjectionKey>, listener: () => void): () => void {
+    return this.publication.subscribeKeys(keys, listener);
   }
 
   onOnlineModelTransition(listener: (transition: SessionModelTransition) => void): () => void {
@@ -389,20 +581,25 @@ export class ConversationProjectionStore {
   }
 
   /**
-   * 状态立即更新，React 通知合并到每帧一次。
+   * 状态立即更新，React 通知按 key 合并到每帧一次。
    *
-   * 流式 burst 内多个 delta 帧常落在同一动画帧里；过去每个帧都同步通知一次，同一组件
-   * 会在一帧内被渲染多次，主线程被重复 render/commit 占满，滚动与切换因此卡顿。
-   * 读取路径（getState / 快照水位 / 命令 ACK 判定）不受影响，仍是最新事实。
+   * 流式 burst 内多个 delta 帧常落在同一动画帧里；过去每个帧都同步通知全部组件，同一组件
+   * 会在一帧内被渲染多次，主线程被重复 render/commit 占满，滚动与切换因此卡顿。现在只把
+   * 本轮真正变化的 key 交给发布器：订阅者只在登记的 key 变脏时被唤醒；读取路径
+   * （getState / 快照水位 / 命令 ACK 判定）不受影响，仍是最新事实。
    */
-  private setState(patch: Partial<ConversationStoreState>): void {
-    this.state = { ...this.state, ...patch };
-    this.scheduler.schedule(this.notifyListeners);
+  private setState(
+    patch: Partial<ConversationStoreState>,
+    options: { lane?: PublicationLane; snapshot?: "replace" | "diff" } = {},
+  ): void {
+    const previous = this.state;
+    const next = { ...previous, ...patch };
+    this.state = next;
+    this.publication.markDirty(
+      conversationDirtyKeys(previous, next, patch, options.snapshot ?? "diff"),
+    );
+    this.publication.publish(options.lane ?? "animation-frame");
   }
-
-  private readonly notifyListeners = (): void => {
-    for (const listener of this.listeners) listener();
-  };
 
   /**
    * 发起/重发订阅。base 取自当前 snapshot 水位（水位不变量：仅当真持有该时刻
@@ -678,12 +875,16 @@ export class ConversationProjectionStore {
         "snapshot",
       );
       // 规则 1：整体替换，扔掉手里的一切换新的。
-      this.setState({
-        snapshot: frame.payload.snapshot,
-        planDirectoryRevision: this.state.planDirectoryRevision + 1,
-        // snapshot 整体替换后 real-user query 集合可能已变，终态缓存必须失效。
-        turnNavigatorDirectoryRevision: this.state.turnNavigatorDirectoryRevision + 1,
-      });
+      // snapshot 帧必须显式标记 replace：即使个别字段引用巧合相同，订阅者也要看到整份新投影。
+      this.setState(
+        {
+          snapshot: frame.payload.snapshot,
+          planDirectoryRevision: this.state.planDirectoryRevision + 1,
+          // snapshot 整体替换后 real-user query 集合可能已变，终态缓存必须失效。
+          turnNavigatorDirectoryRevision: this.state.turnNavigatorDirectoryRevision + 1,
+        },
+        { snapshot: "replace" },
+      );
       this.subscriptionHasAppliedBase = true;
       this.reconcileOptimistic(frame.payload.snapshot);
       this.reconcileAcceptedInputProjection(frame.payload.snapshot);
@@ -1345,8 +1546,9 @@ export class ConversationProjectionStore {
     this.subscriptionHasAppliedBase = false;
     this.generation++;
     const { subscriptionId } = this.state;
-    this.setState({ status: "closed", subscriptionId: null });
-    // 终结态不能停留在挂起帧里：释放订阅前把最终状态同步交给订阅者。
+    // 终结态属于用户阻塞级：立即通道同步送出，不能停留在挂起帧里。
+    this.setState({ status: "closed", subscriptionId: null }, { lane: "immediate" });
+    // 共享调度器可能仍有其它 store 的挂起通知；释放订阅前统一收口（保持既有语义）。
     this.scheduler.flush();
     if (subscriptionId) {
       try {

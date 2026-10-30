@@ -44,6 +44,12 @@ import { InteractionRequestOriginBadge } from "@/InteractionRequestOriginBadge.j
 import { WorkflowPermissionBlock } from "@/WorkflowPermissionBlock.js";
 import { SaveWorkflowPermissionBlock } from "@/SaveWorkflowPermissionBlock.js";
 import { isSaveWorkflowToolCall } from "@/lib/workflowToolNames.js";
+import {
+  focusLastWorkflowSettingsControl,
+  isWorkflowSettingsCarrier,
+  usePermissionWorkflowSettings,
+  workflowAdjustedOptionDescriptionId,
+} from "@/permissionWorkflowSettings.js";
 import { useYCodeStoreWithDefault } from "@/store/StoreProvider.js";
 import { DEFAULT_CODE_PREVIEW_SETTINGS } from "@/lib/codePreviewSettings.js";
 import { useYCodeIntl } from "./i18n/IntlProvider.js";
@@ -430,6 +436,9 @@ export function PermissionDialog({
   request,
   onRespond,
   workspacePath,
+  workspaceIdentity,
+  remoteSessionId,
+  workflowSessionModel,
   provider,
   responding = false,
   responseError,
@@ -437,8 +446,21 @@ export function PermissionDialog({
   request: YCodePermissionRequest;
   responding?: boolean;
   responseError?: string;
-  onRespond: (requestId: string, option: YCodePermissionOption, feedback?: string) => void;
+  /**
+   * `content` 只在工作流确认窗的放行应答上出现：用户在窗里改过的设置（docs/dynamic-workflow/launch.md
+   * 「Adjusting the settings in the window」）。没改过即不传。
+   */
+  onRespond: (
+    requestId: string,
+    option: YCodePermissionOption,
+    feedback?: string,
+    content?: Record<string, unknown>,
+  ) => void;
   workspacePath: string;
+  workspaceIdentity?: string;
+  remoteSessionId?: string;
+  /** 工作流确认窗的会话模型（「会话模型」那一项的名字）。 */
+  workflowSessionModel?: { providerId: string; modelId: string };
   provider?: YCodeProvider;
 }) {
   const { intl } = useYCodeIntl();
@@ -491,6 +513,16 @@ export function PermissionDialog({
     [blockKind, codePreviewSettings, intl, rawFileSummaries, theme, toolCall, workspacePath],
   );
   const displayReason = useMemo(() => getPermissionDisplayReason(request), [request]);
+  // 工作流确认窗的两项 run 设置（WorkflowPermissionBlock 画，这里只存改过的值与「模型不可用」）。
+  const isWorkflowAsk = blockKind === "workflow";
+  const workflowSettings = usePermissionWorkflowSettings(request.requestId);
+  const workflowSettingsContent = isWorkflowAsk ? workflowSettings.content : undefined;
+  const isOptionBlocked = useCallback(
+    (option: YCodePermissionOption) =>
+      isWorkflowAsk && workflowSettings.blocked && isWorkflowSettingsCarrier(option),
+    [isWorkflowAsk, workflowSettings.blocked],
+  );
+  const rootRef = useRef<HTMLDivElement | null>(null);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [feedback, setFeedback] = useState("");
   const optionRefs = useRef<Array<HTMLButtonElement | null>>([]);
@@ -558,16 +590,34 @@ export function PermissionDialog({
 
   const respondWithOption = useCallback(
     (option: YCodePermissionOption) => {
-      if (responding) return;
+      // 所选子代理模型已不可用：放行要等用户换一个，与「配置」弹层的 Apply 同一条规则。
+      if (responding || isOptionBlocked(option)) return;
       const selectedKind = getPermissionOptionDisplayKind(option.kind);
       // 通用确认窗里 Deny 顺带把反馈行草稿作为拒绝理由发出；工作流确认窗的草稿属于 Refine，
       // 点 Deny 就是普通拒绝——否则一段修改意见会以普通拒绝理由的身份发出，
       // 模型收不到 workflow_refine_feedback 的升级递送。
       const trimmedFeedback =
         !refineOption && selectedKind.startsWith("reject") ? feedback.trim() : "";
-      onRespond(request.requestId, option, trimmedFeedback || undefined);
+      // 设置只随放行应答走：拒绝什么都不启动，Refine 的下一个窗带着模型改过的调用重来。
+      const content =
+        workflowSettingsContent !== undefined && isWorkflowSettingsCarrier(option)
+          ? { ...workflowSettingsContent }
+          : undefined;
+      if (content === undefined) {
+        onRespond(request.requestId, option, trimmedFeedback || undefined);
+      } else {
+        onRespond(request.requestId, option, trimmedFeedback || undefined, content);
+      }
     },
-    [feedback, onRespond, refineOption, request.requestId, responding],
+    [
+      feedback,
+      isOptionBlocked,
+      onRespond,
+      refineOption,
+      request.requestId,
+      responding,
+      workflowSettingsContent,
+    ],
   );
 
   const submitFeedback = useCallback(() => {
@@ -649,6 +699,17 @@ export function PermissionDialog({
           moveSelection(1);
           return;
         case "Tab":
+          // 工作流确认窗：第一个选项上的 Shift+Tab 离开列表、回到上方的设置控件（阅读次序即焦点次序）。
+          // 按事件落在哪个按钮上判，不读 selectedIndex：聚焦与按键可能在同一帧，状态还没提交。
+          if (
+            event.shiftKey &&
+            optionRefs.current.indexOf(event.currentTarget) === 0 &&
+            isWorkflowAsk &&
+            focusLastWorkflowSettingsControl(rootRef.current)
+          ) {
+            event.preventDefault();
+            return;
+          }
           event.preventDefault();
           moveSelection(event.shiftKey ? -1 : 1);
           return;
@@ -664,6 +725,7 @@ export function PermissionDialog({
       confirmSelection,
       feedbackIndex,
       hasFeedbackInput,
+      isWorkflowAsk,
       moveSelection,
       orderedOptions,
       respondWithOption,
@@ -690,7 +752,7 @@ export function PermissionDialog({
   // 保存确认窗同理，但问句、内容与选项都不同：没有图、没有 Refine，主体是落点 + 元数据 + 脚本。
   const shouldUseSaveWorkflowBlock = blockKind === "saveWorkflow";
   return (
-    <div className="w-full shrink-0 relative z-1">
+    <div ref={rootRef} className="w-full shrink-0 relative z-1">
       <div className="w-full overflow-hidden rounded-2xl border border-border bg-popover shadow-xs">
         <div className="flex flex-col gap-3 p-3">
           <div className="space-y-4">
@@ -718,7 +780,18 @@ export function PermissionDialog({
             ) : shouldUseWorkflowBlock ? (
               // CLI 侧的 reason 是给协议诊断用的（"createWorkflow.runConfirmation: ..."），
               // 这里刻意不渲染 displayReason：块内的本地化标题才是给用户看的那句问句。
-              <WorkflowPermissionBlock request={request} workspacePath={workspacePath} />
+              <WorkflowPermissionBlock
+                onSettingsBlockedChange={workflowSettings.onBlockedChange}
+                onSettingsChange={workflowSettings.onContentChange}
+                request={request}
+                settingsDisabled={responding}
+                workspacePath={workspacePath}
+                {...(workspaceIdentity === undefined ? {} : { workspaceIdentity })}
+                {...(remoteSessionId === undefined ? {} : { remoteSessionId })}
+                {...(workflowSessionModel === undefined
+                  ? {}
+                  : { sessionModel: workflowSessionModel })}
+              />
             ) : shouldUseSaveWorkflowBlock ? (
               // 同上：保存 gate 的问句（保存 / 覆盖两句）由块自己给出，不复用协议 reason。
               <SaveWorkflowPermissionBlock request={request} />
@@ -744,12 +817,19 @@ export function PermissionDialog({
                     ? "chat.permission.allowCommand"
                     : getOptionLabelMessageId(option.kind);
                 const nameMessageIds = getProviderOptionNameMessageIds(provider, option.name);
-                const descriptionMessageId = officialCuaProjectPermission
+                const baseDescriptionMessageId = officialCuaProjectPermission
                   ? "chat.permission.cua.allowForProject.description"
                   : labelMessageId === "chat.permission.allowCommand"
                     ? "chat.permission.allowCommand.description"
                     : (nameMessageIds?.description ??
                       getOptionDescriptionMessageId(option.kind, preview.scope));
+                // 工作流确认窗改过设置：放行的两项改口说「按调整后的设置」（docs/dynamic-workflow/launch.md
+                // 「The options」）。
+                const descriptionMessageId =
+                  workflowSettingsContent === undefined
+                    ? baseDescriptionMessageId
+                    : workflowAdjustedOptionDescriptionId(baseDescriptionMessageId);
+                const blocked = isOptionBlocked(option);
                 const fallbackLabel = labelMessageId
                   ? intl.formatMessage({ id: labelMessageId })
                   : null;
@@ -787,6 +867,7 @@ export function PermissionDialog({
                     role="option"
                     aria-label={label}
                     aria-selected={isSelected}
+                    {...(blocked ? { "aria-disabled": true } : {})}
                     tabIndex={isSelected ? 0 : -1}
                     onClick={() => {
                       if (isSelected) {
@@ -800,6 +881,7 @@ export function PermissionDialog({
                     className={cn(
                       "flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left outline-none transition-colors focus-visible:bg-selected",
                       isSelected ? "bg-selected" : "hover:bg-hover",
+                      blocked && "cursor-not-allowed opacity-50",
                     )}
                   >
                     <span

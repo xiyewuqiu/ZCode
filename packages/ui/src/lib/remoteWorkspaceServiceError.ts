@@ -1,3 +1,5 @@
+import { isPublicZCodeErrorCode } from "@ycode/shared";
+
 export const REMOTE_WORKSPACE_DISCONNECTED_ERROR_CODE = "YCODE_REMOTE_WORKSPACE_DISCONNECTED";
 
 export function createRemoteWorkspaceDisconnectedError(): Error & {
@@ -26,4 +28,12 @@ export function isRemoteWorkspaceDisconnectedError(error: unknown): boolean {
     candidate.code === REMOTE_WORKSPACE_DISCONNECTED_ERROR_CODE ||
     candidate.message === REMOTE_WORKSPACE_DISCONNECTED_ERROR_CODE
   );
+}
+
+/** 连接失败码只保留 Host/Source 已公开的稳定 code；未知错误不伪装成可重试原因。 */
+export function getRemoteConnectionFailureCode(error: unknown): string | undefined {
+  if (isRemoteWorkspaceDisconnectedError(error)) return REMOTE_WORKSPACE_DISCONNECTED_ERROR_CODE;
+  if (!error || typeof error !== "object" || !("code" in error) || typeof error.code !== "string")
+    return undefined;
+  return isPublicZCodeErrorCode(error.code) ? error.code : undefined;
 }

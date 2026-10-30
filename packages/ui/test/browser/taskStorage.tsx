@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
-import type { SessionStoragePreview } from "@ycode/shared";
+import type { SessionDatabaseStats, SessionStoragePreview } from "@ycode/shared";
 import { TaskStorageDialog } from "../../src/TaskStorageDialog.js";
 import type { TaskStorageService } from "../../src/hooks/useTaskStorage.js";
 import { YCodeIntlProvider } from "../../src/i18n/IntlProvider.js";
@@ -10,9 +10,20 @@ const parameters = new URLSearchParams(location.search);
 function Fixture() {
   const [open, setOpen] = useState(false);
   const [calls, setCalls] = useState(0);
+  const [optimizeCalls, setOptimizeCalls] = useState(0);
   const [scope, setScope] = useState(0);
   const service = useMemo<TaskStorageService>(() => {
     let attempts = 0;
+    const database: SessionDatabaseStats = {
+      databaseBytes: 16384,
+      walBytes: 0,
+      pageSize: 4096,
+      pageCount: 4,
+      freelistCount: 2,
+      freelistBytes: 8192,
+      autoVacuum: 0,
+      journalMode: "wal",
+    };
     const preview: SessionStoragePreview = {
       sessionId: "one",
       revision: "version",
@@ -50,6 +61,26 @@ function Fixture() {
           databaseFreeBytes: 4096,
         };
       },
+      getTaskDatabaseStats: async () => structuredClone(database),
+      optimizeTaskDatabase: async (params) => {
+        if (!params.confirm) throw new Error("invalid confirmation");
+        setOptimizeCalls((value) => value + 1);
+        const after: SessionDatabaseStats = {
+          ...database,
+          databaseBytes: 8192,
+          pageCount: 2,
+          freelistCount: 0,
+          freelistBytes: 0,
+        };
+        return {
+          status: "optimized",
+          action: "vacuum",
+          before: structuredClone(database),
+          after,
+          reclaimedBytes: 8192,
+          durationMs: 1,
+        };
+      },
     };
   }, [scope]);
   return (
@@ -59,6 +90,7 @@ function Fixture() {
         Switch source
       </button>
       <output data-testid="calls">{calls}</output>
+      <output data-testid="optimize-calls">{optimizeCalls}</output>
       {open ? (
         <TaskStorageDialog
           target={{ taskId: "one", workspacePath: "D:/workspace/test" }}

@@ -22,7 +22,7 @@ try {
   await page.getByRole("dialog").waitFor();
   // 菜单只打开预检：确认前不能提交删除。
   await page.getByText("Storage & permanent deletion", { exact: true }).waitFor();
-  await page.getByText("Conversation one", { exact: true }).waitFor();
+  await page.getByRole("dialog").getByText("Conversation one", { exact: true }).waitFor();
   await page.getByText("4.0 KiB", { exact: true }).first().waitFor();
   const remove = page.getByRole("button", { name: "Permanently delete", exact: true });
   assert.equal(await remove.isEnabled(), false);
@@ -31,7 +31,7 @@ try {
   assert.equal(beforePurge.purges, 0);
   assert.ok(beforePurge.previews >= 1, `previews = ${beforePurge.previews}`);
 
-  await page.getByRole("checkbox").check();
+  await page.getByTestId("task-storage-delete-confirm").check();
   await remove.click();
   await page.getByText("Conversation permanently deleted.", { exact: true }).waitFor();
   assert.equal((await metrics(page)).purges, 1);

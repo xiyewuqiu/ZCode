@@ -144,7 +144,8 @@ export function useSettings() {
       await refresh();
       if (
         typeof patch.askUserQuestionAutoResolutionEnabled === "boolean" ||
-        typeof patch.modelIoFullRetentionEnabled === "boolean"
+        typeof patch.modelIoFullRetentionEnabled === "boolean" ||
+        typeof patch.toolSearchMode === "string"
       ) {
         const preferences = {
           askUserQuestionAutoResolutionEnabled:
@@ -153,6 +154,8 @@ export function useSettings() {
           modelIoFullRetentionEnabled:
             patch.modelIoFullRetentionEnabled ??
             settingsStore.snapshot.settings?.modelIoFullRetentionEnabled === true,
+          toolSearchMode:
+            patch.toolSearchMode ?? settingsStore.snapshot.settings?.toolSearchMode ?? "off",
         };
         const syncResults = await Promise.allSettled([
           ycodeAgentService.syncAppRuntimePreferences(preferences),

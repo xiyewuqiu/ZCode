@@ -1,16 +1,18 @@
+import { useMemo, useState } from "react";
 import {
   TID_MODEL_PROVIDER_ADD_MODEL_BUTTON,
   TID_MODEL_PROVIDER_MODEL_DELETE_BUTTON,
   TID_MODEL_PROVIDER_MODEL_INPUT,
   testId,
 } from "@ycode/shared";
-import { InfoIcon, Plus } from "lucide-react";
-import type { ModelConnectivityResult } from "@ycode/shared";
+import { DownloadIcon, InfoIcon, Plus } from "lucide-react";
+import type { DiscoveredProviderModel, ModelConnectivityResult } from "@ycode/shared";
 import { Button } from "@/components/ui/button.js";
 import { useYCodeIntl } from "@/i18n/IntlProvider.js";
 import { useServices } from "@/hooks/useServices.js";
 import type { ProviderSettingsFormModel } from "@/lib/providerSettingsFormTypes.js";
-import type { ProviderConfigObject } from "@ycode/provider";
+import type { ProviderApiType, ProviderConfigObject } from "@ycode/provider";
+import { ModelDiscoveryDialog } from "./ModelDiscoveryDialog.js";
 import { ProviderModelDialog } from "./ProviderModelDialog.js";
 import { ProviderModelRow } from "./ProviderModelRow.js";
 import { SortableProviderModelList } from "./SortableProviderModelList.js";
@@ -44,7 +46,9 @@ export function ProviderModelListSection({
   onModelEnabledChange,
   onDeleteModel,
   onAddModel,
+  onAddPersonalModels,
   onReorderModelIds,
+  connection,
   settingsRevision = 0,
 }: {
   providerId: string;
@@ -52,6 +56,17 @@ export function ProviderModelListSection({
   providerEnabled?: boolean;
   providerAccess?: ProviderConfigObject["access"];
   models: ProviderSettingsFormModel[];
+  connection?: {
+    baseURL?: string;
+    apiFormat: ProviderApiType;
+    apiKey?: string;
+  };
+  onAddPersonalModels?: (
+    models: readonly {
+      modelId: string;
+      config: ProviderSettingsFormModel["personalConfig"];
+    }[],
+  ) => Promise<unknown>;
   onTestModel?: (model: string) => Promise<ModelConnectivityResult>;
   onModelCommit: (
     originalModelId: string,
@@ -76,6 +91,39 @@ export function ProviderModelListSection({
       await onAddModel(model);
     },
   });
+  const [discoveryOpen, setDiscoveryOpen] = useState(false);
+  const [discoveryLoading, setDiscoveryLoading] = useState(false);
+  const [discoveryError, setDiscoveryError] = useState<string | null>(null);
+  const [discoveredModels, setDiscoveredModels] = useState<readonly DiscoveredProviderModel[]>(
+    [],
+  );
+  const canDiscover = Boolean(connection?.baseURL?.trim());
+  const existingModelIds = useMemo(
+    () => new Set(models.map((model) => model.modelId)),
+    [models],
+  );
+
+  const handleDiscover = async () => {
+    if (!connection?.baseURL?.trim()) return;
+    setDiscoveryOpen(true);
+    setDiscoveryLoading(true);
+    setDiscoveryError(null);
+    setDiscoveredModels([]);
+    try {
+      const result = await providerSettingsService.discoverModels({
+        providerId,
+        baseURL: connection.baseURL,
+        apiFormat: connection.apiFormat,
+        ...(connection.apiKey ? { apiKey: connection.apiKey } : {}),
+      });
+      if (result.ok) setDiscoveredModels(result.models);
+      else setDiscoveryError(result.error.message);
+    } catch (error) {
+      setDiscoveryError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setDiscoveryLoading(false);
+    }
+  };
 
   return (
     <div>
@@ -83,17 +131,39 @@ export function ProviderModelListSection({
         <span className="text-ui-base text-foreground-subtle">
           {intl.formatMessage({ id: "settings.modelProvider.models" })}
         </span>
-        <Button
-          type="button"
-          variant="secondary"
-          size="default"
-          className="rounded-lg"
-          data-testid={TID_MODEL_PROVIDER_ADD_MODEL_BUTTON}
-          onClick={() => addDialog.handleOpenChange(true)}
-        >
-          <Plus data-icon="inline-start" aria-hidden="true" />
-          {intl.formatMessage({ id: "settings.modelProvider.addModel" })}
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            variant="secondary"
+            size="default"
+            className="rounded-lg"
+            disabled={!canDiscover || !onAddPersonalModels || discoveryLoading}
+            title={
+              canDiscover
+                ? undefined
+                : intl.formatMessage({ id: "settings.modelProvider.discovery.needsBaseUrl" })
+            }
+            onClick={() => void handleDiscover()}
+          >
+            <DownloadIcon data-icon="inline-start" aria-hidden="true" />
+            {intl.formatMessage({
+              id: discoveryLoading
+                ? "settings.modelProvider.discovery.fetching"
+                : "settings.modelProvider.discovery.fetch",
+            })}
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            size="default"
+            className="rounded-lg"
+            data-testid={TID_MODEL_PROVIDER_ADD_MODEL_BUTTON}
+            onClick={() => addDialog.handleOpenChange(true)}
+          >
+            <Plus data-icon="inline-start" aria-hidden="true" />
+            {intl.formatMessage({ id: "settings.modelProvider.addModel" })}
+          </Button>
+        </div>
       </div>
       {models.length > 0 ? (
         <div className="overflow-hidden rounded-lg border border-input-border bg-input">
@@ -177,6 +247,42 @@ export function ProviderModelListSection({
         modelDefaultsLoaded={addDialog.defaultsLoaded}
         onModelIdBlur={() => {
           void addDialog.flush().catch(() => undefined);
+        }}
+      />
+      <ModelDiscoveryDialog
+        open={discoveryOpen}
+        loading={discoveryLoading}
+        error={discoveryError}
+        models={discoveredModels}
+        existingModelIds={existingModelIds}
+        onOpenChange={setDiscoveryOpen}
+        onConfirm={async (modelIds) => {
+          if (!onAddPersonalModels) throw new Error("Model discovery is not available here");
+          const selected = new Set(modelIds);
+          try {
+            await onAddPersonalModels(
+              discoveredModels
+                .filter((model) => selected.has(model.id))
+                .map((model) => ({
+                  modelId: model.id,
+                  config: {
+                    ...(model.contextWindow === undefined
+                      ? {}
+                      : { properties: { contextWindow: model.contextWindow } }),
+                    ...(model.maxOutputTokens === undefined
+                      ? {}
+                      : {
+                          optionSpecs: {
+                            maxOutputTokens: { max: model.maxOutputTokens },
+                          },
+                        }),
+                  },
+                })),
+            );
+          } catch (error) {
+            setDiscoveryError(error instanceof Error ? error.message : String(error));
+            throw error;
+          }
         }}
       />
     </div>

@@ -233,6 +233,12 @@ export function useRootWorkspaceActions({
           {
             groupedDraftPlacement,
             createSource: typeof request === "string" ? undefined : request?.createSource,
+            ...(typeof request === "object" && request
+              ? {
+                  ...(request.projectId !== undefined ? { projectId: request.projectId } : {}),
+                  ...(request.taskGroupId !== undefined ? { taskGroupId: request.taskGroupId } : {}),
+                }
+              : {}),
           },
         );
       if (initialPrompt) {

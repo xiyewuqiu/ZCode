@@ -30,6 +30,7 @@ function projectModelsToOrder(
 export function useProviderModelOperations({
   provider,
   onAddPersonalModel,
+  onAddPersonalModels,
   onSavePersonalModelDraft,
   onSetPersonalModelEnabled,
   onDeletePersonalModel,
@@ -42,6 +43,13 @@ export function useProviderModelOperations({
     modelId: string,
     config: ProviderSettingsFormModel["personalConfig"],
     useRecommendedConfig?: boolean,
+  ) => Promise<unknown>;
+  onAddPersonalModels?: (
+    providerId: string,
+    models: readonly {
+      modelId: string;
+      config: ProviderSettingsFormModel["personalConfig"];
+    }[],
   ) => Promise<unknown>;
   onSavePersonalModelDraft?: (input: SavePersonalModelDraftInput) => Promise<unknown>;
   onSetPersonalModelEnabled?: (
@@ -172,6 +180,30 @@ export function useProviderModelOperations({
     [onAddPersonalModel, providerId, runSaveOperation],
   );
 
+  const handleAddModels = useCallback(
+    async (
+      models: readonly {
+        modelId: string;
+        config: ProviderSettingsFormModel["personalConfig"];
+      }[],
+    ) => {
+      if (!onAddPersonalModels) throw new Error("当前设置入口未装配批量添加模型能力");
+      const seen = new Set<string>();
+      const normalizedModels = models.flatMap((model) => {
+        const modelId = model.modelId.trim();
+        if (!modelId || seen.has(modelId)) return [];
+        seen.add(modelId);
+        return [{ modelId, config: structuredClone(model.config) }];
+      });
+      if (normalizedModels.length === 0) return;
+      await runSaveOperation(
+        () => onAddPersonalModels(providerId, normalizedModels).then(() => undefined),
+        { modelId: normalizedModels[0]!.modelId, draftOwnsRetry: true },
+      );
+    },
+    [onAddPersonalModels, providerId, runSaveOperation],
+  );
+
   const handleReorderModelIds = useCallback(
     (nextModelIds: string[]) => {
       if (!onReorderModelIds) return;
@@ -191,6 +223,7 @@ export function useProviderModelOperations({
     handleDeleteModel,
     handleModelEnabledChange,
     handleAddModel,
+    handleAddModels,
     handleReorderModelIds,
   } as const;
 }

@@ -57,6 +57,7 @@ import {
 } from "lucide-react";
 import { ControlHintTooltip } from "@/ControlHintTooltip.js";
 import { ChatErrorBanner, shouldSuppressChatErrorBanner } from "@/ChatErrorBanner.js";
+import { ComposerSubmissionPendingContext } from "@/project-sidebar/ComposerSubmissionPendingContext.js";
 
 import {
   Attachment,
@@ -477,7 +478,7 @@ function ConversationComposerImpl({
   contextHeader,
   centered = false,
   blockingRequestId = null,
-  disabled = false,
+  disabled: disabledProp = false,
   autoFocusEnabled = true,
   workspacePath,
   workspaceIdentity,
@@ -522,6 +523,15 @@ function ConversationComposerImpl({
   const configPickerScopeKey = `${workspaceKey}\0${draftScopeId}`;
   const [text, setText] = useState("");
   const [pending, setPending] = useState(false);
+  // 项目菜单切换/远程连接期间只阻塞当前草稿提交；意图和门禁归 ProjectComposerMenu，
+  // composer 不复用 pending 以免占用发送 spinner 或改写草稿。
+  const [targetSelectionPending, setTargetSelectionPending] = useState(false);
+  const targetSelectionPendingRef = useRef(false);
+  const updateTargetSelectionPending = useCallback((nextPending: boolean) => {
+    targetSelectionPendingRef.current = nextPending;
+    setTargetSelectionPending(nextPending);
+  }, []);
+  const disabled = disabledProp || targetSelectionPending;
   const [configPickerState, setConfigPickerState] = useState<{
     scopeKey: string;
     activePicker: V4ComposerConfigPicker | null;
@@ -1136,6 +1146,8 @@ function ConversationComposerImpl({
           !hasPendingPptxElementReferences &&
           !hasPendingConversationSelections) ||
         pendingRef.current ||
+        // 快捷键/队列路径也必须在菜单持有切换意图时停发，不能只依赖按钮 disabled。
+        targetSelectionPendingRef.current ||
         !submissionReady ||
         (createSubmissionFromComposer !== undefined && submission === null) ||
         attachmentsApi.hasUnreadyAttachments
@@ -2045,8 +2057,12 @@ function ConversationComposerImpl({
         )}
       >
         {contextHeader ? (
-          // 旧 ChatViewComposer contextHeaderContent 同款包装（workspace 菜单 + Git 分支）。
-          <div className="p-1.5 flex min-w-0 flex-wrap items-center gap-0">{contextHeader}</div>
+          // 项目菜单位于草稿头；连接/切换意图通过该 context 只投影到当前输入框的提交门禁。
+          <div className="p-1.5 flex min-w-0 flex-wrap items-center gap-0">
+            <ComposerSubmissionPendingContext.Provider value={updateTargetSelectionPending}>
+              {contextHeader}
+            </ComposerSubmissionPendingContext.Provider>
+          </div>
         ) : null}
         {conversationSelectionLimitReason ? (
           <div

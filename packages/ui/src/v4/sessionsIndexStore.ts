@@ -15,6 +15,7 @@ import {
   appFrameNotificationScheduler,
   type FrameNotificationScheduler,
 } from "@/lib/frameNotificationScheduler.js";
+import { KeyedPublication, type PublicationLane } from "@/lib/keyedPublication.js";
 import type { SessionsIndexTransport } from "@/v4/agentSessionsIndexTransport.js";
 
 interface SessionsIndexState {
@@ -35,6 +36,39 @@ const EMPTY_SESSIONS_INDEX_STATE: SessionsIndexState = {
 };
 
 export type SessionsIndexStoreStatus = "idle" | "dormant" | "connecting" | "live" | "error";
+
+/**
+ * sessions-index 的订阅 key。
+ * sessions 是会话摘要 Map；workspaceId/logEpoch/seq 是订阅水位；status 是生命周期。
+ */
+export type SessionsIndexKey = "workspaceId" | "logEpoch" | "seq" | "sessions" | "status";
+
+const SESSIONS_INDEX_KEYS: readonly SessionsIndexKey[] = [
+  "workspaceId",
+  "logEpoch",
+  "seq",
+  "sessions",
+  "status",
+];
+
+function readSessionsIndexKey(
+  state: SessionsIndexState,
+  status: SessionsIndexStoreStatus,
+  key: SessionsIndexKey,
+): unknown {
+  switch (key) {
+    case "workspaceId":
+      return state.workspaceId;
+    case "logEpoch":
+      return state.logEpoch;
+    case "seq":
+      return state.seq;
+    case "sessions":
+      return state.sessions;
+    case "status":
+      return status;
+  }
+}
 
 const RUNTIME_RESTART_RECONNECT_BASE_DELAY_MS = 100;
 const RUNTIME_RESTART_RECONNECT_MAX_DELAY_MS = 5_000;
@@ -90,6 +124,8 @@ interface ApplySessionsIndexResult {
   state: SessionsIndexState;
   /** true = 帧区间断档（fromSeq 与水位不衔接），调用方应重订阅。 */
   gap: boolean;
+  /** 本轮真正变化的 key；空数组 = 没有可发布的变化。 */
+  changedKeys: readonly SessionsIndexKey[];
 }
 
 /** 纯 apply：snapshot 全量替换；deltas 仅在衔接时逐条 upsert/remove。 */
@@ -105,6 +141,8 @@ export function applySessionsIndexFrame(
     }
     return {
       gap: false,
+      // 规则 1：snapshot 整体替换 → 全部 key 变脏。
+      changedKeys: ["workspaceId", "logEpoch", "seq", "sessions"],
       state: {
         workspaceId: snapshot.workspaceId,
         logEpoch: snapshot.logEpoch,
@@ -114,21 +152,29 @@ export function applySessionsIndexFrame(
     };
   }
   if (frame.toSeq <= current.seq) {
-    return { state: current, gap: false };
+    return { changedKeys: [], gap: false, state: current };
   }
   // deltas：区间必须衔接（fromSeq === 当前水位），否则断档。
   if (frame.fromSeq !== current.seq) {
-    return { state: current, gap: true };
+    return { changedKeys: [], gap: true, state: current };
   }
-  const sessions = new Map(current.sessions);
+  // 写时复制：只有真正命中 upsert/remove 才新建 Map，未命中的 delta 不改变 sessions 引用，
+  // 订阅者也就不会被一个「内容没变」的新 Map 唤醒。
+  let sessions = current.sessions;
   for (const delta of frame.payload.deltas) {
     if (delta.op === "session.upserted") {
-      sessions.set(delta.session.sessionId, delta.session);
+      const sessionId = delta.session.sessionId;
+      if (sessions.get(sessionId) === delta.session) continue;
+      if (sessions === current.sessions) sessions = new Map(current.sessions);
+      sessions.set(sessionId, delta.session);
     } else {
+      if (!sessions.has(delta.sessionId)) continue;
+      if (sessions === current.sessions) sessions = new Map(current.sessions);
       sessions.delete(delta.sessionId);
     }
   }
   return {
+    changedKeys: sessions === current.sessions ? ["seq"] : ["seq", "sessions"],
     gap: false,
     state: { ...current, seq: frame.toSeq, sessions },
   };
@@ -141,7 +187,8 @@ export function applySessionsIndexFrame(
  */
 export class SessionsIndexStore {
   private state: SessionsIndexState = EMPTY_SESSIONS_INDEX_STATE;
-  private readonly listeners = new Set<() => void>();
+  /** 每 key 发布通道；整店订阅等价于登记全部 key（兼容旧消费者）。 */
+  private readonly publication: KeyedPublication<SessionsIndexKey>;
   /** 缓存的有序列表（getSessions 稳定引用，避免每次 new array 触发重渲染）。 */
   private cachedList: SessionSummary[] | null = null;
   // 传输绑定（可选：纯 applyFrame 单测不需要）。
@@ -176,12 +223,20 @@ export class SessionsIndexStore {
   /** 帧内通知合并；与投影 store 共用同一调度器，同一帧合并为一次 React 渲染。 */
   private readonly scheduler: FrameNotificationScheduler = appFrameNotificationScheduler;
 
-  subscribe = (listener: () => void): (() => void) => {
-    this.listeners.add(listener);
-    return () => {
-      this.listeners.delete(listener);
-    };
-  };
+  constructor() {
+    this.publication = new KeyedPublication({
+      allKeys: SESSIONS_INDEX_KEYS,
+      readKey: (key) => readSessionsIndexKey(this.state, this.status, key),
+      scheduler: this.scheduler,
+    });
+  }
+
+  /** 兼容整店订阅：任一 key 真正变化时通知（现有组件无需改写）。 */
+  subscribe = (listener: () => void): (() => void) => this.publication.subscribe(listener);
+
+  /** 只订阅指定 key；未变脏的 key 不会唤醒 listener。 */
+  subscribeKeys = (keys: Iterable<SessionsIndexKey>, listener: () => void): (() => void) =>
+    this.publication.subscribeKeys(keys, listener);
 
   getState = (): SessionsIndexState => this.state;
 
@@ -232,8 +287,7 @@ export class SessionsIndexStore {
     }
     const generation = ++this.generation;
     this.discardRecovery();
-    this.status = "connecting";
-    this.emit();
+    this.setStatus("connecting");
     const base =
       options.forceSnapshot || this.state.logEpoch === null
         ? undefined
@@ -250,7 +304,7 @@ export class SessionsIndexStore {
       // 迟到失败把 live 的新订阅打成 error。
       this.discardRecovery();
       this.subscriptionId = result.ack.subscriptionId;
-      this.status = "live";
+      this.setStatus("live");
       this.clearErrorRecoveryRetry();
       this.errorRecoveryRetryAttempt = 0;
       this.subscriptionHasAppliedBase = Boolean(
@@ -262,7 +316,6 @@ export class SessionsIndexStore {
       };
       // initial 只经 notification 到达；先绑定代际，再 activate 释放 ACK 前早帧。
       transport.activate(result.ack.subscriptionId);
-      this.emit();
     } catch (error) {
       if (generation !== this.generation || this.closed) return;
       this.awaitingInitial = null;
@@ -293,7 +346,7 @@ export class SessionsIndexStore {
         // Host 冷启动时 provider registry 的配置锁可能短暂冲突。若把
         // 首次 subscribe 失败永久定格为 error，聚合层随即发布空列表并显示“还没有对话”。
         // 瞬时文件锁错误保持 hydrating，用有界退避重订阅；已有 snapshot 也继续保留。
-        this.status = "connecting";
+        this.setStatus("connecting");
         logger.warn(`[v4-sessions-index] subscribe 瞬时失败，${retryDelay}ms 后重试: ${message}`);
         this.subscribeRetryTimer = setTimeout(() => {
           this.subscribeRetryTimer = null;
@@ -306,7 +359,6 @@ export class SessionsIndexStore {
               : {}),
           });
         }, retryDelay);
-        this.emit();
         return;
       }
       this.failAndScheduleRecovery(`subscribe:${message}`);
@@ -325,8 +377,7 @@ export class SessionsIndexStore {
 
     const generation = ++this.generation;
     const previous = this.detachTransport();
-    this.status = "connecting";
-    this.emit();
+    this.setStatus("connecting");
 
     if (previous.transport && previous.subscriptionId) {
       // proxy handoff 后旧 RPC 可能永远不 settle；等待它会让新 transport
@@ -593,7 +644,8 @@ export class SessionsIndexStore {
         });
       }, delayMs);
     }
-    this.emit();
+    // 清空投影 + 进入 error 是同一次用户可见跃迁：整店 key 一起标记，由发布器按实际变化过滤。
+    this.publishKeys(SESSIONS_INDEX_KEYS);
   }
 
   private handleRuntimeRestart(): void {
@@ -620,10 +672,7 @@ export class SessionsIndexStore {
     this.awaitingInitial = null;
     this.discardRecovery();
     this.subscriptionHasAppliedBase = false;
-    if (this.status !== "connecting") {
-      this.status = "connecting";
-      this.emit();
-    }
+    this.setStatus("connecting");
     if (this.runtimeRestartReconnectTimer) {
       clearTimeout(this.runtimeRestartReconnectTimer);
     }
@@ -661,7 +710,7 @@ export class SessionsIndexStore {
     this.state = EMPTY_SESSIONS_INDEX_STATE;
     this.cachedList = null;
     this.status = "dormant";
-    this.emit();
+    this.publishKeys(SESSIONS_INDEX_KEYS);
   }
 
   /** 释放订阅与监听（组件卸载 / workspace 切换）。 */
@@ -710,12 +759,13 @@ export class SessionsIndexStore {
 
   /** 应用一帧；断档返回 true（调用方重订阅）。 */
   applyFrame(frame: SessionsIndexTopicFrame): boolean {
-    const { state, gap } = applySessionsIndexFrame(this.state, frame);
+    const { state, gap, changedKeys } = applySessionsIndexFrame(this.state, frame);
     if (gap) return true;
     if (state !== this.state) {
       this.state = state;
-      this.cachedList = null;
-      this.emit();
+      // 只有 sessions 真正变化才失效有序列表缓存；seq-only 帧不必重建数组。
+      if (changedKeys.includes("sessions")) this.cachedList = null;
+      this.publishKeys(changedKeys);
     }
     return false;
   }
@@ -726,7 +776,7 @@ export class SessionsIndexStore {
     this.subscriptionHasAppliedBase = false;
     this.state = EMPTY_SESSIONS_INDEX_STATE;
     this.cachedList = null;
-    this.emit();
+    this.publishKeys(SESSIONS_INDEX_KEYS);
   }
 
   /** 会话列表（默认按 lastActivityAt 降序；分组/pin 是更上层逻辑）。 */
@@ -739,16 +789,26 @@ export class SessionsIndexStore {
     return this.cachedList;
   }
 
-  /**
-   * 通知合并到每帧一次：流式期间会话列表会随多次帧更新（标题、状态、耗时）反复到达，
-   * 逐个同步通知会让订阅者在同一帧里重复渲染。状态本身已在 emit 前写入，
-   * `getState()`/`getSessions()` 始终是最新事实。
-   */
-  private emit(): void {
-    this.scheduler.schedule(this.notifyListeners);
+  /** 生命周期状态变化：只把 status key 交给发布通道。 */
+  private setStatus(
+    next: SessionsIndexStoreStatus,
+    lane: PublicationLane = "animation-frame",
+  ): void {
+    if (this.status === next) return;
+    this.status = next;
+    this.publishKeys(["status"], lane);
   }
 
-  private readonly notifyListeners = (): void => {
-    for (const listener of this.listeners) listener();
-  };
+  /**
+   * 通知按 key 合并到每帧一次：流式期间会话列表会随多次帧更新（标题、状态、耗时）反复到达，
+   * 逐个同步通知会让订阅者在同一帧里重复渲染。状态本身已在 publishKeys 前写入，
+   * `getState()`/`getSessions()` 始终是最新事实。
+   */
+  private publishKeys(
+    keys: Iterable<SessionsIndexKey>,
+    lane: PublicationLane = "animation-frame",
+  ): void {
+    this.publication.markDirty(keys);
+    this.publication.publish(lane);
+  }
 }

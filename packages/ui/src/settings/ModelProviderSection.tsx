@@ -62,6 +62,7 @@ export function ModelProviderSection({
     saveProvider,
     createPersonalProvider,
     addPersonalModel,
+    addPersonalModels,
     savePersonalModelDraft,
     setPersonalModelEnabled,
     deletePersonalModel,
@@ -274,6 +275,7 @@ export function ModelProviderSection({
           selectedNavItem={selectedNavItem}
           onSave={handleSave}
           onAddPersonalModel={addPersonalModel}
+          onAddPersonalModels={addPersonalModels}
           onSavePersonalModelDraft={savePersonalModelDraft}
           onSetPersonalModelEnabled={setPersonalModelEnabled}
           onDeletePersonalModel={deletePersonalModel}

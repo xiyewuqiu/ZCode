@@ -8,6 +8,7 @@
 import { create } from "zustand";
 import {
   createUuid,
+  resolveWorkspaceKey,
   type RemoteTarget,
   type TabId,
   type TabState,
@@ -41,6 +42,8 @@ export interface WorkspaceTabState extends TabState {
   workspaceIdentity?: string;
   localWorkspacePath?: string;
   workspacePurpose?: WorkspacePurpose;
+  /** Host bind rekey 的前一个 identity；仅用于一次生命周期 transition 判定，不持久化。 */
+  previousWorkspaceIdentity?: string;
 }
 
 export interface WorkspaceTabOptions {
@@ -51,6 +54,8 @@ export interface WorkspaceTabOptions {
   workspaceIdentity?: string;
   localWorkspacePath?: string;
   workspacePurpose?: WorkspacePurpose;
+  /** Host stable identity 换代前的 route identity，只用于原子 rekey 已有 tab。 */
+  previousWorkspaceIdentity?: string;
 }
 
 export interface RestorableWorkspaceTab {
@@ -112,7 +117,13 @@ export interface TabStoreState {
   /** 确保 workspace 出现在任务区数据源中，但不抢走当前焦点 */
   ensureWorkspaceTab: (workspacePath: string, options?: WorkspaceTabOptions) => TabId;
   /** 关闭标签页 */
-  closeTab: (tabId: TabId) => void;
+  closeTab: (tabId: TabId, origin?: "user-close" | "restore" | "rekey") => void;
+  /** Renderer lifecycle 使用的显式 close intent；不是持久化业务状态。 */
+  lastClosedWorkspaceEvent: {
+    sequence: number;
+    workspaceKey: string;
+    origin: "user-close" | "restore" | "rekey";
+  } | null;
   /** 激活指定标签页 */
   activateTab: (tabId: TabId) => void;
   /** 拖拽排序：将 fromIndex 位置的 tab 移动到 toIndex */
@@ -161,6 +172,7 @@ function createWorkspaceTab(
     workspaceIdentity: options?.workspaceIdentity,
     localWorkspacePath: options?.localWorkspacePath,
     workspacePurpose: options?.workspacePurpose,
+    previousWorkspaceIdentity: options?.previousWorkspaceIdentity,
   };
 }
 
@@ -177,6 +189,7 @@ function mergeWorkspaceTabOptions(
     workspaceIdentity: options?.workspaceIdentity ?? tab.workspaceIdentity,
     localWorkspacePath: options?.localWorkspacePath ?? tab.localWorkspacePath,
     workspacePurpose: options?.workspacePurpose ?? tab.workspacePurpose,
+    previousWorkspaceIdentity: options?.previousWorkspaceIdentity ?? tab.previousWorkspaceIdentity,
   };
 }
 
@@ -253,6 +266,7 @@ export function createTabStore(storage: StorageLike | null | undefined = undefin
     activeWorkspacePath: null,
     activeWorkspaceIdentity: null,
     expandedWorkspacePaths: new Set<string>(),
+    lastClosedWorkspaceEvent: null,
 
     addTab: (workspacePath: string, options) => {
       // 之前复用 tab 只按 workspacePath + history/session 片段判断，
@@ -342,7 +356,7 @@ export function createTabStore(storage: StorageLike | null | undefined = undefin
       return tab.id;
     },
 
-    closeTab: (tabId: TabId) => {
+    closeTab: (tabId: TabId, origin = "user-close") => {
       const stateBefore = get();
       const { tabs, activeTabId } = stateBefore;
       const index = tabs.findIndex((t) => t.id === tabId);
@@ -352,6 +366,13 @@ export function createTabStore(storage: StorageLike | null | undefined = undefin
 
       const closingTab = tabs[index] ?? null;
       const newTabs = tabs.filter((t) => t.id !== tabId);
+      const closedWorkspaceKey =
+        closingTab && isWorkspaceTab(closingTab)
+          ? closingTab.workspaceIdentity?.trim() ||
+            (closingTab.remoteSessionId || closingTab.remoteTarget
+              ? closingTab.workspacePath
+              : null)
+          : null;
 
       // 如果关闭的是当前激活的 tab，需要切换到相邻 tab
       let newActiveTabId = activeTabId;
@@ -399,23 +420,42 @@ export function createTabStore(storage: StorageLike | null | undefined = undefin
         expandedWorkspacePaths: (() => {
           const prunedExpandedWorkspacePaths =
             closingTab && isWorkspaceTab(closingTab)
-              ? pruneExpandedWorkspace(stateBefore.expandedWorkspacePaths, closingTab.workspacePath)
+              ? pruneExpandedWorkspace(
+                  stateBefore.expandedWorkspacePaths,
+                  resolveWorkspaceKey(closingTab),
+                )
               : stateBefore.expandedWorkspacePaths;
 
           // 关闭当前 workspace 后，主内容会自动切到相邻 tab。
           // 之前侧边栏把展开态放在组件本地状态时，会在 workspacePath 变化后顺手把接替项展开；
           // 现在改由 store 托管后，这个兜底也要一起搬过来，否则“关闭当前 tab”会留下一个已激活但折叠的 workspace。
           return fallbackWorkspacePath
-            ? ensureWorkspaceExpanded(prunedExpandedWorkspacePaths, fallbackWorkspacePath)
+            ? ensureWorkspaceExpanded(
+                prunedExpandedWorkspacePaths,
+                fallbackWorkspaceIdentity?.trim() || fallbackWorkspacePath,
+              )
             : prunedExpandedWorkspacePaths;
         })(),
       };
 
       if (fallbackWorkspacePath) {
-        persistWorkspaceExpandedPreference(fallbackWorkspacePath, true, storage);
+        persistWorkspaceExpandedPreference(
+          fallbackWorkspaceIdentity?.trim() || fallbackWorkspacePath,
+          true,
+          storage,
+        );
       }
 
       set(nextState);
+      if (closedWorkspaceKey) {
+        set((state) => ({
+          lastClosedWorkspaceEvent: {
+            sequence: (state.lastClosedWorkspaceEvent?.sequence ?? 0) + 1,
+            workspaceKey: closedWorkspaceKey,
+            origin,
+          },
+        }));
+      }
     },
 
     activateTab: (tabId: TabId) => {

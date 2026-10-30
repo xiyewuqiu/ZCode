@@ -1,0 +1,22 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "composite": false,
+    "incremental": false,
+    "noEmit": true,
+    "rootDir": "..",
+    "types": ["node"]
+  },
+  "include": [
+    "../src/**/*.d.ts",
+    "./pluginUiAgentHostPort.test.ts",
+    "./pluginUiJsonRpcBridge.test.ts",
+    "./pluginUiCardFallback.test.ts"
+  ],
+  "references": [
+    { "path": "../../provider" },
+    { "path": "../../shared" },
+    { "path": "../../services" },
+    { "path": "../../rpc" }
+  ]
+}

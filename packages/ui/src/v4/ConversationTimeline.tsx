@@ -41,10 +41,7 @@ import {
   getConversationContentWidthClassName,
   getConversationStatusPanelOffsetClassName,
 } from "@/v4/conversationLayout.js";
-import {
-  createConversationTurnRenderer,
-  type ConversationTurnRenderUnit,
-} from "@/v4/conversationTurnRenderUnits.js";
+import type { ConversationTurnRenderUnit } from "@/v4/conversationTurnRenderUnits.js";
 import {
   resolveConversationTurnNavigatorHydrationRetryDelayMs,
   shouldHydrateConversationTurnNavigatorDirectory,
@@ -57,6 +54,20 @@ import {
 } from "@/v4/timelineViewportProbe.js";
 import { DEFAULT_ROW_HEIGHT_ESTIMATE_PX } from "@/v4/timelineRowHeightCache.js";
 import { acquireTimelineSessionCache } from "@/v4/timelineSessionCaches.js";
+import {
+  captureTimelineClosingBaseline,
+  isTimelineClosingBaselineFresh,
+  planTimelineClosingAnchor,
+  reclaimTimelineClosingSpacer,
+  shouldCaptureTimelineClosingBaseline,
+  type TimelineClosingAnchorBaseline,
+  type TimelineClosingAnchorUnit,
+} from "@/v4/timelineClosingAnchor.js";
+import {
+  readTimelineFollowMetrics,
+  TimelineScrollFollow,
+  type TimelineFollowBehavior,
+} from "@/v4/timelineScrollFollow.js";
 import {
   readChatSessionScrollMemoryState,
   resolveChatSessionScrollRestoreTop,
@@ -103,6 +114,12 @@ const USER_SCROLL_INTENT_TTL_MS = 1200;
 const LAYOUT_SCROLL_GUARD_MS = 250;
 const CONTENT_WIDTH_RESIZE_SETTLE_MS = 120;
 const SCROLL_MEMORY_RESTORE_TOLERANCE_PX = 1;
+/** 收起基准的有效期：覆盖 Radix 收起动画与随后多批测高，过期即放弃锚定。 */
+const CLOSING_BASELINE_TTL_MS = 1000;
+/** 跳转兜底：目标已在原位时不会派发 scroll，所有权不能永久停在 jumping。 */
+const JUMP_SETTLE_FALLBACK_MS = 400;
+/** 原生 smooth 动画的兜底 settle：部分环境不派发 scrollend。 */
+const NATIVE_SETTLE_FALLBACK_MS = 600;
 
 function scheduleMicrotask(callback: () => void): void {
   // 部分 WebView/最小 DOM 运行时没有 window.queueMicrotask；调度能力应从
@@ -284,6 +301,38 @@ class ConversationScrollMemoryScopeCapture extends Component<
   }
 }
 
+/**
+ * 收起前阅读基准的捕获点。
+ *
+ * React 在 mutation 之后才运行 layout effect：等到 Terminal 提交 / live tail 迁移
+ * 完成后再测 DOM，看到的是已经变短的布局，无法还原「收起前第一可见行在哪」。
+ * getSnapshotBeforeUpdate 是唯一能读取旧 DOM 的提交阶段钩子；这里只在结构性
+ * 变化（phase、live tail、单元数量、header 高度）时触发，不随流式 delta 增长。
+ */
+class TimelineClosingAnchorCapture extends Component<{
+  captureKey: string;
+  /** 本次提交是否可能收起（running 轮消失）；普通追加不建立基准。 */
+  closingCandidate: boolean;
+  capture: (structuralClose?: boolean) => void;
+}> {
+  getSnapshotBeforeUpdate(
+    previousProps: Readonly<{
+      captureKey: string;
+      closingCandidate: boolean;
+      capture: (structuralClose?: boolean) => void;
+    }>,
+  ): null {
+    if (previousProps.captureKey !== this.props.captureKey && this.props.closingCandidate) {
+      this.props.capture(true);
+    }
+    return null;
+  }
+
+  render(): null {
+    return null;
+  }
+}
+
 /** tanstack 默认测量的竖向复刻：优先 ResizeObserver entry（不触发同步布局）。 */
 function measureRowHeight(element: Element, entry: ResizeObserverEntry | undefined): number {
   const boxSize = entry?.borderBoxSize?.[0];
@@ -361,6 +410,12 @@ interface ConversationTimelineProps {
   centerEmptyStateWithDock?: boolean;
   /** 窄屏/粗指针视口保留紧凑居中布局，不复用桌面草稿安全间距。 */
   compactEmptyStateWithDock?: boolean;
+  /**
+   * Side Pane 完整视图浮窗形态：底部输入区不留内边距，输入框外壳即浮窗最外层；
+   * 输入区脱离滚动流贴在时间线底部，滚动容器（含滚动条）止于输入框上方。
+   * 只影响样式，不改变虚拟列表与 follow 锚定逻辑。
+   */
+  floatingComposerDock?: boolean;
   /** 右侧状态面板对消息列的布局模式；auto 由 conversation container query 裁决。 */
   summaryPanelLayout?: "none" | "auto" | "inline";
   conversationFindQuery?: string;
@@ -413,12 +468,12 @@ function ConversationTimelineImpl({
   onLoadAllOlder,
   turnNavigatorDirectoryRevision = 0,
   bottomDock,
-  selectionPanelLayoutContainerRef,
   backgroundScrollLocked = false,
   emptyState,
   headerSlot,
   centerEmptyStateWithDock = false,
   compactEmptyStateWithDock = false,
+  floatingComposerDock = false,
   summaryPanelLayout = "none",
   conversationFindQuery = "",
   conversationFindActiveIndex = -1,
@@ -515,6 +570,17 @@ function ConversationTimelineImpl({
   const liveTailRef = useRef<HTMLDivElement>(null);
   const messageLayerRef = useRef<HTMLDivElement>(null);
   const virtualHistoryRef = useRef<HTMLDivElement>(null);
+  // 收起锚点的下方留白：高度只经 ref 写入，不进入 React 状态，也不参与 totalSize。
+  const closingSpacerRef = useRef<HTMLDivElement>(null);
+  const closingBaselineRef = useRef<TimelineClosingAnchorBaseline | null>(null);
+  const closingAnchorOwnsRef = useRef(false);
+  const spacerContentHeightRef = useRef(0);
+  const captureClosingBaselineRef = useRef<(structuralClose?: boolean) => void>(() => {});
+  // 只有「运行轮结束 / live tail 迁移」才算收起候选，普通新轮追加不捕获基准。
+  const closingGestureRef = useRef(false);
+  const previousLiveUnitKeyRef = useRef<string | null>(null);
+  const jumpSettleFallbackTimerRef = useRef<number | null>(null);
+  const nativeSettleFallbackTimerRef = useRef<number | null>(null);
   const stableContentWidthRef = useRef<number | null>(null);
   const contentWidthResizeActiveRef = useRef(false);
   const contentWidthResizeSettleTimerRef = useRef<number | null>(null);
@@ -531,7 +597,12 @@ function ConversationTimelineImpl({
   // loadOlder 相关值经 ref 读取，保持 handleScroll 稳定引用。
   const loadOlderRef = useRef({ canLoadOlder, loadingOlder, onLoadOlder });
   loadOlderRef.current = { canLoadOlder, loadingOlder, onLoadOlder };
-  const followingRef = useRef(initialFollowing());
+  // 跟随意图与原生 smooth 动画的唯一持有者；followingRef 的读写全部收敛到它。
+  const followRef = useRef<TimelineScrollFollow | null>(null);
+  if (followRef.current === null) {
+    followRef.current = new TimelineScrollFollow(initialFollowing());
+  }
+  const follow = followRef.current;
   const programmaticScrollFrameRef = useRef<number | null>(null);
   const userScrollIntentRef = useRef<{
     intent: TimelineUserScrollIntent;
@@ -578,6 +649,25 @@ function ConversationTimelineImpl({
   const [turnNavigatorHydrationRetryRevision, setTurnNavigatorHydrationRetryRevision] = useState(0);
   const timelineRootRef = useRef<HTMLDivElement>(null);
   const composerDockRef = useRef<HTMLDivElement>(null);
+  const hasBottomDock = Boolean(bottomDock);
+  // 浮窗形态下输入区贴底，滚动容器底边让出输入区高度 + 12px；只写 CSS 变量，不参与虚拟列表计算。
+  useLayoutEffect(() => {
+    const root = timelineRootRef.current;
+    const dock = composerDockRef.current;
+    if (!floatingComposerDock || !hasBottomDock || !root || !dock) return;
+    const sync = () =>
+      root.style.setProperty(
+        "--v4-floating-composer-dock-height",
+        `${dock.getBoundingClientRect().height}px`,
+      );
+    sync();
+    const resizeObserver = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(sync);
+    resizeObserver?.observe(dock);
+    return () => {
+      resizeObserver?.disconnect();
+      root.style.removeProperty("--v4-floating-composer-dock-height");
+    };
+  }, [floatingComposerDock, hasBottomDock]);
   // 右侧状态面板完整 inline 展开时，中间消息列和输入 dock 必须使用同一偏移；
   // 否则面板会覆盖正文，而不是并排布局。
   const summaryPanelInlineOffsetClassName =
@@ -757,8 +847,9 @@ function ConversationTimelineImpl({
   virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item) => {
     return shouldAdjustVirtualizerForItemSizeChange({
       suppressAdjustment: suppressVirtualizerAdjustmentDuringRestoreRef.current,
-      following: followingRef.current,
+      following: follow.active,
       contentWidthChanging: isContentWidthChanging(),
+      closingAnchorOwned: closingBaselineRef.current !== null || closingAnchorOwnsRef.current,
       itemEnd: item.end,
       scrollTop: scrollRef.current?.scrollTop ?? 0,
     });
@@ -800,29 +891,96 @@ function ConversationTimelineImpl({
     });
   }, []);
 
-  const commitFollowing = useCallback((following: boolean) => {
-    if (followingRef.current === following) return;
-    followingRef.current = following;
-    setBackToBottomVisible(shouldShowBackToBottom(following, unitsRef.current.length));
-    // 解锁瞬间的时间线末尾行即「已读基线」：其后新增的正文/用户输入计入「N 条新消息」。
-    setUnlockedAnchorRowId(following ? null : (rowsForCountRef.current.at(-1)?.rowId ?? null));
-    // 跳转在途时所有权由 jumping 持有，跳转的首个 scroll 事件到达才落到 unlocked。
-    if (!jumpInFlightRef.current) {
-      setScrollOwnership(resolveScrollOwnership({ following, jumping: false }));
+  const getClosingSpacerHeight = useCallback((): number => {
+    const spacer = closingSpacerRef.current;
+    if (!spacer) return 0;
+    return Number.parseFloat(spacer.style.height) || 0;
+  }, []);
+
+  const setClosingSpacerHeight = useCallback((height: number) => {
+    const spacer = closingSpacerRef.current;
+    const next = height > 0 ? `${Math.ceil(height)}px` : "0px";
+    if (spacer && spacer.style.height !== next) spacer.style.height = next;
+    closingAnchorOwnsRef.current = spacer !== null && height > 0;
+    if (height <= 0) spacerContentHeightRef.current = 0;
+  }, []);
+
+  /** 收回留白并丢弃基准：回到底部、恢复、跳转、解锁、宽度重排、行清空共用。 */
+  const resetClosingSpacer = useCallback(() => {
+    closingBaselineRef.current = null;
+    closingAnchorOwnsRef.current = false;
+    spacerContentHeightRef.current = 0;
+    const spacer = closingSpacerRef.current;
+    if (spacer && spacer.style.height !== "0px") spacer.style.height = "0px";
+  }, []);
+
+  const clearNativeSettleFallback = useCallback(() => {
+    if (nativeSettleFallbackTimerRef.current !== null) {
+      window.clearTimeout(nativeSettleFallbackTimerRef.current);
+      nativeSettleFallbackTimerRef.current = null;
     }
   }, []);
+
+  const clearJumpSettleFallback = useCallback(() => {
+    if (jumpSettleFallbackTimerRef.current !== null) {
+      window.clearTimeout(jumpSettleFallbackTimerRef.current);
+      jumpSettleFallbackTimerRef.current = null;
+    }
+  }, []);
+
+  const commitFollowing = useCallback(
+    (following: boolean) => {
+      const changed = follow.active !== following;
+      follow.setFollowing(following);
+      if (!following) {
+        // 用户接管阅读位置后，底部留白不再有意义；立即收回，后续增长按正文底部贴底。
+        resetClosingSpacer();
+        clearNativeSettleFallback();
+      }
+      if (!changed) return;
+      setBackToBottomVisible(shouldShowBackToBottom(following, unitsRef.current.length));
+      // 解锁瞬间的时间线末尾行即「已读基线」：其后新增的正文/用户输入计入「N 条新消息」。
+      setUnlockedAnchorRowId(following ? null : (rowsForCountRef.current.at(-1)?.rowId ?? null));
+      // 跳转在途时所有权由 jumping 持有，跳转的首个 scroll 事件到达才落到 unlocked。
+      if (!jumpInFlightRef.current) {
+        setScrollOwnership(resolveScrollOwnership({ following, jumping: false }));
+      }
+    },
+    [clearNativeSettleFallback, follow, resetClosingSpacer],
+  );
+
+  const endTimelineJump = useCallback(() => {
+    clearJumpSettleFallback();
+    if (!jumpInFlightRef.current) return;
+    jumpInFlightRef.current = false;
+    setScrollOwnership(resolveScrollOwnership({ following: follow.active, jumping: false }));
+  }, [clearJumpSettleFallback, follow]);
 
   /** 程序化跳转在途：期间用户滚动只更新几何账目，不显示新消息计数。 */
   const beginTimelineJump = useCallback(() => {
     jumpInFlightRef.current = true;
     setScrollOwnership("jumping");
-  }, []);
-
-  const endTimelineJump = useCallback(() => {
-    if (!jumpInFlightRef.current) return;
-    jumpInFlightRef.current = false;
-    setScrollOwnership(resolveScrollOwnership({ following: followingRef.current, jumping: false }));
-  }, []);
+    resetClosingSpacer();
+    // 跳转必须接管滚动：在途的原生 smooth 若未取消，会与 scrollToIndex 争夺位置。
+    const element = scrollRef.current;
+    if (element && follow.animating) {
+      follow.interrupt(element, readTimelineFollowMetrics(element));
+      clearNativeSettleFallback();
+      lastObservedScrollTopRef.current = element.scrollTop;
+    }
+    clearJumpSettleFallback();
+    // 目标已在原位时浏览器不会派发 scroll；没有兜底会让所有权永久停在 jumping。
+    jumpSettleFallbackTimerRef.current = window.setTimeout(() => {
+      jumpSettleFallbackTimerRef.current = null;
+      endTimelineJump();
+    }, JUMP_SETTLE_FALLBACK_MS);
+  }, [
+    clearJumpSettleFallback,
+    clearNativeSettleFallback,
+    endTimelineJump,
+    follow,
+    resetClosingSpacer,
+  ]);
 
   const clearUserScrollIntent = useCallback(() => {
     userScrollIntentRef.current = { intent: "none", observedAt: 0 };
@@ -849,6 +1007,14 @@ function ConversationTimelineImpl({
       if (intent === "none") return;
       userScrollIntentRef.current = { intent, observedAt: Date.now() };
       const element = scrollRef.current;
+      // 阅读手势优先于任何原生 smooth follow：先停在当前动画位置，后续真实位移
+      // 再决定跟随态。否则动画中间帧会被当成用户滚动，把跟随判到错误方向。
+      if (element && follow.animating) {
+        follow.interrupt(element, readTimelineFollowMetrics(element));
+        clearNativeSettleFallback();
+        lastObservedScrollTopRef.current = element.scrollTop;
+        viewportProbe.flush();
+      }
       // running -> terminal 会在同一帧迁移 live tail、折叠工作历史并触发
       // virtualizer 测高。向上滚动必须在 scroll 事件之前先拿走滚动权，否则终态
       // layout effect 会拿过期的 following=true 把用户重新拽到底部。
@@ -856,7 +1022,7 @@ function ConversationTimelineImpl({
         commitFollowing(false);
       }
     },
-    [commitFollowing],
+    [clearNativeSettleFallback, commitFollowing, follow, viewportProbe],
   );
 
   const handleWheelCapture = useCallback(
@@ -887,6 +1053,11 @@ function ConversationTimelineImpl({
 
   const handleKeyDownCapture = useCallback(
     (event: ReactKeyboardEvent<HTMLDivElement>) => {
+      // 键盘激活折叠触发器时 DOM 还没变化，先留一份收起前基准。
+      if ((event.key === "Enter" || event.key === " ") && !isEditableScrollTarget(event.target)) {
+        closingGestureRef.current = true;
+        captureClosingBaselineRef.current();
+      }
       markUserScrollIntent(
         timelineKeyboardScrollIntent({
           key: event.key,
@@ -900,6 +1071,9 @@ function ConversationTimelineImpl({
 
   const handlePointerDownCapture = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
+      // 点击折叠触发器会在 onClick 里改变内容高度；捕获阶段先记录收起前基准。
+      closingGestureRef.current = true;
+      captureClosingBaselineRef.current();
       // 内容区点击（尤其 composer 发送）不是滚动意图；只有 scrollbar/空白命中
       // scroll container 自身时才登记未知方向，随后由真实 scroll 落点裁决。
       if (event.target !== event.currentTarget) return;
@@ -980,7 +1154,7 @@ function ConversationTimelineImpl({
         contentHeight: element.scrollHeight,
       };
       const wasPinnedToBottom = reconcileFollowingForContentAnchor({
-        following: followingRef.current,
+        following: follow.active,
         metrics,
         lastObservedScrollTop: lastObservedScrollTopRef.current,
       });
@@ -992,7 +1166,7 @@ function ConversationTimelineImpl({
         updatedAt: Date.now(),
       };
     },
-    [],
+    [follow],
   );
 
   const cacheCurrentScrollMemoryState = useCallback(
@@ -1040,27 +1214,253 @@ function ConversationTimelineImpl({
     [],
   );
 
-  // 贴底必须 instant（scrollTop 赋值）：smooth 的中间帧会被 scroll 判定误读为「离底」。
-  const scrollToBottom = useCallback(() => {
+  /**
+   * 贴底前记录「首个可见行」基准。
+   *
+   * 只在「running 轮消失」的结构性提交或折叠触发器的 pointer/key 捕获时生成；
+   * 普通新轮追加与流式 delta 不建立基准，避免拿错误坐标系保持旧阅读位置。
+   */
+  const captureClosingBaseline = useCallback(
+    (structuralClose = false) => {
+      const gesture = closingGestureRef.current;
+      closingGestureRef.current = false;
+      // 普通内容增长不建立收起基准：那会让下一次贴底在错误坐标系里保持旧阅读位置。
+      if (!gesture && !structuralClose) return;
+      const element = scrollRef.current;
+      const layer = messageLayerRef.current;
+      if (!element || !layer) return;
+      // 已有留白时基准坐标系不同，等收回后再捕获。
+      if (getClosingSpacerHeight() > 0) return;
+      if (
+        !shouldCaptureTimelineClosingBaseline({
+          following: follow.active,
+          jumping: jumpInFlightRef.current,
+          animating: follow.animating,
+          contentWidthChanging: isContentWidthChanging(),
+          userIntent: getActiveUserScrollIntent(),
+        })
+      ) {
+        return;
+      }
+      const origin = element.getBoundingClientRect().top - element.scrollTop;
+      // 以「行」而非整轮作为锚点：轮次完成会收起整段工作历史，若拿 5000 项的
+      // live tail 顶部做锚点，收起后这个顶部会留在视口外，反而得到空白。
+      // 行级锚点还能自然回退到未被收起的回答/工具行。
+      const units: TimelineClosingAnchorUnit[] = [];
+      const seen = new Set<string>();
+      for (const node of layer.querySelectorAll<HTMLElement>("[data-row-id]")) {
+        const key = node.dataset.rowId;
+        if (!key || seen.has(key)) continue;
+        const rect = node.getBoundingClientRect();
+        if (rect.height <= 0) continue;
+        seen.add(key);
+        units.push({ key, top: rect.top - origin, bottom: rect.bottom - origin });
+      }
+      closingBaselineRef.current = captureTimelineClosingBaseline({
+        units,
+        contentHeight: element.scrollHeight,
+        viewportHeight: element.clientHeight,
+        scrollTop: element.scrollTop,
+      });
+    },
+    [follow, getActiveUserScrollIntent, getClosingSpacerHeight, isContentWidthChanging],
+  );
+  captureClosingBaselineRef.current = captureClosingBaseline;
+
+  /**
+   * 内容变短后把首个存活锚点固定在原屏幕位置，缺口写进下方 spacer。
+   * layout effect / ResizeObserver 均在绘制前执行，因此不产生可见闪动。
+   */
+  const tryApplyClosingAnchor = useCallback((): boolean => {
+    const baseline = closingBaselineRef.current;
+    if (baseline === null) return false;
     const element = scrollRef.current;
-    if (!element) return;
-    markProgrammaticScroll();
-    // 草稿安全居中允许内容在低高度下向下溢出；若沿用真实会话吸底，
-    // 顶部安全留白会被滚走。草稿始终展示顶部，真实会话继续吸底。
-    element.scrollTop = responsiveCenteredEmptyLayout ? 0 : element.scrollHeight;
-    // 回读取钳制后的落点入账（浏览器会把赋值钳到最大可滚动距离）。
+    const layer = messageLayerRef.current;
+    if (!element || !layer) {
+      closingBaselineRef.current = null;
+      return false;
+    }
+    if (
+      !follow.active ||
+      jumpInFlightRef.current ||
+      follow.animating ||
+      isContentWidthChanging() ||
+      getClosingSpacerHeight() > 0 ||
+      !isTimelineClosingBaselineFresh(baseline, Date.now(), CLOSING_BASELINE_TTL_MS)
+    ) {
+      closingBaselineRef.current = null;
+      return false;
+    }
+    const origin = element.getBoundingClientRect().top - element.scrollTop;
+    const surviving = new Map<string, { top: number; height: number }>();
+    const seen = new Set<string>();
+    for (const node of layer.querySelectorAll<HTMLElement>("[data-row-id]")) {
+      const key = node.dataset.rowId;
+      if (!key || seen.has(key)) continue;
+      const rect = node.getBoundingClientRect();
+      if (rect.height <= 0) continue;
+      seen.add(key);
+      surviving.set(key, { top: rect.top - origin, height: rect.height });
+    }
+    const contentHeight = element.scrollHeight;
+    const plan = planTimelineClosingAnchor({
+      baseline,
+      surviving,
+      contentHeight,
+      viewportHeight: element.clientHeight,
+    });
+    if (plan.kind === "hold") return false;
+    if (plan.kind === "grow") {
+      // 收起候选没有变短，反而增长了（新行/新内容）：旧基准的屏幕坐标已失效。
+      closingBaselineRef.current = null;
+      return false;
+    }
+    if (plan.kind === "lost") {
+      // 收起后的首批渲染可能还没有挂载目标行（live tail 刚迁移、工作窗口正在回收）。
+      // 保留基准到 TTL，让后续绘制前的 ResizeObserver 再尝试，而不是立刻退回贴底。
+      return false;
+    }
+    closingBaselineRef.current = null;
+    setClosingSpacerHeight(plan.spacerHeight);
+    markLayoutScrollGuard();
+    if (Math.abs(element.scrollTop - plan.scrollTop) >= 1) {
+      element.scrollTop = plan.scrollTop;
+    }
     lastObservedScrollTopRef.current = element.scrollTop;
+    spacerContentHeightRef.current = contentHeight;
     viewportProbe.flush();
-    userAdjustedScrollSinceRestoreRef.current = false;
     cacheCurrentScrollMemoryState(element);
     notifyScrollObserversAfterCommit(element);
+    return true;
   }, [
     cacheCurrentScrollMemoryState,
-    responsiveCenteredEmptyLayout,
-    markProgrammaticScroll,
+    follow,
+    getClosingSpacerHeight,
+    isContentWidthChanging,
+    markLayoutScrollGuard,
     notifyScrollObserversAfterCommit,
+    setClosingSpacerHeight,
     viewportProbe,
   ]);
+
+  /**
+   * 贴底状态下内容继续增长时，用新增高度抵扣留白；填满后恢复常规贴底。
+   * 返回 true 表示本次 commit 仍由留白持有滚动位置。
+   */
+  const holdClosingSpacerAgainstGrowth = useCallback((): boolean => {
+    const spacerHeight = getClosingSpacerHeight();
+    if (spacerHeight <= 0) return false;
+    const element = scrollRef.current;
+    if (!element || !follow.active || jumpInFlightRef.current) {
+      resetClosingSpacer();
+      return false;
+    }
+    const contentHeight = element.scrollHeight - spacerHeight;
+    const previousContent = spacerContentHeightRef.current;
+    const growth = Math.max(0, contentHeight - previousContent);
+    spacerContentHeightRef.current = Math.max(previousContent, contentHeight);
+    const next = reclaimTimelineClosingSpacer({
+      spacerHeight,
+      contentHeight,
+      scrollTop: element.scrollTop,
+      viewportHeight: element.clientHeight,
+      contentGrowth: growth,
+    });
+    // 后续分批测高继续变短时，scrollTop 已贴着留白后的地板；必须同步撑高留白，
+    // 否则浏览器会把 scrollTop 向下钳制，锚定位置再次跳动。上限仍为半个视口。
+    const requiredSpacer = Math.max(0, element.scrollTop + element.clientHeight - contentHeight);
+    const maxSpacer = element.clientHeight / 2;
+    const resolvedSpacer = Math.min(maxSpacer, Math.max(next.spacerHeight, requiredSpacer));
+    if (Math.abs(resolvedSpacer - spacerHeight) >= 1) {
+      setClosingSpacerHeight(resolvedSpacer);
+    }
+    return resolvedSpacer > 0;
+  }, [follow, getClosingSpacerHeight, resetClosingSpacer, setClosingSpacerHeight]);
+
+  /** scrollend（或兜底计时器）：原生 smooth follow 落账，离目标则解锁。 */
+  const settleNativeFollow = useCallback(() => {
+    clearNativeSettleFallback();
+    const element = scrollRef.current;
+    if (!element || !follow.animating) return;
+    const following = follow.settle(readTimelineFollowMetrics(element));
+    commitFollowing(following);
+    lastObservedScrollTopRef.current = element.scrollTop;
+    viewportProbe.flush();
+    cacheCurrentScrollMemoryState(element);
+  }, [
+    cacheCurrentScrollMemoryState,
+    clearNativeSettleFallback,
+    commitFollowing,
+    follow,
+    viewportProbe,
+  ]);
+
+  // 贴底默认 instant（scrollTop 赋值）：smooth 的中间帧会被 scroll 判定误读为「离底」。
+  // 仅「已 pinned 的显式回到底部」允许一次原生 smooth，并由 scrollend/兜底统一落账。
+  const scrollToBottom = useCallback(
+    (behavior: TimelineFollowBehavior = "instant") => {
+      const element = scrollRef.current;
+      if (!element) return;
+      // 显式贴底立即收回留白：真实内容底部才是跟随目标。
+      resetClosingSpacer();
+      clearNativeSettleFallback();
+      commitFollowing(true);
+      markProgrammaticScroll();
+      const metrics = readTimelineFollowMetrics(element);
+      if (responsiveCenteredEmptyLayout) {
+        follow.jump(element, metrics, 0);
+      } else {
+        follow.toBottom(element, metrics, behavior);
+      }
+      // 回读取钳制后的落点入账（浏览器会把赋值钳到最大可滚动距离）。
+      lastObservedScrollTopRef.current = element.scrollTop;
+      viewportProbe.flush();
+      userAdjustedScrollSinceRestoreRef.current = false;
+      if (follow.animating) {
+        // 部分环境不派发 scrollend；动画必须最终落账，不能停在目标之外。
+        nativeSettleFallbackTimerRef.current = window.setTimeout(() => {
+          nativeSettleFallbackTimerRef.current = null;
+          settleNativeFollow();
+        }, NATIVE_SETTLE_FALLBACK_MS);
+        return;
+      }
+      cacheCurrentScrollMemoryState(element);
+      notifyScrollObserversAfterCommit(element);
+    },
+    [
+      cacheCurrentScrollMemoryState,
+      clearNativeSettleFallback,
+      commitFollowing,
+      follow,
+      markProgrammaticScroll,
+      notifyScrollObserversAfterCommit,
+      resetClosingSpacer,
+      responsiveCenteredEmptyLayout,
+      settleNativeFollow,
+      viewportProbe,
+    ],
+  );
+
+  useEffect(() => {
+    const element = scrollRef.current;
+    if (!element) return;
+    const handleScrollEnd = () => settleNativeFollow();
+    element.addEventListener("scrollend", handleScrollEnd, { passive: true });
+    return () => element.removeEventListener("scrollend", handleScrollEnd);
+  }, [sessionKey, settleNativeFollow]);
+
+  // Radix 收起动画与 virtualizer 分批测高不在 React commit 内完成；
+  // ResizeObserver 在绘制前再尝试一次收起锚点，覆盖后续帧的高度下降。
+  useLayoutEffect(() => {
+    const layer = messageLayerRef.current;
+    if (!layer || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => {
+      if (!scrollRef.current || !messageLayerRef.current) return;
+      if (tryApplyClosingAnchor()) viewportProbe.flush();
+    });
+    observer.observe(layer);
+    return () => observer.disconnect();
+  }, [hasMessageLayer, sessionKey, tryApplyClosingAnchor, viewportProbe]);
 
   useLayoutEffect(() => {
     const contentColumn = virtualHistoryRef.current;
@@ -1073,6 +1473,8 @@ function ConversationTimelineImpl({
 
       // 宽度变化会让虚拟行分批重新测高；逐行补偿或逐批追底都会
       // 连续改写 scrollTop。resize 期间暂停两者，稳定后只执行一次最终贴底。
+      // 留白依赖旧宽度下的锚点几何，必须先收回，避免新布局里保留错误缺口。
+      resetClosingSpacer();
       contentWidthResizeActiveRef.current = true;
       if (contentWidthResizeSettleTimerRef.current !== null) {
         window.clearTimeout(contentWidthResizeSettleTimerRef.current);
@@ -1081,7 +1483,7 @@ function ConversationTimelineImpl({
         stableContentWidthRef.current = contentColumn.clientWidth;
         contentWidthResizeActiveRef.current = false;
         contentWidthResizeSettleTimerRef.current = null;
-        if (followingRef.current) {
+        if (follow.active) {
           scrollToBottom();
         }
       }, CONTENT_WIDTH_RESIZE_SETTLE_MS);
@@ -1096,7 +1498,7 @@ function ConversationTimelineImpl({
       }
       contentWidthResizeActiveRef.current = false;
     };
-  }, [renderUnits.length === 0, scrollToBottom]);
+  }, [renderUnits.length === 0, resetClosingSpacer, scrollToBottom]);
 
   useLayoutEffect(() => {
     const element = liveTailRef.current;
@@ -1124,7 +1526,7 @@ function ConversationTimelineImpl({
       if (!scrollElement) return;
       markLayoutScrollGuard();
       const following = reconcileFollowingForContentAnchor({
-        following: followingRef.current,
+        following: follow.active,
         metrics: {
           scrollTop: scrollElement.scrollTop,
           viewportHeight: scrollElement.clientHeight,
@@ -1135,14 +1537,17 @@ function ConversationTimelineImpl({
       });
       commitFollowing(following);
       if (anchorActionAfterContentChange(following, isContentWidthChanging()) === "stickToBottom") {
-        scrollToBottom();
+        // 留白仍在时，先让增长抵扣空白；直接贴底会把刚锚定的阅读位置拽走。
+        if (!holdClosingSpacerAgainstGrowth()) scrollToBottom();
       }
     });
     observer.observe(element);
     return () => observer.disconnect();
   }, [
     commitFollowing,
+    follow,
     getActiveUserScrollIntent,
+    holdClosingSpacerAgainstGrowth,
     isContentWidthChanging,
     liveUnit?.key,
     markLayoutScrollGuard,
@@ -1170,21 +1575,51 @@ function ConversationTimelineImpl({
       const element = scrollRef.current;
       if (!element) return;
       clearUserScrollIntent();
+      // 恢复是新的几何坐标系：旧留白与基准都失效。
+      resetClosingSpacer();
       markProgrammaticScroll();
       element.scrollTop = resolveChatSessionScrollRestoreTop(state, element);
       lastObservedScrollTopRef.current = element.scrollTop;
-      followingRef.current = false;
+      // 恢复位置优先于任何在途的原生 smooth。
+      if (follow.animating) follow.interrupt(element, readTimelineFollowMetrics(element));
+      follow.setFollowing(false);
       setBackToBottomVisible(shouldShowBackToBottom(false, unitsRef.current.length));
       viewportProbe.flush();
       userAdjustedScrollSinceRestoreRef.current = false;
       cacheCurrentScrollMemoryState(element);
     },
-    [cacheCurrentScrollMemoryState, clearUserScrollIntent, markProgrammaticScroll, viewportProbe],
+    [
+      cacheCurrentScrollMemoryState,
+      clearUserScrollIntent,
+      follow,
+      markProgrammaticScroll,
+      resetClosingSpacer,
+      viewportProbe,
+    ],
+  );
+
+  // 阅读者滚入留白区时，把空白收短到当前位置：不改变看到的正文，只去掉多余滚动余量。
+  const reclaimClosingSpacerOnReaderScroll = useCallback(
+    (element: HTMLDivElement) => {
+      const spacerHeight = getClosingSpacerHeight();
+      if (spacerHeight <= 0) return;
+      const floorWithoutSpacer = element.scrollHeight - spacerHeight - element.clientHeight;
+      const next = Math.min(spacerHeight, Math.max(0, element.scrollTop - floorWithoutSpacer));
+      if (Math.abs(next - spacerHeight) >= 1) setClosingSpacerHeight(next);
+    },
+    [getClosingSpacerHeight, setClosingSpacerHeight],
   );
 
   const handleScroll = useCallback(() => {
     const element = scrollRef.current;
     if (!element) return;
+    // 原生 smooth follow 的中间帧不是阅读者移动：只更新几何账目与遮罩，
+    // 跟随意图在 scrollend（或兜底计时器）统一落账。
+    if (follow.animating) {
+      lastObservedScrollTopRef.current = element.scrollTop;
+      viewportProbe.invalidate();
+      return;
+    }
     const programmaticScroll =
       programmaticScrollFrameRef.current !== null &&
       Math.abs(element.scrollTop - lastObservedScrollTopRef.current) < 1;
@@ -1207,10 +1642,11 @@ function ConversationTimelineImpl({
     // 跳转在途窗口到此结束：跳转引起的 scroll 已交付，所有权落到 unlocked / pinned。
     endTimelineJump();
     lastObservedScrollTopRef.current = element.scrollTop;
+    if (scrollSource === "user") reclaimClosingSpacerOnReaderScroll(element);
     // 滚动只登记失效：度量与遮罩合并到本帧，Timeline 自身不因滚动重渲染。
     viewportProbe.invalidate();
     const following = resolveFollowingAfterScroll({
-      following: followingRef.current,
+      following: follow.active,
       source: scrollSource,
       metrics: {
         scrollTop: element.scrollTop,
@@ -1259,7 +1695,9 @@ function ConversationTimelineImpl({
   }, [
     commitFollowing,
     endTimelineJump,
+    follow,
     getActiveUserScrollIntent,
+    reclaimClosingSpacerOnReaderScroll,
     saveCurrentScrollMemory,
     viewportProbe,
     virtualizer,
@@ -1269,7 +1707,9 @@ function ConversationTimelineImpl({
     pendingDetachedScrollRestoreRef.current = null;
     clearUserScrollIntent();
     commitFollowing(true);
-    scrollToBottom();
+    // 已 pinned 的显式回到底部允许一次原生 smooth follow；reduced-motion 与
+    // 非 pinned 调用在控制器内部自动降级为 instant。
+    scrollToBottom("smooth");
     // scrollToBottom 只更新组件内 ref；若用户点击后立刻切任务，scope
     // cleanup/scroll 事件可能还没运行，旧 Map 会把下次恢复重新带回中部甚至顶部。
     saveCurrentScrollMemory();
@@ -1459,6 +1899,15 @@ function ConversationTimelineImpl({
   );
   const rowWindowKey = `${rows.length}:${rows[0]?.rowId ?? "none"}:${rows[rows.length - 1]?.rowId ?? "none"}`;
   const pendingGuideKey = pendingGuides.map((item) => item.queueItemId).join(":");
+  // 仅在结构性变化时变化：流式 delta 不改变它，避免每帧捕获收起基准。
+  const closingCaptureKey = `${sessionKey}:${rowContext.logEpoch ?? ""}:${sessionPhase ?? ""}:${liveUnit?.key ?? ""}:${renderUnits.length}:${pendingGuideKey}:${headerSlotHeight}`;
+  // running 轮消失（完成 / 迁移）才是收起候选；普通新轮追加没有旧 live tail，不捕获。
+  const liveUnitKey = liveUnit?.key ?? null;
+  const closingCandidate =
+    previousLiveUnitKeyRef.current !== null && previousLiveUnitKeyRef.current !== liveUnitKey;
+  useLayoutEffect(() => {
+    previousLiveUnitKeyRef.current = liveUnitKey;
+  }, [liveUnitKey]);
 
   // V4 迁移删除旧 ChatView 滚动 hook 后，sessionKey effect 仍固定滚到底部，
   // 导致残留的 renderer-local 记忆模块彻底断线。这里在重新 measure 后按 scope
@@ -1467,6 +1916,8 @@ function ConversationTimelineImpl({
   // 真实高度，否则滚动条会先跳到估计值再被逐行纠正。
   useLayoutEffect(() => {
     clearUserScrollIntent();
+    // 会话切换是新的坐标系：留白、基准与 prepend 基线全部作废。
+    resetClosingSpacer();
     // prepend 锚定基线一并重置：rowId 跨会话可重复，禁止拿旧会话首行比较。
     prependAnchorRef.current = { firstRowId: null, totalSize: 0 };
     pendingPrependVirtualAnchorRef.current = null;
@@ -1494,7 +1945,7 @@ function ConversationTimelineImpl({
     const restore = () => {
       if (!restoredState || restoredState.wasPinnedToBottom === true) {
         suppressVirtualizerAdjustmentDuringRestoreRef.current = false;
-        followingRef.current = initialFollowing();
+        commitFollowing(initialFollowing());
         setBackToBottomVisible(false);
         scrollToBottom();
         return;
@@ -1521,6 +1972,8 @@ function ConversationTimelineImpl({
     };
   }, [
     clearUserScrollIntent,
+    commitFollowing,
+    resetClosingSpacer,
     restoreScrollMemory,
     scrollMemoryKey,
     scrollToBottom,
@@ -1654,7 +2107,7 @@ function ConversationTimelineImpl({
     markLayoutScrollGuard();
     if (element) {
       const following = reconcileFollowingForContentAnchor({
-        following: followingRef.current,
+        following: follow.active,
         metrics: {
           scrollTop: element.scrollTop,
           viewportHeight: element.clientHeight,
@@ -1665,9 +2118,16 @@ function ConversationTimelineImpl({
       });
       commitFollowing(following);
     }
+    // 收起锚点在绘制前接管：首个可见行保持原位，缺口写进 spacer。
+    // 同一 commit 不能再贴底，否则 spacer 刚补出的位置会立刻被拽走。
+    if (tryApplyClosingAnchor()) return;
+    // 留白尚未填满时，内容增长只抵扣空白，不移动阅读位置。
+    if (holdClosingSpacerAgainstGrowth()) return;
+    // 收起候选已捕获但动画/测高还没让 DOM 变短：本 commit 不贴底，
+    // 否则贴底会重置基准，后续收起帧失去锚点。增长由上面的 grow 分支清除基准。
+    if (closingBaselineRef.current !== null) return;
     if (
-      anchorActionAfterContentChange(followingRef.current, isContentWidthChanging()) ===
-      "stickToBottom"
+      anchorActionAfterContentChange(follow.active, isContentWidthChanging()) === "stickToBottom"
     ) {
       scrollToBottom();
     }
@@ -1676,12 +2136,15 @@ function ConversationTimelineImpl({
     isContentWidthChanging,
     markLayoutScrollGuard,
     commitFollowing,
+    follow,
     headerSlotHeight,
+    holdClosingSpacerAgainstGrowth,
     pendingGuideKey,
     rowCount,
     rows,
     scrollToBottom,
     totalSize,
+    tryApplyClosingAnchor,
   ]);
 
   useLayoutEffect(() => {
@@ -1697,12 +2160,13 @@ function ConversationTimelineImpl({
       if (pendingDetachedScrollRestoreRef.current?.key === scrollMemoryKey) {
         return;
       }
-      followingRef.current = initialFollowing();
+      follow.setFollowing(initialFollowing());
+      resetClosingSpacer();
       if (backToBottomVisible) {
         setBackToBottomVisible(false);
       }
     }
-  }, [rowCount, backToBottomVisible, scrollMemoryKey]);
+  }, [rowCount, backToBottomVisible, follow, resetClosingSpacer, scrollMemoryKey]);
 
   useEffect(() => {
     return () => {
@@ -1710,8 +2174,10 @@ function ConversationTimelineImpl({
         window.cancelAnimationFrame(programmaticScrollFrameRef.current);
         programmaticScrollFrameRef.current = null;
       }
+      clearNativeSettleFallback();
+      clearJumpSettleFallback();
     };
-  }, []);
+  }, [clearJumpSettleFallback, clearNativeSettleFallback]);
 
   // raw projection row 与按 turn 合并后的 render unit 不是同一计量单位；
   // 分开暴露才能让恢复/分页验证不再把可见 unit 误当成持久 row。
@@ -1733,6 +2199,11 @@ function ConversationTimelineImpl({
           scopeKey={scrollMemoryKey}
           capture={captureScrollMemoryBeforeScopeMutation}
           commit={commitCapturedScrollMemory}
+        />
+        <TimelineClosingAnchorCapture
+          captureKey={closingCaptureKey}
+          closingCandidate={closingCandidate}
+          capture={captureClosingBaseline}
         />
         {/* 分享选择流程无论面板展开还是收起，左 rail 都由分享面板或 reopen 按钮独占，
           必须隐藏对话轮导航，避免两个绝对定位控件互相覆盖。退出分享选择后自动恢复。 */}
@@ -1787,6 +2258,9 @@ function ConversationTimelineImpl({
             // 分享选择面板展开时改为 overflow-hidden：scrollTop 与 scrollbar-gutter 都保持不变，
             // 但原生滚动条、滚轮和键盘翻页都不再能移动背景，勾选目标不会漂走。
             backgroundScrollLocked && "!overflow-y-hidden",
+            // 浮窗形态：滚动容器止于输入框上方 12px，消息底部再留 16px 空白。
+            floatingComposerDock &&
+              "mb-[calc(var(--v4-floating-composer-dock-height,0px)+12px)] pb-4",
             // Conversation turn map 覆盖 timeline 左侧 48px；表格增强滚动如果仍按
             // 普通 16px 边距借位，会有 32px 落到 turn map 下方，必须把完整占用计入左边界。
             turnNavigatorQueryRowIds.size >= 2 &&
@@ -1938,6 +2412,16 @@ function ConversationTimelineImpl({
                     />
                   </div>
                 ) : null}
+                {/*
+                 * 收起锚点留白：位于消息层末尾、sticky dock 之前。高度只由 ref 命令式写入，
+                 * 不进入 React 状态，也不参与 totalSize/scrollMargin——虚拟列表契约保持不变。
+                 */}
+                <div
+                  ref={closingSpacerRef}
+                  data-v4-timeline-closing-spacer="true"
+                  aria-hidden="true"
+                  className="pointer-events-none w-full shrink-0"
+                />
               </div>
             )}
             {bottomDock ? (
@@ -1948,11 +2432,15 @@ function ConversationTimelineImpl({
                   // sticky dock 是 z-20 的全宽透明层，过去会盖住 z-10 rail
                   // 在 composer 左侧留白内的按钮。外壳不接事件，只让实际内容列恢复命中。
                   "pointer-events-none z-20 flex w-full justify-center",
-                  responsiveCenteredEmptyLayout
-                    ? "mt-3 shrink-0"
-                    : centeredEmptyLayout
-                      ? "shrink-0"
-                      : "sticky bottom-0",
+                  // 浮窗形态：输入区脱离滚动流，absolute 的包含块是时间线根节点；
+                  // 它贴在时间线底部、不随消息滚动，也不被滚动容器裁剪。
+                  floatingComposerDock
+                    ? "absolute inset-x-0 bottom-0"
+                    : responsiveCenteredEmptyLayout
+                      ? "mt-3 shrink-0"
+                      : centeredEmptyLayout
+                        ? "shrink-0"
+                        : "sticky bottom-0",
                 )}
               >
                 <div
@@ -1962,7 +2450,8 @@ function ConversationTimelineImpl({
                     // ≥1280px 面板让位时降级为只过渡 transform，避免大范围跳变叠加位移抖动。
                     "pointer-events-auto relative z-10 w-full shrink-0 transition-[width,max-width,transform] duration-150 ease-out @min-[1280px]/conversation:transition-[transform]",
                     contentWidthClassName,
-                    !centeredEmptyLayout && "px-4 pb-4",
+                    // 浮窗形态下输入框外壳就是浮窗最外层，不留内边距。
+                    !centeredEmptyLayout && !floatingComposerDock && "px-4 pb-4",
                     !centeredEmptyLayout && summaryPanelInlineOffsetClassName,
                   )}
                 >

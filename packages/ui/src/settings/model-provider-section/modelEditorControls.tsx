@@ -132,7 +132,7 @@ export function ModelSettingsGroup({
   group,
   children,
 }: {
-  group: "basic" | "tokens" | "modalities" | "capabilities" | "reasoning";
+  group: "basic" | "tokens" | "request" | "modalities" | "capabilities" | "reasoning";
   children: ReactNode;
 }) {
   return (

@@ -27,6 +27,7 @@ export function ModelProviderSectionDetail({
   selectedNavItem,
   onSave,
   onAddPersonalModel,
+  onAddPersonalModels,
   onSavePersonalModelDraft,
   onSetPersonalModelEnabled,
   onDeletePersonalModel,
@@ -42,6 +43,13 @@ export function ModelProviderSectionDetail({
     modelId: string,
     config: ProviderSettingsFormProvider["models"][number]["personalConfig"],
     useRecommendedConfig?: boolean,
+  ) => Promise<unknown>;
+  onAddPersonalModels?: (
+    providerId: string,
+    models: readonly {
+      modelId: string;
+      config: ProviderSettingsFormProvider["models"][number]["personalConfig"];
+    }[],
   ) => Promise<unknown>;
   onSavePersonalModelDraft?: (input: SavePersonalModelDraftInput) => Promise<unknown>;
   onSetPersonalModelEnabled?: (
@@ -76,6 +84,7 @@ export function ModelProviderSectionDetail({
       provider={provider}
       onSave={onSave}
       onAddPersonalModel={onAddPersonalModel}
+      onAddPersonalModels={onAddPersonalModels}
       onSavePersonalModelDraft={onSavePersonalModelDraft}
       onSetPersonalModelEnabled={onSetPersonalModelEnabled}
       onDeletePersonalModel={onDeletePersonalModel}

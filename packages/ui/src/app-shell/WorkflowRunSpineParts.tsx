@@ -14,6 +14,7 @@ import type {
   TimelinePill,
   TimelineStation,
 } from "@/components/workflow-timeline/timeline-model.js";
+import type { TimelineHole } from "@/components/workflow-timeline/timeline-holes.js";
 import { LaneGlyph, agentColor } from "@/components/workflow-timeline/WorkflowAgentPill.js";
 import { MarchLight } from "@/components/workflow-timeline/WorkflowMarchLight.js";
 import type { SpineSection } from "@/app-shell/workflowRunSpine.js";
@@ -143,17 +144,39 @@ export function SpinePieces({ section }: { section: SpineSection }) {
  * 轨道上的灯：空心 = 未到，绿 = 已过，红带环 = 失败，琥珀带搏动 = 正在运行。运行中的灯与卡上的灯
  * 同一条命（`wf-lamp-running`）：常亮的光晕加一下心跳；`motion-reduce` 时只剩光晕。
  */
-export function SpineLamp({ status, track = 0 }: { status: StepRunStatus; track?: number }) {
+export function SpineLamp({
+  hole,
+  status,
+  track = 0,
+}: {
+  status: StepRunStatus;
+  /**
+   * 留白灯：开着 / 等着的留白是一枚 1.5px 虚线、无填充的灯，等待时警示色描边 + 3px 常亮光晕；
+   * 补全后就是普通的灯（docs/dynamic-workflow/presentation.md「Holes on the timeline」）。
+   */
+  hole?: TimelineHole;
+  track?: number;
+}) {
+  const open = hole !== undefined && hole.state !== "filled";
   return (
     <span
       aria-hidden
       className={cn(
         "wf-lamp absolute left-4 top-[13px] size-2.5 rounded-full",
-        STATUS_DOT[status],
-        status === "pending" && "bg-background",
-        status === "running" && "wf-lamp-running motion-reduce:animate-none",
+        open
+          ? cn(
+              "wf-lamp-hole border-[1.5px] border-dashed bg-background",
+              hole.state === "waiting"
+                ? "wf-lamp-hole-waiting border-warning"
+                : "border-foreground-subtlest",
+            )
+          : cn(
+              STATUS_DOT[status],
+              status === "pending" && "bg-background",
+              status === "running" && "wf-lamp-running motion-reduce:animate-none",
+            ),
       )}
-      data-lamp={status}
+      data-lamp={hole !== undefined && hole.state !== "filled" ? `hole-${hole.state}` : status}
       data-testid="workflow-run-phase-lamp"
       style={track === 0 ? undefined : { left: 16 + TRACK_GAP * track }}
     />

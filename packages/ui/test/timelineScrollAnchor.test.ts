@@ -108,6 +108,17 @@ test("virtualizer size compensation is suppressed while following or during a wi
     }),
     true,
   );
+  // 收起锚点采样器持有视口时禁止逐条补偿：它会在绘制前一次性写入最终位置。
+  assert.equal(
+    shouldAdjustVirtualizerForItemSizeChange({
+      ...base,
+      following: false,
+      suppressAdjustment: false,
+      contentWidthChanging: false,
+      closingAnchorOwned: true,
+    }),
+    false,
+  );
   assert.equal(
     shouldAdjustVirtualizerForItemSizeChange({
       ...base,

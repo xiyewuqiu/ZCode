@@ -5,6 +5,13 @@ type VisibilityDocument = Pick<
   "visibilityState" | "addEventListener" | "removeEventListener"
 >;
 
+type StoreSubscribe = (listener: () => void) => () => void;
+
+interface KeyedProjectionSource<K extends string> {
+  subscribe: StoreSubscribe;
+  subscribeKeys: (keys: Iterable<K>, listener: () => void) => () => void;
+}
+
 /**
  * 不通知 React 的两个来源：
  * - 文档隐藏（窗口最小化/切标签）；
@@ -13,8 +20,8 @@ type VisibilityDocument = Pick<
  * 两者都只抑制渲染通知：store 的归约、命令与恢复链路持续运行，重新可见/激活时
  * 一次通知最新快照。
  */
-export function subscribeToVisibleProjection(
-  store: { subscribe: (listener: () => void) => () => void },
+function subscribeToVisibleSource(
+  subscribe: StoreSubscribe,
   listener: () => void,
   documentTarget: VisibilityDocument,
   activity?: LayerActivity,
@@ -27,7 +34,7 @@ export function subscribeToVisibleProjection(
     pending = false;
     listener();
   };
-  const offStore = store.subscribe(() => {
+  const offStore = subscribe(() => {
     if (shouldDefer()) {
       pending = true;
       return;
@@ -46,4 +53,38 @@ export function subscribeToVisibleProjection(
     offActivity?.();
     documentTarget.removeEventListener("visibilitychange", handleVisibility);
   };
+}
+
+/** 整店订阅的可见性门控（兼容旧消费者）。 */
+export function subscribeToVisibleProjection(
+  store: { subscribe: StoreSubscribe },
+  listener: () => void,
+  documentTarget: VisibilityDocument,
+  activity?: LayerActivity,
+): () => void {
+  return subscribeToVisibleSource(
+    (next) => store.subscribe(next),
+    listener,
+    documentTarget,
+    activity,
+  );
+}
+
+/**
+ * 按 key 订阅的可见性门控：只有登记的 key 真正变化才会进入 pending，
+ * 隐藏/失活期间同样只保留一次补发。
+ */
+export function subscribeToVisibleProjectionKeys<K extends string>(
+  store: KeyedProjectionSource<K>,
+  keys: readonly K[],
+  listener: () => void,
+  documentTarget: VisibilityDocument,
+  activity?: LayerActivity,
+): () => void {
+  return subscribeToVisibleSource(
+    (next) => store.subscribeKeys(keys, next),
+    listener,
+    documentTarget,
+    activity,
+  );
 }

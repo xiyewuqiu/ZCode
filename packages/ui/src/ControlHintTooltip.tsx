@@ -1,8 +1,12 @@
+import { Slot } from "radix-ui";
 import {
   cloneElement,
+  createContext,
+  useContext,
   isValidElement,
   useCallback,
   type ComponentProps,
+  type ReactElement,
   type ReactNode,
   type Ref,
 } from "react";
@@ -159,4 +163,45 @@ export function ControlHintTooltip({
   // 少数组件需要支持脱离 Root 的 SSR/单测渲染；由封装按需补 Provider，
   // 避免业务层重新组合 Tooltip primitives，同时不让列表中的常规提示重复创建上下文。
   return standalone ? <TooltipProvider>{tooltip}</TooltipProvider> : tooltip;
+}
+
+const SidebarTooltipContext = createContext(false);
+
+/** 侧栏统一提示延迟：连续划过按钮也等待 300ms，避免一次性弹出多个提示。 */
+export function SidebarTooltipProvider({ children }: { children: ReactNode }) {
+  return (
+    <SidebarTooltipContext.Provider value>
+      <TooltipProvider delayDuration={300} skipDelayDuration={0} disableHoverableContent>
+        {children}
+      </TooltipProvider>
+    </SidebarTooltipContext.Provider>
+  );
+}
+
+/** 原生 title 无法配置延迟；只在侧栏范围内替换，复用组件在其它页面的行为不变。 */
+export function SidebarNativeTooltip({
+  children,
+  ...triggerProps
+}: Omit<ComponentProps<typeof Slot.Root>, "children"> & {
+  children: ReactElement<{ title?: string; disabled?: boolean; className?: string }>;
+}) {
+  const inSidebar = useContext(SidebarTooltipContext);
+  if (!inSidebar || !children.props.title)
+    return <Slot.Root {...triggerProps}>{children}</Slot.Root>;
+  const trigger = cloneElement(children, { title: undefined });
+  return (
+    <ControlHintTooltip
+      title={children.props.title}
+      triggerClassName={cn("shrink", children.props.className)}
+    >
+      {/* 菜单/树行的 asChild 会把事件和 ref 注入这个适配层，必须通过 Slot 合并回真实触发器。 */}
+      {children.props.disabled ? (
+        <span className="block min-w-0">
+          <Slot.Root {...triggerProps}>{trigger}</Slot.Root>
+        </span>
+      ) : (
+        <Slot.Root {...triggerProps}>{trigger}</Slot.Root>
+      )}
+    </ControlHintTooltip>
+  );
 }

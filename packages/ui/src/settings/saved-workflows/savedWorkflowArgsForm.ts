@@ -30,18 +30,27 @@ function formatSavedWorkflowArgValue(type: YCodeSavedWorkflowArgType, value: unk
   }
 }
 
+/**
+ * 声明 → 可编辑字段。`initialArgs` 在场时逐个字段**优先**用它的值（完成卡「再次运行」把这次
+ * run 跑过的那一份实参预填进来）：上一次跑成了什么，下一次多半还要跑什么。声明里没有的键不进
+ * 表单——表单的形状由声明决定，一份旧实参不该凭空长出字段。
+ */
 export function buildSavedWorkflowArgFields(
   declaration: YCodeSavedWorkflowArgsDeclaration | undefined,
+  initialArgs?: Record<string, unknown>,
 ): SavedWorkflowArgField[] {
   if (!declaration) return [];
-  return Object.entries(declaration).map(([name, spec]) => ({
-    name,
-    type: spec.type,
-    ...(spec.description === undefined ? {} : { description: spec.description }),
-    required: spec.required === true,
-    hasDefault: spec.default !== undefined,
-    value: formatSavedWorkflowArgValue(spec.type, spec.default),
-  }));
+  return Object.entries(declaration).map(([name, spec]) => {
+    const initial = initialArgs?.[name];
+    return {
+      name,
+      type: spec.type,
+      ...(spec.description === undefined ? {} : { description: spec.description }),
+      required: spec.required === true,
+      hasDefault: spec.default !== undefined,
+      value: formatSavedWorkflowArgValue(spec.type, initial === undefined ? spec.default : initial),
+    };
+  });
 }
 
 type SavedWorkflowArgParse =

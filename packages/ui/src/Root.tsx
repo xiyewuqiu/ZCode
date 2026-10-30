@@ -5,8 +5,8 @@ import {
   APP_RUNTIME_PREFERENCES_CHANGED_BROADCAST_CHANNEL,
   DesktopCommandIds,
   appRuntimePreferencesChangedBroadcastPayloadSchema,
-  type RemoteTarget,
 } from "@ycode/shared";
+import type { RemoteConnectionOpenPreference } from "@/app-shell/types.js";
 import { TooltipProvider } from "@/components/ui/tooltip.js";
 import { SettingsPageLoading } from "@/root/SettingsPageLoading.js";
 import { Button } from "@/components/ui/button.js";
@@ -51,6 +51,10 @@ const OnboardingDialog = lazy(() =>
 );
 import { useRemoteWorkspaceHistory } from "@/root/useRemoteWorkspaceHistory.js";
 import { useRemoteWorkspaceTabLifecycle } from "@/root/useRemoteWorkspaceTabLifecycle.js";
+import { useSourceServerUpdateNotifications } from "@/root/sourceServerUpdateNotifications.js";
+import { RemoteWorkspaceControllerProvider } from "@/remote/useRemoteWorkspaceController.js";
+import { RemoteConnectionProgressProvider } from "@/remote-connection-flow/ui/RemoteConnectionProgress.js";
+import { RemoteProjectPresentationProvider } from "@/hooks/RemoteProjectPresentationContext.js";
 import { useRootProviderStateRefresh } from "@/root/useRootProviderStateRefresh.js";
 import { useModelSelectionServiceView } from "@/hooks/useModelSelectionView.js";
 import { useRootProviderSettingsSnapshot } from "@/root/useRootProviderSettingsSnapshot.js";
@@ -81,10 +85,6 @@ import { CLOSE_ACTIVE_CONTEXT_REQUEST_EVENT } from "@/lib/closeActiveContext.js"
 import { AssistantCodeCommentFeatureProvider } from "@/AssistantCodeCommentFeatureProvider.js";
 
 const DEFAULT_LUCIDE_STROKE_WIDTH = 1.5;
-interface RemoteConnectionOpenPreference {
-  preferredKind?: RemoteTarget["kind"];
-  preferredWslDistro?: string;
-}
 
 /**
  * Root —— 应用根组件
@@ -161,6 +161,10 @@ function RootInner({
   useDynamicWorkflowAvailabilityLoader();
 
   const { intl, locale } = useYCodeIntl();
+  const handleRemoteConnectionTargetChange = useSourceServerUpdateNotifications({
+    enabled: isDesktop === true,
+    management: services.sourceServerManagementService,
+  });
   const theme = useYCodeStore((state) => state.theme);
   const { settings: appSettings, refresh: refreshAppSettings } = useSettings();
   const [providerFamilyDomainMigrationComplete, setProviderFamilyDomainMigrationComplete] =
@@ -266,6 +270,7 @@ function RootInner({
         askUserQuestionAutoResolutionEnabled:
           appSettings.askUserQuestionAutoResolutionEnabled !== false,
         modelIoFullRetentionEnabled: appSettings.modelIoFullRetentionEnabled === true,
+        toolSearchMode: appSettings.toolSearchMode ?? "off",
       })
       .catch((error) => {
         logger.warn("[settings] 初始化运行时偏好失败", error);
@@ -273,6 +278,7 @@ function RootInner({
   }, [
     appSettings?.askUserQuestionAutoResolutionEnabled,
     appSettings?.modelIoFullRetentionEnabled,
+    appSettings?.toolSearchMode,
     services.ycodeAgentService,
   ]);
 
@@ -440,7 +446,8 @@ function RootInner({
 
   const {
     remoteWorkspaceSessions,
-    reconnectingRemoteWorkspaceLogsByWorkspaceKey,
+    remoteWorkspaceRecoveryByWorkspaceKey,
+    remoteWorkspaceController,
     buildPersistedTabPatch,
     restorePersistedSession,
     handleCancelRemoteProject,
@@ -453,6 +460,7 @@ function RootInner({
     services,
     platform,
     supportsSettings,
+    isDesktop,
     allowRemoteWorkspace,
     // conversation backing workspace 只属于本地桌面主恢复链路；远程窗口和手机
     // shared-host attachment 不能因此创建独立本地 runtime 或改变 replayable 边界。
@@ -463,6 +471,11 @@ function RootInner({
     activateTabByPath,
     addTab,
     onWorkspaceActivated: handleRemoteWorkspaceActivated,
+    onOpenRemoteConnection: allowRemoteWorkspace ? handleOpenRemoteConnection : undefined,
+    manuallyOpeningWorkspaceTabId:
+      remoteConnectionDialogOpen || remoteConnectionInProgress
+        ? remoteConnectionOpenPreference?.preferredWorkspaceTabId
+        : undefined,
   });
 
   useEffect(() => {
@@ -623,6 +636,7 @@ function RootInner({
     tabs,
     activeWorkspaceTab,
     platform,
+    tabStoreApi,
     onRemoteWorkspaceTabsClosed: handleRemoteWorkspaceTabsClosed,
   });
 
@@ -719,8 +733,15 @@ function RootInner({
         onOpenChange={handleRemoteConnectionDialogOpenChange}
         onFlowActiveChange={setRemoteConnectionInProgress}
         onFlowRequestIdChange={setRemoteConnectionRequestId}
+        onFlowTargetChange={handleRemoteConnectionTargetChange}
         preferredKind={remoteConnectionOpenPreference?.preferredKind}
         preferredWslDistro={remoteConnectionOpenPreference?.preferredWslDistro}
+        preferredProfileId={remoteConnectionOpenPreference?.preferredProfileId}
+        preferredSourceServerId={remoteConnectionOpenPreference?.preferredSourceServerId}
+        preferredDirectoryPath={remoteConnectionOpenPreference?.preferredDirectoryPath}
+        preferredTarget={remoteConnectionOpenPreference?.preferredTarget}
+        completion={remoteConnectionOpenPreference?.completion}
+        initialFailure={remoteConnectionOpenPreference?.initialFailure}
         hideTriggerWhenClosed
       />
     </Suspense>
@@ -796,8 +817,16 @@ function RootInner({
   }
 
   return (
-    <RootShell>
-      {rootModelSelectionErrorNode}
+    <RemoteWorkspaceControllerProvider controller={remoteWorkspaceController}>
+      <RemoteConnectionProgressProvider>
+        <RemoteProjectPresentationProvider
+          reconnectingKeys={reconnectingRemoteWorkspaceKeys}
+          errors={remoteWorkspaceErrorByWorkspaceKey}
+          recovery={remoteWorkspaceRecoveryByWorkspaceKey}
+          onReconnect={allowRemoteWorkspace ? handleReconnectRemoteWorkspace : undefined}
+        >
+        <RootShell>
+          {rootModelSelectionErrorNode}
       {remoteConnectionDialog}
       {directoryBrowserDialog}
       <OccupationOnboarding
@@ -848,9 +877,6 @@ function RootInner({
             handleBackFromSettings={handleBackFromSettings}
             reconnectingRemoteWorkspaceKeys={reconnectingRemoteWorkspaceKeys}
             remoteWorkspaceErrorByWorkspaceKey={remoteWorkspaceErrorByWorkspaceKey}
-            reconnectingRemoteWorkspaceLogsByWorkspaceKey={
-              reconnectingRemoteWorkspaceLogsByWorkspaceKey
-            }
             remoteConnectionLogs={remoteConnectionLogs}
             allowOpenWorkspace={allowOpenWorkspace}
             isDesktop={isDesktop}
@@ -873,6 +899,9 @@ function RootInner({
           </Suspense>
         </ScopedErrorBoundary>
       </OccupationOnboarding>
-    </RootShell>
+        </RootShell>
+        </RemoteProjectPresentationProvider>
+      </RemoteConnectionProgressProvider>
+    </RemoteWorkspaceControllerProvider>
   );
 }

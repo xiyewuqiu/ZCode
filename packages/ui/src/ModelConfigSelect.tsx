@@ -11,8 +11,10 @@ import {
   type RefObject,
 } from "react";
 import { ControlHintTooltip } from "@/ControlHintTooltip.js";
+import { useYCodeIntl } from "@/i18n/IntlProvider.js";
 import { cn } from "@/components/lib/utils.js";
 import { Button } from "@/components/ui/button.js";
+import { Input } from "@/components/ui/input.js";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -225,13 +227,38 @@ export const ModelConfigSelect = memo(function ModelConfigSelectComponent({
   leadingItems,
   triggerBadge,
 }: ModelConfigSelectProps) {
+  const { intl } = useYCodeIntl();
   const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
+  const [query, setQuery] = useState("");
   const open = controlledOpen ?? uncontrolledOpen;
   const lastOpenRequestKeyRef = useRef(openRequestKey);
   const hasSelectableModel = modelGroups.length > 0;
   // 闲时任务白名单只有一层模型值；只要存在 group 就强制展示 provider 层的话，
   // 下方已有的扁平模型分支永远不可达，也无法复用 New Task 模型选择器。
   const shouldShowProviderLevel = showProviderLevel ?? shouldShowModelProviderLevel(modelGroups);
+  const totalModelCount = useMemo(
+    () => modelGroups.reduce((total, group) => total + group.items.length, 0),
+    [modelGroups],
+  );
+  const showModelSearch = totalModelCount > 4;
+  // 搜索命中后强制扁平渲染，避免用户还要逐层展开 provider 子菜单。
+  const renderedModelGroups = useMemo(() => {
+    const normalized = query.trim().toLocaleLowerCase();
+    if (!normalized) return modelGroups;
+    return modelGroups.flatMap((group) => {
+      const groupMatches = group.label.toLocaleLowerCase().includes(normalized);
+      const items = groupMatches
+        ? [...group.items]
+        : group.items.filter(
+            (item) =>
+              item.name.toLocaleLowerCase().includes(normalized) ||
+              item.value.toLocaleLowerCase().includes(normalized) ||
+              (item.badgeLabel?.toLocaleLowerCase().includes(normalized) ?? false),
+          );
+      return items.length > 0 ? [{ ...group, directItems: true as const, items }] : [];
+    });
+  }, [modelGroups, query]);
+  const searchActive = query.trim().length > 0;
   // 模型名和上游占位值可能大小写敏感，强制大写会把 `<synthetic>` 改成 `<SYNTHETIC>` 这类非原始值。
   const triggerDisplayLabel = triggerLabel;
   const renderedTriggerDisplayLabel =
@@ -251,6 +278,7 @@ export const ModelConfigSelect = memo(function ModelConfigSelectComponent({
       if (controlledOpen === undefined) {
         setUncontrolledOpen(nextOpen);
       }
+      if (!nextOpen) setQuery("");
       onOpenChange?.(nextOpen);
     },
     [controlledOpen, onOpenChange],
@@ -568,16 +596,37 @@ export const ModelConfigSelect = memo(function ModelConfigSelectComponent({
             input?.focus();
           }}
         >
-          {leadingItems !== undefined && leadingItems.length > 0 ? (
+          {showModelSearch ? (
+            <div className="sticky top-0 z-10 bg-menu p-1">
+              <Input
+                autoFocus
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                onKeyDown={(event) => {
+                  // 输入框内的方向键/字符只服务搜索；Escape 仍交给 Radix 关闭菜单。
+                  if (event.key !== "Escape") event.stopPropagation();
+                }}
+                placeholder={intl.formatMessage({ id: "chat.toolbar.model.search" })}
+                aria-label={intl.formatMessage({ id: "chat.toolbar.model.search" })}
+                className="h-8 text-ui-base"
+              />
+            </div>
+          ) : null}
+          {searchActive ? null : leadingItems !== undefined && leadingItems.length > 0 ? (
             <>
               {renderModelItems(leadingItems)}
               {hasSelectableModel ? <DropdownMenuSeparator /> : null}
             </>
           ) : null}
+          {searchActive && renderedModelGroups.length === 0 ? (
+            <DropdownMenuLabel className="px-2 py-2 text-foreground-subtle">
+              {intl.formatMessage({ id: "chat.toolbar.model.noMatch" })}
+            </DropdownMenuLabel>
+          ) : null}
           {hasSelectableModel && shouldShowProviderLevel
-            ? modelGroups.map((group, index) => {
+            ? renderedModelGroups.map((group, index) => {
                 const groupSeparator = shouldRenderModelGroupSeparator(
-                  modelGroups[index - 1],
+                  renderedModelGroups[index - 1],
                   group,
                 ) ? (
                   <DropdownMenuSeparator />
@@ -634,7 +683,7 @@ export const ModelConfigSelect = memo(function ModelConfigSelectComponent({
                 );
               })
             : hasSelectableModel
-              ? renderModelItems(modelGroups[0]?.items ?? [])
+              ? renderModelItems(renderedModelGroups[0]?.items ?? [])
               : null}
           {renderedFooterActions.length > 0 ? (
             <div className="sticky bottom-0 z-10 bg-menu after:absolute after:left-0 after:top-full after:h-1 after:w-full after:bg-menu after:content-['']">

@@ -37,6 +37,7 @@ import {
 import { collectWorkbenchLayout, dividerStyle, SPLIT_VAR_PREFIX } from "@/v4/workbenchLayout.js";
 import { WorkbenchLeafPane, type WorkbenchShellBinding } from "@/v4/WorkbenchPane.js";
 import { WorkbenchSplitDivider } from "@/v4/WorkbenchSplitDivider.js";
+import { useConversationPanePresentation } from "@/side-pane-full-view/index.js";
 import type { ConversationDropTargetController } from "@/v4/composer/conversationDropTarget.js";
 import type {
   ChatSearchResultHighlightRequest,
@@ -56,6 +57,9 @@ import {
   placeWorkbenchSessionInSplit,
   type WorkbenchSessionTarget,
 } from "@/v4/workbenchSessionPlacement.js";
+
+const SOLO_PANE_STYLE: CSSProperties = { left: 0, top: 0, width: "100%", height: "100%" };
+const HIDDEN_PANE_STYLE: CSSProperties = { display: "none" };
 
 function dragPayloadSessionTarget(payload: WorkbenchSessionDragPayload): WorkbenchSessionTarget {
   return {
@@ -245,7 +249,10 @@ export function V4WorkspaceChatArea({
   }, [layout]);
 
   const paneCount = layout.leaves.length;
-  const showFocusIndicator = paneCount > 1;
+  const { presentation } = useConversationPanePresentation();
+  // 完整视图浮窗只显示焦点 pane；其余 pane 保持挂载（草稿与滚动位置不丢），只是不可见。
+  const soloPaneId = presentation === "floating" && paneCount > 1 ? focusedPaneId : null;
+  const showFocusIndicator = paneCount > 1 && soloPaneId === null;
   const canSplit = paneCount < MAX_WORKBENCH_PANES;
 
   const shellScope = useMemo<PaneWorkspaceScope>(
@@ -555,6 +562,13 @@ export function V4WorkspaceChatArea({
           key={leaf.paneId}
           paneId={leaf.paneId}
           rect={leaf.rect}
+          styleOverride={
+            soloPaneId === null
+              ? undefined
+              : leaf.paneId === soloPaneId
+                ? SOLO_PANE_STYLE
+                : HIDDEN_PANE_STYLE
+          }
           // Settings 只把 workspace 设为 inert，Pane 之前仍保留 focused=true，
           // 会在隐藏状态提前消费 Plugin 试用的一次性预填。可见性并入 focus 后，
           // 请求只会由返回 workspace 后真正可交互的 Composer 消费。
@@ -577,18 +591,20 @@ export function V4WorkspaceChatArea({
           onDropSession={handleDropSession}
         />
       ))}
-      {layout.dividers.map((divider) => (
-        <WorkbenchSplitDivider
-          key={divider.splitId}
-          containerRef={containerRef}
-          splitId={divider.splitId}
-          direction={divider.direction}
-          ratio={divider.ratio}
-          regionFraction={divider.regionFraction}
-          style={dividerStyle(divider)}
-          onCommitRatio={handleCommitSplitRatio}
-        />
-      ))}
+      {soloPaneId === null
+        ? layout.dividers.map((divider) => (
+            <WorkbenchSplitDivider
+              key={divider.splitId}
+              containerRef={containerRef}
+              splitId={divider.splitId}
+              direction={divider.direction}
+              ratio={divider.ratio}
+              regionFraction={divider.regionFraction}
+              style={dividerStyle(divider)}
+              onCommitRatio={handleCommitSplitRatio}
+            />
+          ))
+        : null}
     </div>
   );
 }

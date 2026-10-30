@@ -54,6 +54,44 @@ const services = {
         databaseFreeBytes: 8192,
       };
     },
+    // 删除入口会同时读取共享库统计；这两个方法不参与删除断言，但必须存在。
+    getTaskDatabaseStats: async () => ({
+      databaseBytes: 8192,
+      walBytes: 0,
+      pageSize: 4096,
+      pageCount: 2,
+      freelistCount: 1,
+      freelistBytes: 4096,
+      autoVacuum: 0,
+      journalMode: "wal",
+    }),
+    optimizeTaskDatabase: async () => ({
+      status: "optimized",
+      action: "optimize-only",
+      reason: "freelist-low",
+      before: {
+        databaseBytes: 8192,
+        walBytes: 0,
+        pageSize: 4096,
+        pageCount: 2,
+        freelistCount: 1,
+        freelistBytes: 4096,
+        autoVacuum: 0,
+        journalMode: "wal",
+      },
+      after: {
+        databaseBytes: 8192,
+        walBytes: 0,
+        pageSize: 4096,
+        pageCount: 2,
+        freelistCount: 1,
+        freelistBytes: 4096,
+        autoVacuum: 0,
+        journalMode: "wal",
+      },
+      reclaimedBytes: 0,
+      durationMs: 0,
+    }),
   },
 } as unknown as IServiceAccessor;
 

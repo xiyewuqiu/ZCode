@@ -17,6 +17,7 @@ import {
 } from "./timeline-geometry.js";
 import { MarchLight } from "./WorkflowMarchLight.js";
 import { stationLampClass } from "./WorkflowTimelineLedge.js";
+import { slideClass, slideStyle, type FillSlide } from "./use-fill-growth.js";
 
 /**
  * 轨道层。
@@ -257,12 +258,15 @@ export function WorkflowTimelineLamps({
   draft,
   folded,
   layout,
+  slide,
   stations,
 }: {
   stations: readonly TimelineStation[];
   layout: TimelineLayout;
   folded: ReadonlySet<number>;
   draft: boolean;
+  /** 补全的生长（`use-fill-growth.ts`）：插入列右侧的灯随站滑开。 */
+  slide?: FillSlide;
 }) {
   return (
     <>
@@ -270,16 +274,22 @@ export function WorkflowTimelineLamps({
         <span
           aria-hidden
           className={cn(
-            stationLampClass(station.status),
+            stationLampClass(station.status, station.hole),
             "absolute",
             "wf-foldable",
             folded.has(i) && "wf-folded",
             draft && "wf-land",
+            slideClass(i, slide),
           )}
-          data-lamp={station.status ?? "pending"}
+          data-lamp={
+            station.hole !== undefined && station.hole.state !== "filled"
+              ? `hole-${station.hole.state}`
+              : (station.status ?? "pending")
+          }
           data-lamp-track={station.track}
           key={station.id}
           style={{
+            ...slideStyle(i, slide),
             left: lampX(i, layout.inset) - 5,
             top: (layout.rowY[station.track] ?? layout.rowY[0]!) - 5,
           }}

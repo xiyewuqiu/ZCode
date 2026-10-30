@@ -1566,6 +1566,61 @@ body {
     0 0 0 3px color-mix(in oklab, var(--color-warning) 20%, transparent),
     0 0 0 3px transparent;
 }
+/* 留白（docs/dynamic-workflow/presentation.md「Holes on the timeline」）：等待中的虚线灯带 3px **常亮**的
+ * 警示色光晕——不搏动，那里没有东西在跑，run 在等主代理写代码。尾巴留白的残段向右淡出：脚本的结尾
+ * 还没写下。补全行草稿线上的邻站 40% 墨：它们只是上下文。 */
+.wf-lamp-hole-waiting {
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-warning) 20%, transparent);
+}
+.wf-tail-stub {
+  -webkit-mask-image: linear-gradient(90deg, #000, transparent);
+  mask-image: linear-gradient(90deg, #000, transparent);
+}
+.wf-ghost {
+  opacity: 0.4;
+}
+/* 补全的框（docs/dynamic-workflow/presentation.md「Filled with phases」「The stroke」）：一根 1px、轨道同墨的线，
+ * 路径 pathLength = 1。静止时透明、虚线偏移 1；指针或键盘焦点落在头上（data-fill-on）时偏移 420ms 走到 0——
+ * 一笔从名字的右端画出、收在笔上；离开时整根线 160ms 淡出，淡完才把偏移、颜色与线宽拨回去（不倒着擦掉）。
+ * 新鲜的两秒是动画而不是过渡：框在那一帧刚挂载，已经是亮的，没有「之前」可过渡。 */
+.wf-fill-frame {
+  fill: none;
+  stroke: var(--color-workflow-trace);
+  stroke-width: 1;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  opacity: 0;
+  transition:
+    opacity 160ms var(--wf-ease),
+    stroke-dashoffset 0s linear 160ms,
+    stroke 0s linear 160ms,
+    stroke-width 0s linear 160ms;
+}
+.wf-fill-frame[data-fill-on="true"] {
+  opacity: 1;
+  stroke-dashoffset: 0;
+  transition:
+    stroke-dashoffset 420ms var(--wf-ease),
+    opacity 0s;
+}
+.wf-fill-frame-fresh {
+  stroke: var(--color-warning);
+  stroke-width: 1.5;
+  animation: wf-fill-stroke 420ms var(--wf-ease);
+}
+@keyframes wf-fill-stroke {
+  from {
+    stroke-dashoffset: 1;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+.wf-fill-head {
+  transition: color var(--wf-t-base) var(--wf-ease);
+}
 .wf-station-open:hover .wf-lamp[data-lamp="pending"] {
   box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-foreground) 10%, transparent);
 }
@@ -1968,6 +2023,16 @@ body {
     transform: scale(0.6);
   }
 }
+/* 补全的生长（presentation.md「Growth」）：插入列右侧的站从 −插入宽度（`--wf-slide`）滑到布局位置，
+ * 320ms；播完即是布局位置，无需再提交。 */
+.wf-slide {
+  animation: wf-slide 320ms var(--wf-ease);
+}
+@keyframes wf-slide {
+  from {
+    transform: translateX(var(--wf-slide, 0px));
+  }
+}
 @keyframes wf-beat {
   0% {
     transform: scale(1);
@@ -1996,7 +2061,9 @@ body {
   .wf-draw,
   .wf-caret,
   .wf-rail-grow,
-  .wf-land {
+  .wf-land,
+  .wf-slide,
+  .wf-fill-frame-fresh {
     animation: none;
   }
   .wf-draw {
@@ -2019,7 +2086,13 @@ body {
   .wf-foldable,
   .wf-folded,
   .wf-ledge-lamp,
+  .wf-fill-frame,
+  .wf-fill-head,
   .wf-sb {
+    transition: none;
+  }
+  /* 框的亮态选择器更具体，得单独关掉：reduced-motion 下框整根出现、整根消失，不画笔。 */
+  .wf-fill-frame[data-fill-on="true"] {
     transition: none;
   }
   .wf-preview-doc {

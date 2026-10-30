@@ -189,6 +189,10 @@ export interface WorkspaceYCodeUIState {
   optimisticTaskListByTaskId: Record<string, YCodeTaskMeta>;
   /** grouped mode 下点击 New task 后的 UI-only 草稿锚点，不进入真实 task index。 */
   groupedDraftTask: GroupedDraftTaskState | null;
+  /** 远端项目/草稿入口显式指定的项目；新建 task 时归属该 project。 */
+  draftProjectId: string | null;
+  /** grouped 草稿入口显式指定的分组；缺省按 project 默认分组解析。 */
+  draftTaskGroupId: string | null;
   /** 用户发起当前草稿的入口；预热不改变来源。 */
   draftCreateSource: SessionCreateSource;
   /** 首发创建后、grouped sqlite order 落地前，真实 task 继承草稿锚点的本地定位。 */
@@ -265,6 +269,8 @@ export interface YCodeSessionStoreState {
     provider?: YCodeProvider,
     workspaceIdentity?: string,
     options?: {
+      projectId?: string | null;
+      taskGroupId?: string | null;
       groupedDraftPlacement?: GroupedDraftTaskPlacement;
       createSource?: SessionCreateSource;
     },
@@ -534,6 +540,8 @@ export function createDefaultWorkspaceState(
     taskUnreadByTaskId: {},
     optimisticTaskListByTaskId: {},
     groupedDraftTask: null,
+    draftProjectId: null,
+    draftTaskGroupId: null,
     draftCreateSource: "session",
     promotedGroupedDraftTaskByTaskId: {},
     selectedProvider,

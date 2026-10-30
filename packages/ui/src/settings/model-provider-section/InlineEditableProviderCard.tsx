@@ -23,6 +23,7 @@ export function InlineEditableProviderCard({
   provider,
   onSave,
   onAddPersonalModel,
+  onAddPersonalModels,
   onSavePersonalModelDraft,
   onSetPersonalModelEnabled,
   onDeletePersonalModel,
@@ -39,6 +40,13 @@ export function InlineEditableProviderCard({
     modelId: string,
     config: ProviderSettingsFormModel["personalConfig"],
     useRecommendedConfig?: boolean,
+  ) => Promise<unknown>;
+  onAddPersonalModels?: (
+    providerId: string,
+    models: readonly {
+      modelId: string;
+      config: ProviderSettingsFormModel["personalConfig"];
+    }[],
   ) => Promise<unknown>;
   onSavePersonalModelDraft?: (input: SavePersonalModelDraftInput) => Promise<unknown>;
   onSetPersonalModelEnabled?: (
@@ -91,10 +99,12 @@ export function InlineEditableProviderCard({
     handleDeleteModel,
     handleModelEnabledChange,
     handleAddModel,
+    handleAddModels,
     handleReorderModelIds,
   } = useProviderModelOperations({
     provider,
     onAddPersonalModel,
+    onAddPersonalModels,
     onSavePersonalModelDraft,
     onSetPersonalModelEnabled,
     onDeletePersonalModel,
@@ -196,7 +206,9 @@ export function InlineEditableProviderCard({
           onModelEnabledChange={handleModelEnabledChange}
           onDeleteModel={handleDeleteModel}
           onAddModel={handleAddModel}
+          onAddPersonalModels={handleAddModels}
           onReorderModelIds={onReorderModelIds ? handleReorderModelIds : undefined}
+          connection={{ baseURL: baseUrlValue, apiFormat, apiKey: apiKeyValue }}
           settingsRevision={settingsRevision}
         />
       </div>

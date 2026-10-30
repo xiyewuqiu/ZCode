@@ -75,15 +75,23 @@ export function anchorActionAfterContentChange(
 /**
  * virtualizer 动态测高后的滚动补偿裁决。
  * 宽度 resize 会让多条消息在相邻帧分批测高；此时逐条补偿 scrollTop 会形成可见抖动。
+ * 收起锚点采样器持有滚动视口（已捕获基准或已写入 spacer）时同样禁止补偿：
+ * 它会在绘制前一次性写入最终 scrollTop，逐条补偿会先改一版再被覆盖，产生闪动。
  */
 export function shouldAdjustVirtualizerForItemSizeChange(input: {
   following: boolean;
   suppressAdjustment: boolean;
   contentWidthChanging: boolean;
+  closingAnchorOwned?: boolean;
   itemEnd: number;
   scrollTop: number;
 }): boolean {
-  if (input.suppressAdjustment || input.following || input.contentWidthChanging) {
+  if (
+    input.suppressAdjustment ||
+    input.following ||
+    input.contentWidthChanging ||
+    input.closingAnchorOwned === true
+  ) {
     return false;
   }
   return input.itemEnd <= input.scrollTop;

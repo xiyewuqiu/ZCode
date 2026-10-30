@@ -20,6 +20,7 @@ export type SettingsSectionId =
   | "computerUse"
   | "computerControl"
   | "automations"
+  | "devices"
   | "shortcuts";
 
 type SettingsPluginTabTarget = "plugins" | "mcps" | "skills" | "commands";
@@ -50,6 +51,10 @@ interface SettingsSectionIntentEventDetail {
   pluginOrigin?: SettingsPluginNavigationOrigin;
   pluginScopeKey?: string;
   modelProviderId?: string;
+  /** Source Server 更新通知定位到具体设备卡；仅 devices 分区消费。 */
+  sourceServerId?: string;
+  /** 打开该设备卡的详情/迁移面板。 */
+  sourceServerDetails?: boolean;
 }
 
 export interface SettingsModelProviderTarget {
@@ -76,6 +81,7 @@ function isSettingsSectionId(value: string): value is SettingsSectionId {
     value === "computerUse" ||
     value === "computerControl" ||
     value === "automations" ||
+    value === "devices" ||
     value === "shortcuts"
   );
 }
@@ -212,6 +218,8 @@ export function setPendingSettingsSectionIntent(
     pluginOrigin?: SettingsPluginNavigationOrigin;
     pluginScopeKey?: string;
     modelProviderId?: string;
+    sourceServerId?: string;
+    sourceServerDetails?: boolean;
   } = {},
 ): void {
   if (typeof window === "undefined") {

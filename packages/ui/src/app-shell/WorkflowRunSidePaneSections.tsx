@@ -15,6 +15,7 @@ import {
   SquareIcon,
 } from "lucide-react";
 import type { WorkflowRunState, WorkflowRunUsage } from "@ycode/shared/ycode-protocol-v4";
+import { RunHolesWaitingChip } from "@/components/workflow-timeline/WorkflowHoleParts.js";
 import { Button } from "@/components/ui/button.js";
 import { ControlHintTooltip } from "@/ControlHintTooltip.js";
 import { useYCodeIntl } from "@/i18n/IntlProvider.js";
@@ -202,6 +203,8 @@ export const WorkflowRunStatusHeader = memo(function WorkflowRunStatusHeader({
           data-testid="workflow-run-status-row"
         >
           {run ? <WorkflowRunStatus run={run} testId="workflow-run-status" /> : null}
+          {/* 「{n} 处留白待补全」：与卡上同一枚芯片（docs/dynamic-workflow/presentation.md「Holes on the timeline」）。 */}
+          <RunHolesWaitingChip run={run} testId="workflow-run-holes" />
           {/* 「并发数 4」：这次 run 此刻真能有几个子代理在飞——治理器把共享桶压到了天花板之下，
             或者用户给这次 run 定了更小的上限。run 慢下来的原因就在这里，一眼可见。
             跑在天花板上时整块缺席（没有可说的）。

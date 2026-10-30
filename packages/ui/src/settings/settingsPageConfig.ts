@@ -2,6 +2,7 @@ import {
   Monitor,
   MonitorCog,
   Moon,
+  Server,
   Settings,
   Settings2,
   Package,
@@ -127,6 +128,13 @@ const BASE_SETTINGS_SECTIONS: SettingsSectionDefinition[] = [
     id: "browser",
     icon: Globe2,
     titleId: "settings.browser.title",
+    groupId: "basics",
+  },
+  // 「来源与设备」展示 Source Server 连接与迁移报告，属于本机基础连接配置。
+  {
+    id: "devices",
+    icon: Server,
+    titleId: "settings.devices.title",
     groupId: "basics",
   },
   // 「电脑控制」（cua-driver）紧邻「浏览器控制」：同为本机操控入口，
