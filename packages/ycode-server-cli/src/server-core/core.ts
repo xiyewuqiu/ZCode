@@ -6,7 +6,11 @@ import {
   YCODE_BUILTIN_PROVIDER_CONFIG_FILE_ENV,
 } from "@ycode/services/node";
 import { IYCodeAgentService } from "@ycode/services";
-import { YCODE_VERSION } from "@ycode/shared";
+import {
+  YCODE_VERSION,
+  buildServerRemoteWorkspaceIdentity,
+  remoteHostIdFromWorkspaceIdentity,
+} from "@ycode/shared";
 import { createCoreHttpServer } from "./http.js";
 import { installParentDisconnectHandler } from "./parentDisconnect.js";
 import { resolveCoreServerId } from "./serverIdentity.js";
@@ -37,12 +41,20 @@ export async function runServerCore(generation: number): Promise<void> {
       `当前构建未嵌入 YCode Built-in Provider Config，且未设置 ${YCODE_BUILTIN_PROVIDER_CONFIG_FILE_ENV}`,
     );
   }
+  const serverId = await resolveCoreServerId();
+  // 独立 Server 的项目组织态归属远端 Source 身份；不能以 local owner 导入控制端设置或开放本机入口。
+  const projectStorageHostId = serverId
+    ? (remoteHostIdFromWorkspaceIdentity(
+        buildServerRemoteWorkspaceIdentity({ serverId, workspacePath: "/" }),
+      ) ?? undefined)
+    : undefined;
   const services = createLocalServices({
     ycodeBuiltinProviderConfigFilePath,
     serviceAuthorityMode: "standalone-server",
+    ...(projectStorageHostId ? { projectStorageHostId } : {}),
   });
   const taskActivityTracker = createTaskActivityTracker(services.getOptional(IYCodeAgentService));
-  const http = await createCoreHttpServer(services, { serverId: await resolveCoreServerId() });
+  const http = await createCoreHttpServer(services, { serverId });
   const send = (message: unknown): Promise<void> => {
     if (typeof process.send !== "function" || process.connected === false) return Promise.resolve();
     return new Promise((resolve) => {

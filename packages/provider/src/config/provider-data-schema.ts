@@ -1,11 +1,8 @@
 import { z } from "zod";
 import { sparseShape } from "@ycode/shared/config-schema";
+import { modelApiFormatDataSchema } from "@ycode/shared/model-config";
 
-export const providerApiTypeDataSchema = z.enum([
-  "anthropic-messages",
-  "openai-chat-completions",
-  "openai-responses",
-]);
+export const providerApiTypeDataSchema = modelApiFormatDataSchema;
 export const providerGroupDataSchema = z.enum([
   "standard-personal",
   "zai-family",

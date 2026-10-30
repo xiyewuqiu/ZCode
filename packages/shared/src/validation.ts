@@ -16,6 +16,7 @@ import {
   ycodeProcessResourceSampleSchema,
 } from "./ycode-protocol/index.js";
 import { ycodeTaskModeSchema } from "./ycode-task-mode-schema.js";
+import { sourceServerArtifactPolicySchema } from "./source-server/release.js";
 import { errorAttributionSchema } from "./ycode-protocol-v4/snapshot.js";
 import {
   taskOwnerCommandDeliverySchema,
@@ -85,10 +86,20 @@ export const dockerConnectOptionsSchema = z.object({
   container: nonEmptyStringSchema,
 });
 
+export const serverConnectOptionsSchema = z.object({
+  kind: z.literal("server"),
+  url: z.string().url(),
+  name: nonEmptyStringSchema.optional(),
+  token: z.string().optional(),
+  workspacePath: z.string().optional(),
+  serverId: nonEmptyStringSchema.optional(),
+});
+
 export const remoteTargetSchema = z.discriminatedUnion("kind", [
   sshConnectOptionsSchema,
   wslConnectOptionsSchema,
   dockerConnectOptionsSchema,
+  serverConnectOptionsSchema,
 ]);
 
 export const helloMessageSchema = z.object({
@@ -162,6 +173,8 @@ export const remoteAssetDirsSchema = z.object({
   remoteCdnBaseUrl: z.string().optional(),
   remoteCdnBaseUrls: z.array(z.string()).optional(),
   remoteCacheDir: z.string().optional(),
+  /** Source Server 安装包策略；缺省按 release-versioned。 */
+  sourceServerArtifactPolicy: sourceServerArtifactPolicySchema.optional(),
 });
 
 const hostAgentWarmupTargetSchema = z.object({
@@ -180,6 +193,8 @@ export const hostInitLocalMessageSchema = z.object({
   workspaceIdentity: nonEmptyStringSchema.optional(),
   agentWarmupTargets: z.array(hostAgentWarmupTargetSchema).max(3).optional(),
   agentSpawnFallbackCwd: nonEmptyStringSchema.optional(),
+  /** Main 解析后的 remote assets 目录；Source Server release 缓存/开发 mock-cdn 使用。 */
+  remoteAssets: remoteAssetDirsSchema.optional(),
   ycodeBuiltinProviderConfigFilePath: nonEmptyStringSchema,
   runtimeProcessEnvPatch: z
     .record(z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/), z.string())
@@ -188,10 +203,14 @@ export const hostInitLocalMessageSchema = z.object({
 
 export const windowHostRemoteWorkspaceDescriptorSchema = z
   .object({
+    /** 本次请求直接复用的在线连接；只包含脱敏目标，不是 session 持久状态。 */
+    reusedConnectionTarget: remoteTargetSchema.optional(),
+    sourceServerId: nonEmptyStringSchema.optional(),
     remoteSessionId: nonEmptyStringSchema,
     target: remoteTargetSchema,
     workspacePath: nonEmptyStringSchema.optional(),
     workspaceIdentity: nonEmptyStringSchema.optional(),
+    workspacePurpose: z.enum(["project", "conversation"]).optional(),
     generation: z.number().int().positive(),
   })
   .strict();
@@ -220,6 +239,9 @@ export const hostConnectRemoteWorkspaceMessageSchema = z
     remoteAssets: remoteAssetDirsSchema,
     workspacePath: nonEmptyStringSchema.optional(),
     workspaceIdentity: nonEmptyStringSchema.optional(),
+    workspacePurpose: z.enum(["project", "conversation"]).optional(),
+    /** 用户已确认安装 Source Server；缺省沿用窗口连接自动安装语义。 */
+    confirmSourceServerInstall: z.boolean().optional(),
   })
   .strict();
 
@@ -448,6 +470,14 @@ export const hostRemoteWorkspaceConnectedResponseSchema = z
   })
   .strict();
 
+export const hostRemoteWorkspaceReconnectedResponseSchema = z
+  .object({
+    type: z.literal("remote-workspace-reconnected"),
+    previousRemoteSessionId: nonEmptyStringSchema,
+    descriptor: windowHostRemoteWorkspaceDescriptorSchema,
+  })
+  .strict();
+
 export const hostRemoteWorkspaceConnectionLogResponseSchema = z
   .object({
     type: z.literal("remote-workspace-connection-log"),
@@ -462,6 +492,17 @@ export const hostRemoteWorkspaceConnectFailedResponseSchema = z
     type: z.literal("remote-workspace-connect-failed"),
     requestId: nonEmptyStringSchema,
     error: nonEmptyStringSchema,
+    reasonCode: nonEmptyStringSchema.optional(),
+    retryable: z.boolean().optional(),
+    profileId: z.string().uuid().optional(),
+    resolvedWslTarget: z
+      .object({
+        kind: z.literal("wsl"),
+        distro: nonEmptyStringSchema,
+        user: wslUserSchema.refine((value) => value.length > 0),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 
@@ -473,6 +514,12 @@ export const hostRemoteWorkspaceClosedResponseSchema = z
     exitCode: z.number().int().nullable().optional(),
     signal: z.string().nullable().optional(),
     error: z.string().optional(),
+    recoverable: z.boolean().optional(),
+    recoveryAttempt: z.number().int().positive().optional(),
+    recoveryLimit: z.number().int().positive().optional(),
+    recoveryBudgetExhausted: z.boolean().optional(),
+    reasonCode: nonEmptyStringSchema.optional(),
+    retryable: z.boolean().optional(),
   })
   .strict();
 
@@ -854,6 +901,7 @@ export const hostResponseMessageSchema = z.discriminatedUnion("type", [
   hostResourceUsageSnapshotResultResponseSchema,
   hostRemoteWorkspaceConnectionLogResponseSchema,
   hostRemoteWorkspaceConnectedResponseSchema,
+  hostRemoteWorkspaceReconnectedResponseSchema,
   hostRemoteWorkspaceConnectFailedResponseSchema,
   hostRemoteWorkspaceClosedResponseSchema,
   hostLogResponseSchema,

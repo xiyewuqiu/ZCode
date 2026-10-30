@@ -101,6 +101,7 @@ export function buildRemoteArtifactDownloadCommand(params: {
   totalBytes?: number | null;
   expectedSha256?: string;
   sha256Tool?: RemoteSha256Tool;
+  supportsProgress?: boolean;
 }): string {
   const shouldVerifyChecksum =
     typeof params.expectedSha256 === "string" &&
@@ -130,6 +131,7 @@ export function buildRemoteArtifactDownloadCommand(params: {
     outputPath: params.outputPath,
     progressLabel: params.progressLabel,
     totalBytes: params.totalBytes,
+    supportsProgress: params.supportsProgress !== false,
   });
 }
 
@@ -169,7 +171,9 @@ function buildRemoteDownloadWithProgressCommand(params: {
   outputPath: string;
   progressLabel: string;
   totalBytes?: number | null;
+  supportsProgress: boolean;
 }): string {
+  if (!params.supportsProgress) return params.attemptCommand;
   const quotedOutputPath = quotePosixPathArg(params.outputPath);
   const quotedProgressLabel = quotePosixShellArg(params.progressLabel);
   const totalBytes = normalizeTotalBytes(params.totalBytes);
@@ -859,6 +863,7 @@ export class RemoteDownloadAssetInstaller implements RemoteAssetInstaller {
       totalBytes,
       expectedSha256: component.sha256,
       sha256Tool: this.tools.sha256,
+      supportsProgress: this.tools.supportsProgress,
     });
     const checksumCommand = buildRemoteChecksumCommand({
       tool: this.tools.sha256,

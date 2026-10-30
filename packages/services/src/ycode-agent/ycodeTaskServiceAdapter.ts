@@ -2822,6 +2822,23 @@ export function createYCodeTaskServiceAdapter(
       return result;
     },
 
+    async getTaskDatabaseStats(params) {
+      // taskId 只用于 Controller 解析 source；数据库属于 workspace 的 Agent，
+      // 不能在 Host 侧按单个任务另建统计口径。
+      return options.ycodeAgentService.getSessionDatabaseStats({
+        workspacePath: params.workspacePath,
+        workspaceIdentity: params.workspaceIdentity,
+      });
+    },
+
+    async optimizeTaskDatabase(params) {
+      return options.ycodeAgentService.optimizeSessionDatabase({
+        workspacePath: params.workspacePath,
+        workspaceIdentity: params.workspaceIdentity,
+        confirm: params.confirm,
+      });
+    },
+
     async deleteTask(params): Promise<void> {
       setOverlay(params, { deleted: true });
       const meta = await updateIndexedTaskState(params, { deleted: true });

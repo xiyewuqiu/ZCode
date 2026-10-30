@@ -35,6 +35,7 @@ import {
 } from "../browser-use/backend.js";
 import { browserCommandResultSchema } from "../browser-use/result.js";
 import { integratedTerminalShellSelectionSchema } from "../validationAppSettings.js";
+import { appToolSearchModeSchema } from "../app-runtime-preferences.js";
 import { ycodeTaskModeSchema } from "../ycode-task-mode-schema.js";
 import {
   ycodeDeliveryKindSchema,
@@ -337,6 +338,8 @@ export const ycodeProtocolNotifications = {
   toolExecResource: "process/toolExecResource",
   pluginOperationProgress: "plugins/operationProgress",
   processResourceSample: "process/resourceSample",
+  // MCP Apps：模型侧 app-tool 调用投递给唯一页面实例（CLI → host → renderer）。
+  mcpUiAppToolCall: "mcp/ui/appToolCall",
 } as const;
 
 /** 启动控制面独立于 task stream；数据库身份不可携带路径/凭据。 */
@@ -1694,6 +1697,8 @@ export type YCodeModelContextBudgetStrategy = z.infer<typeof ycodeModelContextBu
 export const ycodeSessionRuntimePreferencesResultSchema = z
   .object({
     nativeSearchEnhancementsEnabled: z.boolean(),
+    // 兼容旧 Host：缺少字段时按产品默认关闭。
+    toolSearchMode: appToolSearchModeSchema.default("off"),
     memoryEnabled: z.boolean().default(false),
     askUserQuestionAutoResolutionEnabled: z.boolean().default(true),
     integratedTerminalShell: integratedTerminalShellSelectionSchema.optional(),
@@ -3421,6 +3426,9 @@ export const ycodeProtocolMethods = {
   workspaceCancelGenerateText: "workspace/cancelGenerateText",
   providerTestModelConnectivity: "provider/testModelConnectivity",
   mcpList: "mcp/list",
+  // MCP Apps 宿主 RPC（prepare / 工具 / 资源 / 实例信箱）。归属 = workspace + sessionId；
+  // renderer 不接触 HTML 与 MCP client，只拿登记载荷与实例凭证。
+  mcpUi: "mcp/ui",
   pluginsList: "plugins/list",
   pluginsReferenceCatalog: "plugins/referenceCatalog",
   pluginsReferenceCatalogWithCategory: "plugins/referenceCatalogWithCategory",

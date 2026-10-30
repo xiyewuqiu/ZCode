@@ -365,6 +365,66 @@ export class ProviderConfigService implements ProviderSource<ProviderConfigSnaps
     });
   }
 
+  /**
+   * 一次事务加入多个已发现的模型。
+   *
+   * 逐个调用 addPersonalModel 会产生 N 次 revision，并让中途失败留下半套模型；
+   * 这里在同一个个人配置快照内去重、追加成员并写精确规则。
+   */
+  async addPersonalModels(
+    providerId: ProviderId,
+    models: readonly { readonly modelId: ModelId; readonly config: ModelConfig }[],
+    membership?: ProviderModelMembership,
+    useRecommendedConfig?: boolean,
+  ): Promise<ProviderConfigLayerSnapshot> {
+    const normalizedProviderId = normalizeId("providerId", providerId);
+    // 重复 id 只保留第一次出现，保持发现结果的端点顺序。
+    const additions = new Map<ModelId, ModelConfig>();
+    for (const entry of models) {
+      const modelId = normalizeId("modelId", entry.modelId);
+      if (!additions.has(modelId)) additions.set(modelId, entry.config);
+    }
+    const ycodeBuiltin = await this.#ycodeBuiltinSource.read();
+    return this.#updatePersonal((current) => {
+      assertMembershipCurrent(membership, normalizedProviderId, current);
+      const provider = writableProviderOverlay(ycodeBuiltin, current, normalizedProviderId);
+      const builtinModelIds =
+        membership?.inheritedModelIds ??
+        resolveProviderBuiltinModelIds(ycodeBuiltin, current.providers, normalizedProviderId);
+      const currentModelIds = [...(provider.personalModelIds ?? [])];
+      const addedModelIds: ModelId[] = [];
+      let nextModels = current.models;
+      for (const [modelId, config] of additions) {
+        if (builtinModelIds.includes(modelId) || currentModelIds.includes(modelId)) continue;
+        currentModelIds.push(modelId);
+        addedModelIds.push(modelId);
+        nextModels = nextModels.setExact(
+          normalizedProviderId,
+          modelId,
+          config.overlay(new ModelConfig({ enabled: true })),
+          useRecommendedConfig,
+        );
+      }
+      if (addedModelIds.length === 0) {
+        return {
+          providers: current.providers,
+          models: current.models,
+          providerOrder: current.providerOrder,
+        };
+      }
+      return {
+        providers: current.providers.set(
+          normalizedProviderId,
+          provider.withPersonalModelIds(currentModelIds).withModelOrder(
+            normalizeModelOrder(builtinModelIds, currentModelIds, provider.modelOrder ?? []),
+          ),
+        ),
+        models: nextModels,
+        providerOrder: current.providerOrder,
+      };
+    });
+  }
+
   async renamePersonalModel(
     providerId: ProviderId,
     currentModelId: ModelId,

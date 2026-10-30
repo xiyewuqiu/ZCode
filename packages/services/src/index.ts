@@ -140,6 +140,7 @@ export type {
   YCodeAgentServiceEvent,
   YCodeAgentSessionSubscribeParams,
   YCodeAgentSessionTarget,
+  YCodeAgentMcpUiParams,
   YCodeAgentSetModeParams,
   YCodeAgentSetModelParams,
   YCodeAgentSetThoughtLevelParams,
@@ -265,3 +266,40 @@ export type {
   FeedbackTicketType,
 } from "@ycode/shared";
 export { IClientConfigService } from "./client-config/clientConfig.js";
+
+export { IProjectService, LEGACY_SINGLE_ROOT_PROJECT_PREFIX } from "#src/project/contract.js";
+export type {
+  ProjectDirectories,
+  ProjectRoot,
+  ProjectTask,
+  ProjectTaskRef,
+  ProjectTree,
+  SaveProjectInput,
+  VirtualProject,
+} from "#src/project/contract.js";
+export { IRemoteProjectService } from "#src/remote-projects/contract.js";
+export {
+  IWindowProjectService,
+  IWindowRemoteProjectService,
+  IWindowProjectChangesService,
+  type WindowProjectDirectoryServices,
+} from "#src/window-project-directory/contract.js";
+export { createWindowProjectChangesService } from "#src/window-project-directory/index.js";
+export type {
+  RemoteProjectCache,
+  RemoteProjectDirectory,
+  RemoteProjectEntry,
+  RemoteProjectHost,
+} from "#src/remote-projects/contract.js";
+export { readProjectCatalog, projectSelectionId } from "#src/project-catalog/index.js";
+export type { ProjectCatalogPort, ProjectCatalogSnapshot } from "#src/project-catalog/contract.js";
+export type {
+  ProjectMigrationContext,
+  ProjectStorageContract,
+} from "#src/project-storage/contract.js";
+export {
+  ISourceServerManagementService,
+  type AddSourceServerProfileInput,
+  type UpdateConnectionProfileInput,
+} from "#src/source-server-management/sourceServerManagement.js";
+export { ISourceServerWorkspaceService } from "#src/source-server-workspace/sourceServerWorkspace.js";

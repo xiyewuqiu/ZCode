@@ -17,7 +17,11 @@ import {
   type SavePersonalModelDraftInput,
 } from "@ycode/provider";
 import { createServiceDescriptor } from "../descriptors.js";
-import type { ModelConnectivityResult } from "@ycode/shared";
+import type {
+  ModelConnectivityResult,
+  ProviderModelDiscoveryInput,
+  ProviderModelDiscoveryResult,
+} from "@ycode/shared";
 import { createServiceLogger } from "../logger/serviceLogger.js";
 
 export type {
@@ -52,6 +56,11 @@ export interface IProviderSettingsService {
     config: ModelConfigObject,
     useRecommendedConfig?: boolean,
   ): Promise<ProviderSettingsView>;
+  addPersonalModels(
+    providerId: ProviderId,
+    models: readonly { readonly modelId: ModelId; readonly config: ModelConfigObject }[],
+    useRecommendedConfig?: boolean,
+  ): Promise<ProviderSettingsView>;
   renamePersonalModel(
     providerId: ProviderId,
     currentModelId: ModelId,
@@ -68,6 +77,8 @@ export interface IProviderSettingsService {
   testModelConnectivity(
     input: ProviderSettingsConnectivityRequest,
   ): Promise<ModelConnectivityResult>;
+  /** 从 Provider 的只读目录拉取候选模型；结果不写配置。 */
+  discoverModels(input: ProviderModelDiscoveryInput): Promise<ProviderModelDiscoveryResult>;
 }
 
 export const IProviderSettingsService = createServiceDescriptor<IProviderSettingsService>(
@@ -92,6 +103,10 @@ export type ProviderSettingsConnectivityTester = (
   input: ProviderSettingsConnectivityTestInput,
 ) => Promise<ModelConnectivityResult>;
 
+export type ProviderModelDiscoverer = (
+  input: ProviderModelDiscoveryInput,
+) => Promise<ProviderModelDiscoveryResult>;
+
 export interface IModelSelectionService {
   readonly onDidChange: Event<ModelSelectionView>;
   getView(input?: ModelSelectionViewInput): Promise<ModelSelectionView>;
@@ -110,6 +125,7 @@ export function createProviderSettingsService(
   facade: ProviderSettingsFacade,
   ensureReady: () => Promise<void> = async () => {},
   testConnectivity?: ProviderSettingsConnectivityTester,
+  discoverModels?: ProviderModelDiscoverer,
 ): IProviderSettingsService {
   return {
     onDidChange: toEvent((listener) => facade.onDidChange(listener)),
@@ -148,6 +164,10 @@ export function createProviderSettingsService(
     addPersonalModel: async (providerId, modelId, config, useRecommendedConfig) => {
       await ensureReady();
       return facade.addPersonalModel(providerId, modelId, config, useRecommendedConfig);
+    },
+    addPersonalModels: async (providerId, models, useRecommendedConfig) => {
+      await ensureReady();
+      return facade.addPersonalModels(providerId, models, useRecommendedConfig);
     },
     renamePersonalModel: async (providerId, currentModelId, nextModelId) => {
       await ensureReady();
@@ -204,6 +224,41 @@ export function createProviderSettingsService(
         ...(input.workspaceIdentity ? { workspaceIdentity: input.workspaceIdentity } : {}),
         providerId: input.providerId,
         modelId: input.modelId,
+      });
+    },
+    discoverModels: async (input) => {
+      await ensureReady();
+      if (!discoverModels) {
+        throw new Error("当前 Environment 未装配模型列表拉取能力");
+      }
+      await facade.waitForProviderOperations(input.providerId);
+      const provider = facade
+        .getView()
+        .providers.find((item) => item.providerId === input.providerId);
+      const config = provider?.effectiveConfig;
+      const access = config?.access;
+      const savedApiKey =
+        access?.type === "api-key" || access?.type === "zhipu-coding-plan-api-key"
+          ? (access.apiKey ?? undefined)
+          : undefined;
+      return discoverModels({
+        providerId: input.providerId,
+        ...(input.baseURL?.trim()
+          ? { baseURL: input.baseURL.trim() }
+          : config?.api?.baseUrl
+            ? { baseURL: config.api.baseUrl }
+            : {}),
+        ...(input.apiFormat
+          ? { apiFormat: input.apiFormat }
+          : config?.api?.type
+            ? { apiFormat: config.api.type }
+            : {}),
+        ...(input.apiKey ? { apiKey: input.apiKey } : savedApiKey ? { apiKey: savedApiKey } : {}),
+        ...(input.headers
+          ? { headers: input.headers }
+          : config?.api?.headers
+            ? { headers: config.api.headers }
+            : {}),
       });
     },
   };

@@ -63,6 +63,7 @@ export function serializeRegistryModelConfig(
 ): RegistryModelConfigObject {
   return {
     enabled: config.enabled,
+    ...(config.apiFormat == null ? {} : { apiFormat: config.apiFormat }),
     properties: {
       requiresMfjsToolSchema: config.properties.requiresMfjsToolSchema,
       contextWindow: config.properties.contextWindow,
@@ -231,6 +232,12 @@ export class ProviderConfigResolver {
           apiType: config.api?.type,
           baseUrl: config.api?.baseUrl,
         });
+        // Provider API 格式是模型未显式声明时的默认值。只在有效视图物化，
+        // 个人稀疏规则保持原样，避免把默认值写回用户配置。
+        const effectiveModelConfig =
+          modelConfig.apiFormat == null && config.api?.type != null
+            ? modelConfig.overlay(new ModelConfig({ apiFormat: config.api.type }))
+            : modelConfig;
         const effectiveBuiltinConfig = input.ycodeBuiltinModelRules.resolve({
           providerId,
           templateId,
@@ -238,22 +245,26 @@ export class ProviderConfigResolver {
           apiType: config.api?.type,
           baseUrl: config.api?.baseUrl,
         });
-        const registryModelResult = createRegistryModelConfig(modelConfig, [
+        const effectiveBuiltinModelConfig =
+          effectiveBuiltinConfig.apiFormat == null && config.api?.type != null
+            ? effectiveBuiltinConfig.overlay(new ModelConfig({ apiFormat: config.api.type }))
+            : effectiveBuiltinConfig;
+        const registryModelResult = createRegistryModelConfig(effectiveModelConfig, [
           ...providerPath,
           "models",
           modelId,
         ]);
         const modelIssues = registryModelResult.ok ? [] : registryModelResult.issues;
         issues.push(...modelIssues);
-        const modelEnabled = modelConfig.enabled === true;
+        const modelEnabled = effectiveModelConfig.enabled === true;
         const executable = providerExecutable && modelEnabled && modelIssues.length === 0;
         const selectable = executable && config.visibility !== "hidden";
         return Object.freeze({
           kind: "candidate",
           modelId,
           source: builtinIds.has(modelId) ? "builtin" : "personal",
-          config: modelConfig,
-          effectiveBuiltinConfig,
+          config: effectiveModelConfig,
+          effectiveBuiltinConfig: effectiveBuiltinModelConfig,
           issues: Object.freeze(modelIssues),
           enabled: modelEnabled,
           executable,

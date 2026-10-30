@@ -1,7 +1,12 @@
 import type { Event } from "@ycode/rpc";
 import { ServiceChannels } from "@ycode/shared";
 import type { YCodeTaskMeta } from "@ycode/shared";
-import type { SessionStoragePreview, SessionPurgeResult } from "@ycode/shared";
+import type {
+  SessionDatabaseOptimizeResult,
+  SessionDatabaseStats,
+  SessionStoragePreview,
+  SessionPurgeResult,
+} from "@ycode/shared";
 import type {
   ControllerResyncParams,
   ControllerResyncResult,
@@ -57,6 +62,13 @@ export interface IWindowControllerService {
     expectedRevision: string;
     confirmPermanent: true;
   }): Promise<SessionPurgeResult>;
+  /** 按 task 地址解析 source 后读取该 Agent 的共享会话库统计。 */
+  getTaskDatabaseStats(params: { address: WindowHostTaskAddress }): Promise<SessionDatabaseStats>;
+  /** 显式整理共享会话库；refused 结果不刷新任务列表。 */
+  optimizeTaskDatabase(params: {
+    address: WindowHostTaskAddress;
+    confirm: true;
+  }): Promise<SessionDatabaseOptimizeResult>;
   deleteArchivedTask(params: { address: WindowHostTaskAddress }): Promise<boolean>;
   deleteArchivedTasks(params: {
     address: WindowHostTaskAddress;

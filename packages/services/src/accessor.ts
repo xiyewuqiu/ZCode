@@ -35,6 +35,11 @@ import type { IFeedbackService } from "./feedback/feedback.js";
 import type { IPromptAttachmentTransferService } from "./prompt-attachment-transfer/promptAttachmentTransfer.js";
 import type { IWindowControllerService } from "./window-controller/windowController.js";
 import type { IOnboardingRecordService } from "./onboarding/onboardingRecord.js";
+import type { IProjectService } from "./project/contract.js";
+import type { IRemoteProjectService } from "./remote-projects/contract.js";
+import type { WindowProjectDirectoryServices } from "./window-project-directory/contract.js";
+import type { ISourceServerWorkspaceService } from "./source-server-workspace/sourceServerWorkspace.js";
+import type { ISourceServerManagementService } from "./source-server-management/sourceServerManagement.js";
 
 /** UI 层消费的统一服务接口 */
 export interface IServiceAccessor {
@@ -83,4 +88,14 @@ export interface IServiceAccessor {
   readonly settingsSyncService: ISettingsSyncService;
   readonly feedbackService: IFeedbackService;
   readonly promptAttachmentTransferService: IPromptAttachmentTransferService;
+  /** 当前 Host 的项目目录服务；旧 host / 未接线的测试 double 可不提供。 */
+  readonly projectService?: IProjectService;
+  /** 本机持有的远端项目入口；仅 Controller Host 提供写入能力。 */
+  readonly remoteProjectService?: IRemoteProjectService;
+  /** 手机 replayable 的整组窗口目录能力；旧 host 不提供。 */
+  readonly windowProjectDirectory?: WindowProjectDirectoryServices;
+  /** Source Server workspace identity 与迁移查询；仅 Source 连接的 host 提供。 */
+  readonly sourceServerWorkspaceService?: ISourceServerWorkspaceService;
+  /** Desktop Host 的 Source Server 连接/更新管理面；远端 Source Host 不提供。 */
+  readonly sourceServerManagementService?: ISourceServerManagementService;
 }

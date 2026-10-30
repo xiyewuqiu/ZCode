@@ -22,7 +22,13 @@ import {
   subagentProjectionStateSchema,
   workspaceHookAdmissionStateSchema,
 } from "./snapshot.js";
-import { workflowRunsStateSchema } from "./workflow-runs.js";
+import {
+  WORKFLOW_RUNS_LIMITS,
+  workflowRunActorSchema,
+  workflowRunNodeSchema,
+  workflowRunSchema,
+  workflowRunsStateSchema,
+} from "./workflow-runs.js";
 
 // StatePatch：键级整体替换（Object.assign），键集合封闭。键内绝不深合并。
 export const statePatchSchema = z.object({
@@ -50,6 +56,28 @@ export const statePatchSchema = z.object({
 });
 export type StatePatch = z.infer<typeof statePatchSchema>;
 
+/**
+ * run 的 **header** = `workflowRunSchema` 减去 actors / nodes 两张按实例增量同步的表。
+ * `.omit` 派生而不是手抄一份字段表：两处各写一份 run 词汇表早晚会分叉。
+ */
+export const workflowRunHeaderSchema = workflowRunSchema.omit({ actors: true, nodes: true });
+export type WorkflowRunHeader = z.infer<typeof workflowRunHeaderSchema>;
+
+/** header 的部分更新：在场的键整键替换，缺席的键保持不动。 */
+export const workflowRunHeaderPatchSchema = workflowRunHeaderSchema.partial();
+export type WorkflowRunHeaderPatch = z.infer<typeof workflowRunHeaderPatchSchema>;
+
+/** 变成**缺席**的 header 键（「零条 ⇒ 键缺席」的协议约定）。 */
+export const workflowRunHeaderKeySchema = workflowRunHeaderSchema.keyof();
+export type WorkflowRunHeaderKey = z.infer<typeof workflowRunHeaderKeySchema>;
+
+/** 一条被淘汰条目的身份（两张表共用的去重键），只有身份、不带条目本身。 */
+export const workflowRunEntryRefSchema = workflowRunActorSchema.pick({
+  siteId: true,
+  ordinal: true,
+});
+export type WorkflowRunEntryRef = z.infer<typeof workflowRunEntryRefSchema>;
+
 export const conversationDeltaSchema = z.discriminatedUnion("op", [
   // 追加到尾部（99%）。
   z.object({ op: z.literal("row.appended"), row: conversationRowSchema }),
@@ -65,5 +93,35 @@ export const conversationDeltaSchema = z.discriminatedUnion("op", [
     append: z.string(),
   }),
   z.object({ op: z.literal("state.updated"), patch: statePatchSchema }),
+  /**
+   * 一条 dwf run 的键级增量。`revision` 是**这次变化之后**的 `workflowRuns.revision`（绝对值）；
+   * 一条引擎事件最多产生一条本 op。施加序是 header → 删除 → upsert。
+   */
+  z.object({
+    op: z.literal("workflowRun.updated"),
+    runId: workflowRunSchema.shape.runId,
+    revision: workflowRunsStateSchema.shape.revision,
+    run: workflowRunHeaderPatchSchema.optional(),
+    cleared: z
+      .array(workflowRunHeaderKeySchema)
+      .max(workflowRunHeaderKeySchema.options.length)
+      .optional(),
+    removedActors: z
+      .array(workflowRunEntryRefSchema)
+      .max(WORKFLOW_RUNS_LIMITS.maxActors)
+      .optional(),
+    removedNodes: z.array(workflowRunEntryRefSchema).max(WORKFLOW_RUNS_LIMITS.maxNodes).optional(),
+    actors: z.array(workflowRunActorSchema).max(WORKFLOW_RUNS_LIMITS.maxActors).optional(),
+    nodes: z.array(workflowRunNodeSchema).max(WORKFLOW_RUNS_LIMITS.maxNodes).optional(),
+  }),
+  /** 这条 run 被生产者淘汰了（只有生产者淘汰，而且必须说出来）。 */
+  z.object({
+    op: z.literal("workflowRun.removed"),
+    runId: workflowRunSchema.shape.runId,
+    revision: workflowRunsStateSchema.shape.revision,
+  }),
 ]);
 export type ConversationDelta = z.infer<typeof conversationDeltaSchema>;
+
+export type WorkflowRunUpdatedDelta = Extract<ConversationDelta, { op: "workflowRun.updated" }>;
+export type WorkflowRunRemovedDelta = Extract<ConversationDelta, { op: "workflowRun.removed" }>;

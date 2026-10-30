@@ -14,6 +14,7 @@ const timestampMsSchema = z.number().int().nonnegative();
 export const ycodeDeliveryKindSchema = z.enum(["desktop-continuous", "web-remote-replayable"]);
 export const ycodeMessageVisibilitySchema = z.enum(["user-visible", "model-only"]);
 export const ycodeSyntheticUserMessageSourceSchema = z.enum([
+  "agent_listing_delta",
   "background_task",
   "fork",
   "goal_state_change",

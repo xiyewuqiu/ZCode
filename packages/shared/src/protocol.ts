@@ -4,6 +4,7 @@ import type { ProviderFamilyDomain } from "./model-provider-types.js";
 import type { ProviderFamilyConnectionSelectionSettings } from "./provider-family-connection-selection.js";
 import type { WorkspacePurpose } from "./workspacePurpose.js";
 import type { EmbeddedBrowserViewportPreference } from "./browser-use/command-metadata.js";
+import type { AppToolSearchMode } from "./app-runtime-preferences.js";
 
 // ── Domain types ──
 
@@ -155,14 +156,30 @@ export interface DockerRemoteTargetSnapshot {
   container: string;
 }
 
+export interface ServerRemoteTargetSnapshot {
+  kind: "server";
+  url: string;
+  name?: string;
+  workspacePath?: string;
+  serverId?: string;
+  /**
+   * Server token 不写入 setting.json。
+   * 这里只保存 credentialService 的键名，恢复时再读取真实 token。
+   */
+  tokenCredentialKey?: string;
+}
+
 export type RemoteTargetSnapshot =
   | SSHRemoteTargetSnapshot
   | WSLRemoteTargetSnapshot
-  | DockerRemoteTargetSnapshot;
+  | DockerRemoteTargetSnapshot
+  | ServerRemoteTargetSnapshot;
 
 export interface RemoteWorkspaceSessionSnapshot {
   /** 远程 workspace 的真实绝对路径 */
   workspacePath: string;
+  /** 用户可见的 workspace 分类；旧远端快照缺失时按 project 兼容读取。 */
+  workspacePurpose?: WorkspacePurpose;
   /** 发起远程连接时的本机 workspace 路径，仅用于 MCP filesystem 路径改写。 */
   localWorkspacePath?: string;
   /** 远程 workspace 的稳定身份键（authority + canonicalPath）。 */
@@ -330,6 +347,8 @@ export interface AppSettings {
   providerFamilyDomainMigrated?: boolean;
   /** 新建或冷恢复 Session 是否为 Bash 注入 bfs/ugrep 增强；默认启用。 */
   nativeSearchEnhancementsEnabled?: boolean;
+  /** 新建或冷恢复 Session 的 ToolSearch 模式；默认关闭，仅在 create/resume 时固定。 */
+  toolSearchMode?: AppToolSearchMode;
   /** 新建或冷恢复 Session 是否启用 Memory；默认关闭。 */
   memoryEnabled?: boolean;
   onboardingOccupation?:
@@ -349,8 +368,27 @@ export interface AppSettings {
     | "other"
     | null;
   proactiveSuggestionsEnabled?: boolean;
+  /** 新版只保存活动执行目录；不表达项目/连接成员，null 表示明确清空。 */
+  lastActiveWorkspace?: PersistedWorkspaceSessionEntry | null;
   /** 上次关闭时的完整 workspace 会话（含本地与远端 workspace） */
   lastWorkspaceSession?: PersistedWorkspaceSessionEntry[];
+  /** Source Server 记录；与 connectionProfiles 一起驱动项目优先目录。 */
+  sourceServers?: import("./source-server/contracts.js").SourceServerRecord[];
+  /** Source Server 连接 Profile；凭据只保存 credential key。 */
+  connectionProfiles?: import("./source-server/contracts.js").ConnectionProfile[];
+  /** Source Server workspace 历史；identity 优先于路径，路径仅用于展示。 */
+  sourceServerWorkspaceHistory?: import("./source-server/contracts.js").SourceServerWorkspaceHistoryEntry[];
+  /** Host 启动时是否静默重连 Source Server；缺省视为开启。 */
+  remoteStartupAutoReconnectEnabled?: boolean;
+  /** 首次主动连接 Source Server 的持续运行介绍已读标记；只在用户确认后写入。 */
+  remoteBoundaryIntroAcknowledgedVersion?: number;
+  /** Source Server 目录迁移版本；完成即写 1，避免重复迁移。 */
+  sourceServerDirectoryMigrationVersion?: 1;
+  /** 每个 Source Server 的 conversation backing workspace；由远端 Host 分配。 */
+  remoteConversationWorkspaceBySourceServerId?: Record<
+    string,
+    { workspacePath: string; lastResolvedAt: number }
+  >;
   /** 上次关闭时激活的 tab 索引 */
   lastActiveTabIndex?: number;
   /** 每个 workspace 的最后活跃 taskId，下次打开自动恢复 */

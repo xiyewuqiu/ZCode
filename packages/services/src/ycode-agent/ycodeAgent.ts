@@ -1,7 +1,21 @@
-import type { BackgroundBashOutputResult, SessionDebugSnapshot } from "@ycode/shared";
-import type { SessionStoragePreview, SessionPurgeResult } from "@ycode/shared";
+import type {
+  AppToolSearchMode,
+  BackgroundBashOutputResult,
+  SessionDebugSnapshot,
+} from "@ycode/shared";
+import type {
+  SessionDatabaseOptimizeResult,
+  SessionDatabaseStats,
+  SessionStoragePreview,
+  SessionPurgeResult,
+} from "@ycode/shared";
 /* eslint-disable max-lines -- YCode agent service 接口集中声明 protocol/session/workspace 方法，拆分会增加 service descriptor 迁移成本。 */
 import type { Event, IDisposable } from "@ycode/rpc";
+import type {
+  McpUiAppToolCallNotification,
+  McpUiHostRequestBody,
+  McpUiHostResponse,
+} from "@ycode/shared/mcp-apps";
 import { ServiceChannels } from "@ycode/shared";
 import type { AppUsageRange, AppUsageSnapshot, YCodeTaskTokenUsageResult } from "@ycode/shared";
 import type { YCodeAutomation, YCodeAutomationRun } from "@ycode/shared";
@@ -98,6 +112,7 @@ import type {
   V4ConversationRowsRangeResult,
   V4ConversationResyncResult,
   V4ConversationSubscribeResult,
+  SessionsIndexReconcileResult,
   V4SessionsIndexSubscribeResult,
   V4WorkspaceConfigSubscribeResult,
   WorkspaceConfigTopicWireCandidate,
@@ -143,6 +158,14 @@ import type {
 
 export interface YCodeAgentSessionTarget extends YCodeAgentWorkspaceTarget {
   sessionId: string;
+}
+
+/**
+ * MCP Apps 宿主 RPC：`request` 是 CLI 协议里的 `mcp/ui` 参数体，
+ * `workspace` 由 services 按目标连接补齐，renderer 不自行拼 identity / remoteSessionId。
+ */
+export interface YCodeAgentMcpUiParams extends YCodeAgentSessionTarget {
+  request: McpUiHostRequestBody;
 }
 
 export interface YCodeAgentResumeSessionParams extends YCodeAgentSessionTarget {
@@ -549,6 +572,8 @@ export type YCodeAgentServiceEvent =
 export interface YCodeAgentAppRuntimePreferences {
   askUserQuestionAutoResolutionEnabled: boolean;
   modelIoFullRetentionEnabled?: boolean;
+  /** 新建/恢复会话时读取；不热更新运行中的会话。 */
+  toolSearchMode?: AppToolSearchMode;
 }
 
 export interface YCodeAgentLocalRuntimeChildProcesses {
@@ -593,6 +618,12 @@ export interface IYCodeAgentService {
   purgeSessionStorage(
     params: YCodeAgentSessionTarget & { expectedRevision: string; confirmPermanent: true },
   ): Promise<SessionPurgeResult>;
+  /** 共享会话库统计（只读）；由目标 workspace 的 Agent 执行。 */
+  getSessionDatabaseStats(params: YCodeAgentWorkspaceTarget): Promise<SessionDatabaseStats>;
+  /** 显式整理；有运行中会话或被其它进程锁住时返回 refused，不杀会话。 */
+  optimizeSessionDatabase(
+    params: YCodeAgentWorkspaceTarget & { confirm: true },
+  ): Promise<SessionDatabaseOptimizeResult>;
   readSession(params: YCodeAgentReadSessionParams): Promise<YCodeSessionStateSnapshot>;
   readSessionMessages(
     params: YCodeAgentReadSessionMessagesParams,
@@ -607,6 +638,11 @@ export interface IYCodeAgentService {
     params: YCodeAgentGrantWorkspaceHookTrustParams,
   ): Promise<YCodeWorkspaceHookTrustGrantResult>;
   listMcpServerStatuses(params: YCodeAgentListMcpServerStatusesParams): Promise<YCodeMcpListResult>;
+  /**
+   * MCP Apps 宿主 RPC（`mcp/ui`）：prepare 只拿登记载荷 + 实例凭证；调用 / 资源 / app-tools
+   * 全部回同一个 session，按 workspace identity + sessionId 路由。沙箱登记在 renderer 平台端口。
+   */
+  mcpUi(params: YCodeAgentMcpUiParams): Promise<McpUiHostResponse>;
   listPlugins(params: YCodeAgentPluginViewParams): Promise<YCodePluginsListResult>;
   /**
    * Plugin 对话引用 catalog：session-scoped 只读投影。
@@ -720,6 +756,11 @@ export interface IYCodeAgentService {
   onDynamicMcpTelemetry(): Event<YCodeMcpTelemetryEvent>;
   /** MCP 进程树资源事实，只供可信 Host 汇总上报。 */
   onDynamicMcpResourceSamples(): Event<YCodeMcpResourceSample[]>;
+  /**
+   * MCP Apps 的 app-tool 投递：CLI 把模型侧调用下发给 renderer，唯一页面实例 claim 后执行。
+   * 消费者按 (sessionId, scopeId, instance.token) 过滤；与 MCP 资源样本一样是进程级通知。
+   */
+  onDynamicMcpUiAppToolCall(): Event<McpUiAppToolCallNotification>;
   /** Bash 完成事实，仅可信 Host 资源旁路订阅。 */
   onDynamicToolExecResource(): Event<YCodeToolExecResource>;
   /**
@@ -817,6 +858,10 @@ export interface IYCodeAgentService {
   /** 当前窗口全部本地 live task 的 CUA 权限观察；历史、远程与 replayable 不在此事件面。 */
   onDynamicCuaPermissionObservation(): Event<YCodeAgentCuaPermissionObservation>;
   // ── sessions-index 通道（列表活性）──
+  /** 只读 CLI 持久事实；不恢复会话运行实例。旧远端可以不提供此能力。 */
+  reconcileSessionsIndexV4?(
+    params: YCodeAgentWorkspaceTarget & { sessionIds: string[] },
+  ): Promise<SessionsIndexReconcileResult>;
   subscribeSessionsIndexV4(
     params: YCodeAgentSessionsIndexSubscribeParams,
   ): Promise<V4SessionsIndexSubscribeResult>;

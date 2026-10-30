@@ -1,6 +1,11 @@
 /* eslint-disable max-lines -- YCode task wrapper service 接口集中承载 app/runtime API，拆散会让替换阶段更难追踪。 */
 import type { Event } from "@ycode/rpc";
-import type { SessionStoragePreview, SessionPurgeResult } from "@ycode/shared";
+import type {
+  SessionDatabaseOptimizeResult,
+  SessionDatabaseStats,
+  SessionStoragePreview,
+  SessionPurgeResult,
+} from "@ycode/shared";
 import { ServiceChannels } from "@ycode/shared";
 import type { CommandPayloadMap } from "@ycode/shared/ycode-protocol-v4";
 import { createServiceDescriptor } from "#src/descriptors.js";
@@ -637,6 +642,22 @@ export interface IYCodeTaskService {
     expectedRevision: string;
     confirmPermanent: true;
   }): Promise<SessionPurgeResult>;
+  /**
+   * 共享会话库统计（只读）。taskId 只用于解析窗口 Controller 的 source；
+   * 数据库是目标 workspace Agent 的共享会话库，不是该任务的独立库。
+   */
+  getTaskDatabaseStats(params: {
+    taskId: string;
+    workspacePath: string;
+    workspaceIdentity?: string;
+  }): Promise<SessionDatabaseStats>;
+  /** 显式整理共享会话库；有活动会话或锁冲突时返回 refused，不自动 VACUUM。 */
+  optimizeTaskDatabase(params: {
+    taskId: string;
+    workspacePath: string;
+    workspaceIdentity?: string;
+    confirm: true;
+  }): Promise<SessionDatabaseOptimizeResult>;
 
   /** 将已持久化 task 标记为列表不可见；CLI session 内容继续保留 */
   deleteTask(params: {

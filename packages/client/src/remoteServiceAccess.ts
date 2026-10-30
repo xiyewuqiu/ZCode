@@ -35,6 +35,10 @@ import {
   ISettingsSyncService,
   IFeedbackService,
   IPromptAttachmentTransferService,
+  IProjectService,
+  IRemoteProjectService,
+  ISourceServerWorkspaceService,
+  ISourceServerManagementService,
   IWindowControllerService,
   type IServiceAccessor,
 } from "@ycode/services";
@@ -84,8 +88,15 @@ export class RemoteServiceAccess implements IServiceAccessor {
   readonly settingsSyncService: ISettingsSyncService;
   readonly feedbackService: IFeedbackService;
   readonly promptAttachmentTransferService: IPromptAttachmentTransferService;
+  readonly projectService: IProjectService;
+  readonly remoteProjectService: IRemoteProjectService;
+  readonly sourceServerWorkspaceService: ISourceServerWorkspaceService;
+  readonly sourceServerManagementService?: ISourceServerManagementService;
 
-  constructor(channelClient: IChannelClient) {
+  constructor(
+    channelClient: IChannelClient,
+    options: { sourceServerManagementService?: boolean } = {},
+  ) {
     this.fileService = ProxyChannel.toService<IFileService>(
       channelClient.getChannel(IFileService.channelName),
     );
@@ -198,5 +209,21 @@ export class RemoteServiceAccess implements IServiceAccessor {
     this.promptAttachmentTransferService = ProxyChannel.toService<IPromptAttachmentTransferService>(
       channelClient.getChannel(IPromptAttachmentTransferService.channelName),
     );
+    this.projectService = ProxyChannel.toService<IProjectService>(
+      channelClient.getChannel(IProjectService.channelName),
+    );
+    this.remoteProjectService = ProxyChannel.toService<IRemoteProjectService>(
+      channelClient.getChannel(IRemoteProjectService.channelName),
+    );
+    this.sourceServerWorkspaceService = ProxyChannel.toService<ISourceServerWorkspaceService>(
+      channelClient.getChannel(ISourceServerWorkspaceService.channelName),
+    );
+    // 管理面只存在于 desktop local host；远端 Source Host 不注册该频道，
+    // 由调用方显式开启，避免远端 attachment 误用本地目录。
+    if (options.sourceServerManagementService) {
+      this.sourceServerManagementService = ProxyChannel.toService<ISourceServerManagementService>(
+        channelClient.getChannel(ISourceServerManagementService.channelName),
+      );
+    }
   }
 }

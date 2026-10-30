@@ -10,7 +10,47 @@ import {
   PERSONAL_PROVIDER_CONFIG_FILE_NAME,
 } from "@ycode/provider-node";
 import { getAppConfigDir as resolveAppConfigDir } from "./paths.js";
-import { buildLocalMediaPreviewUrl } from "@ycode/shared";
+import {
+  buildLocalMediaPreviewUrl,
+  buildServerRemoteWorkspaceIdentity,
+  remoteHostIdFromWorkspaceIdentity,
+} from "@ycode/shared";
+
+export { projectStorage } from "./project-storage/index.js";
+export { ProjectRepository } from "./project-storage/project-repository.js";
+export {
+  createProjectService,
+  createLegacySingleRootProjectService,
+  createTaskAutoArchiveScheduler,
+  shouldRescanTaskAutoArchive,
+  bindRemoteProjectIdentities,
+} from "./project/index.js";
+export {
+  createRemoteProjectService,
+  readRemoteProjectDirectory,
+  createRemoteProjectConnectionAdmission,
+  projectWorkspaceSettings,
+  remoteProjectHostIdForProfile,
+  remoteProjectHostIdForTarget,
+  prepareRemoteServerConnection,
+} from "./remote-projects/index.js";
+export { createProjectWorkspaceNavigation } from "#src/project-workspace-navigation/index.js";
+export { createSourceServerWorkspaceService } from "./source-server-workspace/sourceServerWorkspaceService.js";
+export {
+  SourceServerWorkspaceIdentityChannelServer,
+  SourceServerWorkspaceIdentityMapper,
+} from "./source-server-workspace/sourceServerWorkspaceIdentityChannelServer.js";
+export {
+  SourceServerWorkspaceAliasRepo,
+  SourceServerWorkspaceIdentityConflictError,
+} from "./session/sourceServerWorkspaceAliasRepo.js";
+export { migrateControllerRemoteWorkspaceIdentity } from "./session/controllerRemoteIdentityMigration.js";
+export type { ControllerRemoteIdentityMigrationOptions } from "./session/controllerRemoteIdentityMigration.js";
+export type {
+  ProjectMigrationContext,
+  ProjectRepositoryContract,
+  ProjectStorageContract,
+} from "./project-storage/contract.js";
 
 export {
   materializeYCodeBuiltinProviderConfig,
@@ -259,6 +299,18 @@ import { createYCodeTaskServiceAdapter } from "./ycode-agent/ycodeTaskServiceAda
 import { createYCodeSessionService } from "./ycode-session/ycodeSessionService.js";
 import { createYCodeTaskIndexSyncer } from "./ycode-agent/ycodeTaskIndexSyncer.js";
 import { TaskIndexRepo } from "./session/taskIndexRepo.js";
+import {
+  createProjectService,
+  createTaskAutoArchiveScheduler,
+  IProjectService,
+  shouldRescanTaskAutoArchive,
+} from "./project/index.js";
+import { createRemoteProjectService, IRemoteProjectService } from "./remote-projects/index.js";
+import { ISourceServerWorkspaceService } from "./source-server-workspace/sourceServerWorkspace.js";
+import { createSourceServerWorkspaceService } from "./source-server-workspace/sourceServerWorkspaceService.js";
+import { SourceServerWorkspaceAliasRepo } from "./session/sourceServerWorkspaceAliasRepo.js";
+import { SourceServerWorkspaceIdentityMapper } from "./source-server-workspace/sourceServerWorkspaceIdentityChannelServer.js";
+import { getYCodeDataRootDir as projectDataRoot } from "./paths.js";
 import type { SessionMessageSendRequested } from "#src/session/sessionMailbox.js";
 import { createFileWatcherService } from "./fileWatcher/fileWatcherService.js";
 import { readLegacyYCodeConfigProviders } from "./model-provider/legacyYCodeConfigProviderReader.js";
@@ -272,6 +324,7 @@ import {
   IModelSelectionService,
   IProviderSettingsService,
 } from "./model-provider/providerFacadeServices.js";
+import { createProviderModelDiscoverer } from "./model-provider/providerModelDiscovery.js";
 import { createProviderSettingsConnectivityTester } from "./model-provider/providerSettingsConnectivity.js";
 import { resolveClientConfigPlatform } from "./runtime-tools/clientPlatform.js";
 import { createUsageStatsService } from "./usage-stats/usageStatsService.js";
@@ -489,6 +542,8 @@ const providerRuntimes = new WeakMap<ServiceCollection, ProviderRuntime>();
 // 与其它侧表一样按 ServiceCollection 登记并在 dispose 时统一 close。
 const sharedSqliteRepos = new WeakMap<ServiceCollection, ReadonlyArray<{ close(): void }>>();
 const managedHostApiNetworkTransports = new WeakMap<ServiceCollection, HostApiNetworkTransport>();
+// 自动归档定时器属于 Host 生命周期；dispose 时停止扫描并注销设置订阅。
+const taskAutoArchiveDisposers = new WeakMap<ServiceCollection, () => void>();
 
 export function registerManagedCuaHelperHostForDispose(
   services: ServiceCollection,
@@ -1133,6 +1188,19 @@ export function createLocalServices(options: {
   /** 所属 Environment 的 YCode Built-in Provider Config 物理路径。 */
   ycodeBuiltinProviderConfigFilePath: string;
   serviceAuthorityMode?: ServiceAuthorityMode;
+  /** 持库 Host 身份；独立 Server 传远端身份，桌面本地/远程 workspace Host 缺省为 local。 */
+  projectStorageHostId?: string;
+  /** Source Server 设备身份；独立 Server 用它构造稳定 workspace identity。 */
+  sourceServerId?: string;
+  /** 已装配的 Source 身份服务；独立 Server 注入 alias repo 驱动的实现。 */
+  sourceServerWorkspaceService?: ISourceServerWorkspaceService;
+  /** 只解析现有连接；缺省时跨 host 项目调用显式失败，不回落本机仓库。 */
+  resolveProjectHostService?: (hostId: string) => Promise<IProjectService>;
+  /** Host 注入的远端项目物理连接器；缺省时 connectHost 显式抛 connector-unavailable。 */
+  remoteProjectConnection?: Pick<
+    Parameters<typeof createRemoteProjectService>[0],
+    "connectHost" | "readConnectionStates"
+  >;
   cuaProductMcpServerResolver?: CuaProductMcpServerResolver;
   agentRuntimeContext?: {
     getDeviceMid?: () => string | undefined;
@@ -1284,6 +1352,7 @@ export function createLocalServices(options: {
   let providerConnectivityAgentService: IYCodeAgentService | null = null;
   const providerRuntime = createProviderRuntimeFromConfigRuntime({
     configRuntime: providerConfigRuntime,
+    discoverModels: createProviderModelDiscoverer(),
     modelSelectionConfiguredDefaultSource,
     disposeModelSelectionConfiguredDefaultSource: () =>
       modelSelectionConfiguredDefaultSource.dispose(),
@@ -1839,6 +1908,8 @@ export function createLocalServices(options: {
               askUserQuestionAutoResolutionEnabled:
                 settings.askUserQuestionAutoResolutionEnabled !== false,
               nativeSearchEnhancementsEnabled: settings.nativeSearchEnhancementsEnabled !== false,
+              // ToolSearch 模式只在 session create/resume 读取一次，运行中的会话不热更新。
+              toolSearchMode: settings.toolSearchMode ?? "off",
               memoryEnabled: settings.memoryEnabled === true,
               modelContextBudgetStrategy,
               // user-execution 只消费 Shell；共享默认策略是统一 result schema 的兼容占位，
@@ -1858,7 +1929,12 @@ export function createLocalServices(options: {
   // mapServiceEvent 路径，导致 task_complete 永远不会写回 sqlite，侧边栏 spinner 不停。
   // 在 services 层装配一个共享的 taskIndexRepo + syncer，session 任意入口都会唤醒
   // shadow 订阅，把 runtime 终态收敛进 sqlite。
-  const taskIndexRepo = new TaskIndexRepo();
+  const taskIndexRepo = new TaskIndexRepo(
+    undefined,
+    undefined,
+    undefined,
+    options?.projectStorageHostId,
+  );
   const ycodeTaskIndexSyncer = createYCodeTaskIndexSyncer({
     agentService: ycodeAgentService,
     taskIndexRepo,
@@ -1884,6 +1960,72 @@ export function createLocalServices(options: {
     agentService: ycodeAgentService,
     taskIndexSyncer: ycodeTaskIndexSyncer,
     cuaProductMcpServerResolver,
+  });
+  // 项目组织态的唯一写者是本 Host 的 tasks-index；UI 只经 IProjectService 调用。
+  // 跨 host 读取复用既有 attachment 路由，缺连接时显式失败，不回落到本机仓库。
+  const publishProjectChange = async () => {
+    await broadcastService.send({ channel: "state:projects", payload: {} });
+  };
+  const projectService = createProjectService({
+    directories: {
+      home: async () => (await systemService.info()).homedir,
+      read: (params) => fileService.readdir(params),
+    },
+    ownerHostId: options?.projectStorageHostId,
+    ...(options?.resolveProjectHostService
+      ? { resolveHost: options.resolveProjectHostService }
+      : {}),
+    repository: () => taskIndexRepo.getProjectRepository(),
+    workspaceDirectory: join(projectDataRoot(), "workspace"),
+    afterChange: publishProjectChange,
+  });
+  const remoteProjectService = createRemoteProjectService({
+    ...options?.remoteProjectConnection,
+    controller: !options?.projectStorageHostId || options.projectStorageHostId === "local",
+    database: () => taskIndexRepo.getOrganizationDatabase(),
+    afterChange: publishProjectChange,
+  });
+  // Source 端身份解析必须与 tasks-index 同库；桌面本地也注册一份保持合同一致，
+  // 只有独立 Server 才用设备身份为全新 workspace 生成 canonical key。
+  const workspaceIdentityMapper = new SourceServerWorkspaceIdentityMapper();
+  const sourceServerWorkspaceService =
+    options?.sourceServerWorkspaceService ??
+    createSourceServerWorkspaceService(
+      new SourceServerWorkspaceAliasRepo(),
+      options?.sourceServerId
+        ? {
+            defaultWorkspaceIdentity: (workspacePath) =>
+              buildServerRemoteWorkspaceIdentity({
+                serverId: options.sourceServerId!,
+                workspacePath,
+              }),
+            onResolved: ({ workspacePath, canonicalWorkspaceKey }) => {
+              if (!options.sourceServerId) return;
+              workspaceIdentityMapper.register({
+                stableIdentity: buildServerRemoteWorkspaceIdentity({
+                  serverId: options.sourceServerId,
+                  workspacePath,
+                }),
+                canonicalIdentity: canonicalWorkspaceKey,
+              });
+            },
+          }
+        : {},
+    );
+  // 自动归档只由这里的定时扫描触发（启动首轮 + 每 5 分钟 + 设置变更补扫）；
+  // readTree 与任务点击都不再执行 archiveInactive，避免“点开即消失”。
+  const taskAutoArchiveScheduler = createTaskAutoArchiveScheduler({
+    readPolicy: async () => {
+      const settings = await settingService.get();
+      if (!settings.taskAutoArchiveEnabled) return null;
+      const days = Math.max(1, Math.floor(settings.taskAutoArchiveOlderThanDays ?? 7));
+      return {
+        cutoff: Date.now() - days * 86_400_000,
+        activeTasks: ycodeTaskIndexSyncer.activeTaskRefs(),
+      };
+    },
+    repository: () => taskIndexRepo.getProjectRepository(),
+    afterChange: publishProjectChange,
   });
   const gitCommitMessageGenerator = new GitCommitMessageGenerator({
     currentModelProvider: {
@@ -1942,6 +2084,9 @@ export function createLocalServices(options: {
     .register(IYCodeTaskService, ycodeTaskService)
     .register(IYCodeAgentService, ycodeAgentService)
     .register(IYCodeSessionService, ycodeSessionService)
+    .register(IProjectService, projectService)
+    .register(IRemoteProjectService, remoteProjectService)
+    .register(ISourceServerWorkspaceService, sourceServerWorkspaceService)
     .register(ICuaPermissionService, cuaPermissionService)
     .register(ICuaPipSessionService, cuaPipSessionService)
     .register(IFileWatcherService, createFileWatcherService())
@@ -2017,6 +2162,19 @@ export function createLocalServices(options: {
   // 稳定 socket），或用户显式授权流（restartHelper）拉起。启动即零 Helper 常驻。
 
   providerRuntimes.set(services, providerRuntime);
+  // desktop-attached-remote 的组织态在远端 Host 库里，由远端自己的扫描器归档；本机不扫。
+  if (options?.serviceAuthorityMode !== "desktop-attached-remote") {
+    const stopSettingsRescan = settingService.onDidUpdate((event) => {
+      if (shouldRescanTaskAutoArchive(event.keys)) {
+        void taskAutoArchiveScheduler.scan().catch(() => {});
+      }
+    });
+    taskAutoArchiveScheduler.start();
+    taskAutoArchiveDisposers.set(services, () => {
+      stopSettingsRescan();
+      taskAutoArchiveScheduler.dispose();
+    });
+  }
   services
     .register(IProviderSettingsService, providerRuntime.providerSettings)
     .register(IModelSelectionService, providerRuntime.modelSelection);
@@ -2063,6 +2221,9 @@ export function disposeServiceResources(services: ServiceCollection): void {
   if (managedCuaHelperHost) {
     void managedCuaHelperHost.stop().catch(() => {});
   }
+  // 先停止自动归档，避免扫描在 sqlite 关闭后继续使用旧连接。
+  taskAutoArchiveDisposers.get(services)?.();
+  taskAutoArchiveDisposers.delete(services);
   // 关闭共享 tasks-index sqlite 句柄（Windows 上悬着句柄会让后续目录清理撞 EBUSY）
   for (const repo of sharedSqliteRepos.get(services) ?? []) repo.close();
   sharedSqliteRepos.delete(services);
@@ -2095,6 +2256,9 @@ export async function disposeServiceResourcesAndWait(services: ServiceCollection
   if (managedCuaHelperHost) {
     await managedCuaHelperHost.stop().catch(() => {});
   }
+  // 先停止自动归档，避免扫描在 sqlite 关闭后继续使用旧连接。
+  taskAutoArchiveDisposers.get(services)?.();
+  taskAutoArchiveDisposers.delete(services);
   // 关闭共享 tasks-index sqlite 句柄（同 disposeServiceResources，异步收口路径也要释放）
   for (const repo of sharedSqliteRepos.get(services) ?? []) repo.close();
   sharedSqliteRepos.delete(services);
@@ -2103,4 +2267,59 @@ export async function disposeServiceResourcesAndWait(services: ServiceCollection
     .get(services)
     ?.disposeAndWait()
     .catch(() => {});
+}
+
+/** Controller 端 remote workspace identity 迁移报告（Source Server Directory 使用）。 */
+export interface ControllerRemoteIdentityMigrationReport {
+  migrationId: string;
+  status: "completed" | "failed";
+  before: Record<string, number>;
+  after: Record<string, number>;
+  error?: string;
+}
+
+/**
+ * 独立 Source Server 的 Host 装配：先固化设备级持库身份与 alias repo，
+ * 再创建统一服务集合；入口只消费返回的 mapper，用 canonical → stable 映射包住 RPC。
+ */
+export async function createServerHostServices(options: {
+  sourceServerId: string;
+  ycodeBuiltinProviderConfigFilePath: string;
+  projectStorageHostId?: string;
+}) {
+  const projectStorageHostId =
+    options.projectStorageHostId ??
+    remoteHostIdFromWorkspaceIdentity(
+      buildServerRemoteWorkspaceIdentity({
+        serverId: options.sourceServerId,
+        workspacePath: "/",
+      }),
+    );
+  if (!projectStorageHostId) throw new Error("Invalid Source Server storage identity");
+  const workspaceAliasRepo = new SourceServerWorkspaceAliasRepo();
+  const workspaceIdentityMapper = new SourceServerWorkspaceIdentityMapper();
+  const sourceServerWorkspaceService = createSourceServerWorkspaceService(workspaceAliasRepo, {
+    defaultWorkspaceIdentity: (workspacePath) =>
+      buildServerRemoteWorkspaceIdentity({
+        serverId: options.sourceServerId,
+        workspacePath,
+      }),
+    onResolved: ({ workspacePath, canonicalWorkspaceKey }) => {
+      workspaceIdentityMapper.register({
+        stableIdentity: buildServerRemoteWorkspaceIdentity({
+          serverId: options.sourceServerId,
+          workspacePath,
+        }),
+        canonicalIdentity: canonicalWorkspaceKey,
+      });
+    },
+  });
+  const migrationFailedPathCount = await workspaceAliasRepo.getFailedPathCount();
+  const services = createLocalServices({
+    ycodeBuiltinProviderConfigFilePath: options.ycodeBuiltinProviderConfigFilePath,
+    serviceAuthorityMode: "standalone-server",
+    projectStorageHostId,
+    sourceServerWorkspaceService,
+  });
+  return { services, workspaceIdentityMapper, migrationFailedPathCount };
 }

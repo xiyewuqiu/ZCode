@@ -1,5 +1,6 @@
 /* eslint-disable max-lines -- task index 的 v4 帧摄入、snapshot upsert 和 workspace 广播必须共享同一份闭包状态。 */
-import { repairSubagentTaskIndex } from "#src/ycode-agent/repairSubagentTaskIndex.js";
+import { repairSubagentTaskIndex } from "#src/task-facts/repairSubagentTaskIndex.js";
+import { createTaskFacts } from "#src/task-facts/index.js";
 import {
   deriveYCodeTaskStatusFromSessionSnapshot,
   generateTraceId,
@@ -45,6 +46,7 @@ import type {
   YCodeAgentWorkspaceTarget,
 } from "./ycodeAgent.js";
 import { YCODE_AGENT_RUNTIME_UNAVAILABLE_CODE } from "./ycodeAgent.js";
+import { assertV4CommandAckOk, createHostCommandEnvelope } from "./ycodeV4HostCommand.js";
 import { formatTaskMetaModelSelectionFromSnapshot } from "./ycodeConfigOptions.js";
 
 const logger = createServiceLogger("ycode-task-index-syncer");
@@ -167,6 +169,8 @@ export interface YCodeTaskIndexSyncer {
    * 手机 host command queue 只能以这个事件作为继续发送下一条的边界。
    */
   onSessionReadyEvent: Event<YCodeTaskIndexReadyEvent>;
+  /** 仅观察已经存在的订阅，不为自动归档创建 runtime 或第二份 phase 状态。 */
+  activeTaskRefs(): Array<{ workspacePath: string; workspaceIdentity?: string; taskId: string }>;
   /** 释放所有 v4 订阅和 workspace emitter；不关闭注入的 taskIndexRepo。 */
   disposeAll(): void;
 }
@@ -194,42 +198,6 @@ function resolveTerminalUnreadSignal(
     return "background_terminal";
   }
   return undefined;
-}
-
-function taskStatusFromSummaryPhase(phase: SessionPhase): YCodeTaskMeta["status"] {
-  switch (phase) {
-    case "running":
-    case "prewarming":
-      return "running";
-    case "completedSuccess":
-    case "completedInterrupted":
-      return "completed";
-    case "error":
-      return "error";
-    default:
-      return undefined;
-  }
-}
-
-function buildBaselineMetaFromSummary(
-  target: YCodeAgentWorkspaceTarget,
-  summary: SessionSummary,
-): YCodeTaskMeta {
-  const status = taskStatusFromSummaryPhase(summary.phase);
-  return {
-    taskId: summary.sessionId,
-    traceId: generateTraceId(summary.sessionId),
-    title: summary.title,
-    ...(summary.titleSource === "custom" ? { titleOverridden: true } : {}),
-    workspacePath: target.workspacePath,
-    workspaceIdentity: target.workspaceIdentity,
-    createdAt: summary.createdAt,
-    updatedAt: summary.lastActivityAt,
-    mode: "build",
-    provider: YCODE_AGENT_PROVIDER,
-    ...(summary.parentSessionId ? { forkedFromTaskId: summary.parentSessionId } : {}),
-    ...(status ? { status } : {}),
-  };
 }
 
 interface WorkspaceIngestState {
@@ -563,6 +531,61 @@ export function createYCodeTaskIndexSyncer(
     });
   }
 
+  /**
+   * CLI 持久事实的应用入口：sessions-index 摘要与显式命令结果都经这里落库；
+   * Host 不缓存第二份状态，也不据本地时钟推导标题/时间/终态。
+   */
+  const taskFacts = createTaskFacts({
+    store: taskIndexRepo,
+    source: {
+      reconcile: async (target, sessionIds) => {
+        if (!agentService.reconcileSessionsIndexV4)
+          throw new Error("sessions-index.reconcile-unavailable");
+        return agentService.reconcileSessionsIndexV4({ ...target, sessionIds });
+      },
+      execute: async (target, intent) => {
+        const envelope =
+          intent.type === "delete"
+            ? createHostCommandEnvelope({
+                type: "deleteSession",
+                sessionId: target.taskId,
+                payload: {},
+              })
+            : createHostCommandEnvelope({
+                type: "renameSession",
+                sessionId: target.taskId,
+                payload: { title: intent.title },
+              });
+        const ack = await agentService.sendConversationCommandV4({
+          workspacePath: target.workspacePath,
+          workspaceIdentity: target.workspaceIdentity,
+          envelope,
+        });
+        assertV4CommandAckOk(envelope.type, ack, target.taskId);
+      },
+    },
+    changed: ({ target, meta, reason }) => emitWorkspaceTaskListChanged(target, meta, reason),
+  });
+
+  async function reconcileSnapshotOmissions(
+    state: WorkspaceIngestState,
+    snapshotSeq: number,
+  ): Promise<void> {
+    if (!agentService.reconcileSessionsIndexV4) return;
+    try {
+      await taskFacts.reconcile(
+        state.target,
+        new Set(state.summaries.keys()),
+        () => isLiveState(state) && state.indexSeq === snapshotSeq,
+      );
+    } catch (error) {
+      if (isLiveState(state))
+        logger.warn(undefined, "CLI 会话对账未完成，保留已有行和待交接意图", error);
+    }
+  }
+
+  const mirrorSummary = taskFacts.ingest;
+
   /** phase 终态迁移 → sqlite status 收敛 + 广播 + 回源正文索引。 */
   function applyTerminalTransition(
     target: YCodeAgentSessionTarget,
@@ -578,18 +601,8 @@ export function createYCodeTaskIndexSyncer(
       taskId: target.sessionId,
       unreadSignal: unreadSignal ?? null,
     });
-    const updatedAt = Date.now();
-    void taskIndexRepo
-      .applyAgentPatch({
-        workspacePath: target.workspacePath,
-        workspaceIdentity: target.workspaceIdentity,
-        taskId: target.sessionId,
-        // error 的 lastError 详情不在 sessions-index 摘要里，留给随后的回源 snapshot
-        // 写权威值（patch 不带 lastError 键 = 保留现值）；completed 沿旧语义清空。
-        patch: failed
-          ? { status: "error", updatedAt }
-          : { status: "completed", lastError: undefined, updatedAt },
-      })
+    // 活动时间和终态都来自 CLI 事实；Host 收帧时间不能把历史任务重新排到顶部。
+    void mirrorSummary(target, summary)
       .then((meta) => {
         if (meta) {
           // 之前只更新 sqlite 不广播，UI 监听 workspace_task_list_changed 收不到通知，
@@ -623,16 +636,9 @@ export function createYCodeTaskIndexSyncer(
       });
   }
 
-  /** 标题变化 → sqlite title patch；行缺失回源完整 snapshot（对齐旧 first_input 语义）。 */
-  function applyTitleChange(target: YCodeAgentSessionTarget, title: string): void {
-    const updatedAt = Date.now();
-    void taskIndexRepo
-      .applyAgentPatch({
-        workspacePath: target.workspacePath,
-        workspaceIdentity: target.workspaceIdentity,
-        taskId: target.sessionId,
-        patch: { title, updatedAt },
-      })
+  /** 标题变化 → CLI 事实镜像；行缺失回源完整 snapshot（对齐旧 first_input 语义）。 */
+  function applyTitleChange(target: YCodeAgentSessionTarget, summary: SessionSummary): void {
+    void mirrorSummary(target, summary)
       .then((meta) => {
         if (meta) {
           // 标题变更（首条消息/自动标题生成）与归属无关且每个任务必发，
@@ -694,8 +700,10 @@ export function createYCodeTaskIndexSyncer(
     }
     const title = next.title.trim();
     if (title && (previous === undefined || previous.title !== next.title)) {
-      applyTitleChange(target, title);
+      applyTitleChange(target, next);
     }
+    // 其余摘要变化（如 lastActivityAt 推进）不落库：sessions-index 已按事件扇出，
+    // 这里再逐事件写 SQLite 会形成索引风暴；持久事实由终态/标题路径与对账收敛。
   }
 
   async function seedMissingRowsFromInitialSnapshot(
@@ -705,8 +713,8 @@ export function createYCodeTaskIndexSyncer(
     const candidates = [...summaries].filter((summary) => summary.phase !== "draft");
     if (candidates.length === 0) return;
     // 纯 V4 UI 不经过 ycodeSessionService.initializeWorkspace；若把首帧
-    // 当成“已有 sqlite 存量”的静默基线，远端新库就会永远是 0 行。这里只做原子
-    // insert-if-missing，不广播、不回放历史终态，也不覆盖已有产品壳状态；后续打开/
+    // 当成“已有 sqlite 存量”的静默基线，远端新库就会永远是 0 行。每次基线刷新 CLI
+    // 事实，不广播、不回放历史终态，也不覆盖已有产品壳状态；后续打开/
     // 收口时再由完整 snapshot 补 model、正文搜索等权威字段。
     // 防灾保护：历史会话可能很多，不能一次创建等量 Promise 挤占 host 事件循环。
     // 固定小批次写入；失败只汇总一条生产日志，避免逐会话错误再次制造日志风暴。
@@ -715,9 +723,7 @@ export function createYCodeTaskIndexSyncer(
     for (let offset = 0; offset < candidates.length; offset += INITIAL_BASELINE_SEED_BATCH_SIZE) {
       const batch = candidates.slice(offset, offset + INITIAL_BASELINE_SEED_BATCH_SIZE);
       const results = await Promise.allSettled(
-        batch.map((summary) =>
-          taskIndexRepo.seedTaskMetaIfMissing(buildBaselineMetaFromSummary(state.target, summary)),
-        ),
+        batch.map((summary) => mirrorSummary(state.target, summary)),
       );
       for (const result of results) {
         if (result.status === "rejected") {
@@ -1017,7 +1023,9 @@ export function createYCodeTaskIndexSyncer(
         // 防止远端/新安装的空 sqlite 因纯 V4 路径永远没有存量。
         state.summaries = nextSummaries;
         state.seeded = true;
-        void seedMissingRowsFromInitialSnapshot(state, nextSummaries.values());
+        void seedMissingRowsFromInitialSnapshot(state, nextSummaries.values()).then(() =>
+          reconcileSnapshotOmissions(state, frame.toSeq),
+        );
         const generation = state.indexSubscriptionGeneration;
         void repairSubagentTaskIndex({
           target: state.target,
@@ -1043,6 +1051,7 @@ export function createYCodeTaskIndexSyncer(
       for (const summary of nextSummaries.values()) {
         processSummary(state, previousSummaries.get(summary.sessionId), summary, deliveryKind);
       }
+      void reconcileSnapshotOmissions(state, frame.toSeq);
       completeIndexRecoveryFrame(state, deliveryKind);
       return;
     }
@@ -1074,9 +1083,16 @@ export function createYCodeTaskIndexSyncer(
         );
         continue;
       }
-      // session.removed：会话删除的 sqlite 收口走 task 删除操作（adapter deleteTask /
-      // v4 deleteSession 命令的 host 侧收尾），这里只维护基线。
+      // 只有 CLI 明确删除事件才写删除事实；snapshot 缺席不能据此删除任务。
       state.summaries.delete(delta.sessionId);
+      const target = sessionTargetFrom(state.target, delta.sessionId);
+      void taskFacts
+        .removed({
+          workspacePath: target.workspacePath,
+          workspaceIdentity: target.workspaceIdentity,
+          taskId: delta.sessionId,
+        })
+        .catch((error) => logger.warn(undefined, "同步 CLI 删除事实失败", error));
     }
     state.indexSeq = frame.toSeq;
     state.indexHasAppliedBase = true;
@@ -1743,6 +1759,13 @@ export function createYCodeTaskIndexSyncer(
   }
 
   return {
+    activeTaskRefs() {
+      return [...workspaceIngests.values()].flatMap((state) =>
+        [...state.summaries.values()]
+          .filter((summary) => !isTerminalPhase(summary.phase))
+          .map((summary) => ({ ...state.target, taskId: summary.sessionId })),
+      );
+    },
     ensureWorkspaceSubscription,
 
     ensureSessionSubscription(

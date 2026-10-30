@@ -16,6 +16,18 @@ export const TID_SIDEBAR_SETTINGS_MENU_TRIGGER = "sidebar-settings-menu-trigger"
 /** 终端显隐切换按钮 */
 export const TID_TERMINAL_TOGGLE = "terminal-toggle";
 export const TID_SIDE_PANE_TOGGLE = "side-pane-toggle";
+/** Side Pane 进入/退出完整视图按钮 */
+export const TID_SIDE_PANE_FULL_VIEW_TOGGLE = "side-pane-full-view-toggle";
+/** Side Pane 完整视图对话 tab */
+export const TID_SIDE_PANE_FULL_VIEW_CONVERSATION_TAB = "side-pane-full-view-conversation-tab";
+/** Side Pane 完整视图对话宿主 */
+export const TID_SIDE_PANE_FULL_VIEW_HOST = "side-pane-full-view-host";
+/** Side Pane 完整视图浮窗操作栏 */
+export const TID_SIDE_PANE_FULL_VIEW_HEADER = "side-pane-full-view-header";
+/** Side Pane 完整视图浮窗展开/收起按钮 */
+export const TID_SIDE_PANE_FULL_VIEW_EXPAND = "side-pane-full-view-expand";
+/** Side Pane 完整视图浮窗关闭（退出完整视图）按钮 */
+export const TID_SIDE_PANE_FULL_VIEW_CLOSE = "side-pane-full-view-close";
 /** 终端面板关闭按钮 */
 export const TID_TERMINAL_CLOSE_BUTTON = "terminal-close-button";
 /** 浏览器显隐切换按钮 */
@@ -129,6 +141,8 @@ export const TID_REMOTE_KIND_SSH = "remote-kind-ssh";
 export const TID_REMOTE_KIND_WSL = "remote-kind-wsl";
 /** 远程连接方式切换到 Docker */
 export const TID_REMOTE_KIND_DOCKER = "remote-kind-docker";
+/** 远程连接方式切换到已运行 Server */
+export const TID_REMOTE_KIND_SERVER = "remote-kind-server";
 /** SSH 主机地址输入框 */
 export const TID_SSH_HOST_INPUT = "ssh-host-input";
 /** SSH 端口号输入框 */
@@ -137,6 +151,20 @@ export const TID_SSH_PORT_INPUT = "ssh-port-input";
 export const TID_SSH_USERNAME_INPUT = "ssh-username-input";
 /** SSH config alias 选择框 */
 export const TID_SSH_CONFIG_ALIAS_SELECT = "ssh-config-alias-select";
+/** SSH config 批量导入入口 */
+export const TID_SSH_CONFIG_IMPORT = "remote-ssh-config-import";
+/** SSH config alias 快捷 chips */
+export const TID_SSH_CONFIG_ALIAS_CHIP = "remote-ssh-config-alias-chip";
+/** 连接向导的新连接目录预览 */
+export const TID_REMOTE_NEW_CONNECTION_PREVIEW = "remote-new-connection-preview";
+/** 直连 Source Server：服务地址 */
+export const TID_SERVER_URL_INPUT = "server-url-input";
+/** 直连 Source Server：显示名 */
+export const TID_SERVER_NAME_INPUT = "server-name-input";
+/** 直连 Source Server：访问令牌 */
+export const TID_SERVER_TOKEN_INPUT = "server-token-input";
+/** 直连 Source Server：工作区路径 */
+export const TID_SERVER_WORKSPACE_PATH_INPUT = "server-workspace-path-input";
 /** SSH 密码输入框 */
 export const TID_SSH_PASSWORD_INPUT = "ssh-password-input";
 /** SSH 私钥路径输入框 */
@@ -177,6 +205,8 @@ export const TID_PROJECT_SECTION = "project-section";
 export const TID_CONVERSATION_NEW_TASK = "conversation-new-task";
 /** 项目分区添加菜单按钮 */
 export const TID_PROJECT_ADD = "project-add";
+/** 虚拟项目新增入口 */
+export const TID_VIRTUAL_PROJECT_ADD = "virtual-project-add";
 /** Composer workspace 选择触发器 */
 export const TID_COMPOSER_WORKSPACE_TRIGGER = "composer-workspace-trigger";
 /** Composer workspace 菜单的远程连接入口 */
@@ -297,6 +327,10 @@ export const TID_SETTINGS_BACK_BUTTON = "settings-back-button";
 export const TID_SETTINGS_SECTION_NAV = "settings-section-nav";
 /** 常规设置中的增强 Find/Grep 开关 */
 export const TID_SETTINGS_NATIVE_SEARCH_SWITCH = "settings-native-search-switch";
+/** 常规设置中的 ToolSearch 模式下拉触发器 */
+export const TID_SETTINGS_TOOL_SEARCH_SELECT = "settings-tool-search-select";
+/** 常规设置中的 ToolSearch 模式下拉项（动态后缀为 auto|local|off） */
+export const TID_SETTINGS_TOOL_SEARCH_OPTION = "settings-tool-search-option";
 /** 常规设置中的数据存储路径只读输入框 */
 export const TID_SETTINGS_DATA_BASE_DIR_INPUT = "settings-data-base-dir-input";
 /** 常规设置中的数据存储路径目录选择按钮 */

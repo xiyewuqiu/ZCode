@@ -6,7 +6,7 @@ import {
 import { mkdir } from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
 import {
   isRemoteWorkspaceIdentity,
   YCODE_AGENT_PROVIDER,
@@ -35,8 +35,10 @@ import type {
   YCodeTaskGroupColor,
 } from "#src/session/ycodeTaskListTypes.js";
 import { createServiceLogger } from "#src/logger/serviceLogger.js";
-import { getTasksIndexDatabasePath } from "#src/paths.js";
+import { getTasksIndexDatabasePath, getYCodeDataRootDir } from "#src/paths.js";
 import { runTasksDatabaseMigrations } from "#src/session/tasksDatabase/migrations.js";
+import { projectStorage, type ProjectMigrationContext } from "#src/project-storage/index.js";
+import type { ProjectRepositoryContract } from "#src/project-storage/contract.js";
 
 const require = createRequire(import.meta.url);
 const { DatabaseSync } = require("node:sqlite") as typeof import("node:sqlite");
@@ -53,6 +55,14 @@ function appendYCodeAgentIndexedProviderFilter(
 type DatabaseSyncInstance = InstanceType<typeof DatabaseSync>;
 
 interface TaskIndexRow {
+  // CLI 事实列由 0005 迁移补齐；旧连接/旧测试夹具可能还没有这些列。
+  cli_title?: string | null;
+  cli_title_source?: string | null;
+  cli_created_at?: number | null;
+  cli_updated_at?: number | null;
+  cli_last_outcome?: "completed" | "interrupted" | "error" | null;
+  cli_deleted?: number | null;
+  handoff_pending?: number;
   workspace_key: string;
   workspace_path: string;
   workspace_identity: string | null;
@@ -211,13 +221,21 @@ function rowToMeta(row: TaskIndexRow): YCodeTaskMeta {
         // 可能缺失或属于旧远端。读取时必须与行主键投影一致，sessions-index 才能
         // 按 workspaceKey + taskId 附加 running activity。
         taskId: row.task_id,
+        // 标题、时间与状态是 scalar 投影列：CLI 事实写入只更新列，meta_json 可能仍是旧快照。
+        title: row.title,
         workspacePath: row.workspace_path,
         workspaceIdentity,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
         // unread 是 tasks-index 产品壳状态；标量列必须覆盖可能来自其他 Host 的旧 meta_json。
         unreadAt: row.unread_at ?? undefined,
         // cron 身份以 meta_json 为准；cron_automation_id 列是索引投影，仅作兜底：
         // 历史行 meta_json 里可能还没有该字段，回退读列，下次写入会自动回填进 meta_json。
         cronAutomationId: parsed.data.cronAutomationId ?? row.cron_automation_id ?? undefined,
+        // task_status 是最近一次快照/CLI 终态写入的标量列；meta_json 里的状态可能滞后。
+        status:
+          (row.task_status as YCodeTaskMeta["status"]) ??
+          (parsed.data.status as YCodeTaskMeta["status"] | undefined),
         titleOverridden: row.title_overridden === 1,
       };
     }
@@ -246,7 +264,13 @@ function rowToMeta(row: TaskIndexRow): YCodeTaskMeta {
     forkedFromTaskId: row.forked_from_task_id ?? undefined,
     cronAutomationId: row.cron_automation_id ?? undefined,
     unreadAt: row.unread_at ?? undefined,
-    status: (row.task_status as YCodeTaskMeta["status"]) ?? undefined,
+    status:
+      (row.task_status as YCodeTaskMeta["status"]) ??
+      (row.cli_last_outcome
+        ? row.cli_last_outcome === "interrupted"
+          ? "completed"
+          : row.cli_last_outcome
+        : undefined),
   };
 }
 
@@ -473,10 +497,27 @@ function compareGroupTasks(
   return taskNodeKey(left).localeCompare(taskNodeKey(right));
 }
 
+export interface ProjectMigrationReport {
+  status: "pending" | "ready" | "failed";
+  applied: string[];
+  backupPath?: string;
+  backupSkipped: boolean;
+  error?: string;
+}
+
 export class TaskIndexRepo {
+  /** 启动迁移结果，供 Host 提示；不参与任务事实或组织状态。 */
+  migrationBackupSkipped = false;
+  private projectMigrationReport: ProjectMigrationReport = {
+    status: "pending",
+    applied: [],
+    backupSkipped: false,
+  };
   constructor(
     private readonly startupDbPath?: string,
     private readonly startupBusyTimeoutMs = 5000,
+    private readonly migrationSettings?: ProjectMigrationContext["settings"],
+    private readonly storageHostId?: string,
   ) {}
   private db: DatabaseSyncInstance | null = null;
   private dbPath: string | null = null;
@@ -525,9 +566,68 @@ export class TaskIndexRepo {
       this.db.exec("PRAGMA synchronous = NORMAL");
     }
     // Worker 已完成该路径的原始准备，业务连接不再重复全表修复。
-    if (isTasksStoragePrepared(path, this.db)) return;
-    if (!isTasksStorageMigrated(path, this.db)) runTasksDatabaseMigrations(this.db);
-    this.cleanupDeletedTaskGroupingReferences();
+    if (!isTasksStoragePrepared(path, this.db)) {
+      if (!isTasksStorageMigrated(path, this.db)) runTasksDatabaseMigrations(this.db);
+      this.cleanupDeletedTaskGroupingReferences();
+    }
+    // 任务 schema 就绪后独立执行项目组织态迁移；即使 task storage 已 prepared 也必须执行，
+    // 否则旧 settings 到项目的首次导入会被跳过。迁移自身以 sqlite journal 保证幂等。
+    await this.migrateProjectStorage();
+  }
+
+  /**
+   * 项目迁移只做加法：SQL 迁移失败整体回滚，成功后同事务记账；reconcileLegacy 可重复执行。
+   * 失败报告保留原始异常，调用方（Host 启动）据此中止，不把部分结果当成已完成。
+   */
+  private async migrateProjectStorage(): Promise<void> {
+    try {
+      const result = await projectStorage.migrate(this.getDatabase(), {
+        settings: this.migrationSettings,
+        hostId: this.storageHostId,
+        backupDirectories: [join(getYCodeDataRootDir(), "backup")],
+        warn: (message, details) => createServiceLogger("project-migration").warn(message, details),
+      });
+      this.migrationBackupSkipped = result.backupSkipped;
+      this.projectMigrationReport = {
+        status: "ready",
+        applied: result.applied,
+        ...(result.backupPath ? { backupPath: result.backupPath } : {}),
+        backupSkipped: result.backupSkipped,
+      };
+      if (result.applied.length > 0) {
+        createServiceLogger("project-migration").info(undefined, "项目迁移已提交", {
+          applied: result.applied,
+          backupSkipped: result.backupSkipped,
+        });
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.projectMigrationReport = {
+        status: "failed",
+        applied: [],
+        backupSkipped: this.projectMigrationReport.backupSkipped,
+        error: message,
+      };
+      createServiceLogger("project-migration").error(undefined, "项目迁移失败，启动中止", {
+        error: message,
+        hostId: this.storageHostId ?? "local",
+      });
+      throw error;
+    }
+  }
+
+  getProjectMigrationReport(): ProjectMigrationReport {
+    return { ...this.projectMigrationReport };
+  }
+
+  async getOrganizationDatabase(): Promise<DatabaseSyncInstance> {
+    await this.ensureReady();
+    return this.getDatabase();
+  }
+
+  async getProjectRepository(): Promise<ProjectRepositoryContract> {
+    await this.ensureReady();
+    return projectStorage.repository(this.getDatabase(), this.storageHostId);
   }
 
   private deleteTaskGroupingReferencesReady(workspaceKeyValue: string, taskId: string): void {
@@ -616,6 +716,13 @@ export class TaskIndexRepo {
     const row = this.getDatabase()
       .prepare(
         `SELECT
+          cli_title,
+          cli_title_source,
+          cli_created_at,
+          cli_updated_at,
+          cli_last_outcome,
+          cli_deleted,
+          handoff_pending,
           workspace_key,
           workspace_path,
           workspace_identity,
@@ -1185,6 +1292,8 @@ export class TaskIndexRepo {
         searchable_text: searchableText,
         meta_json: serializeMetaJson(record.meta),
       });
+    // 新版本写行时同事务补齐 host 身份与首次归属；已决定归属的行不会被重算。
+    projectStorage.admitTaskIdentity(this.getDatabase(), record.meta, this.storageHostId);
     const persisted = this.getTaskRow(record.meta);
     if (!persisted) {
       throw new Error(`task index 写入后缺少 task: ${record.meta.taskId}`);
@@ -1380,6 +1489,169 @@ export class TaskIndexRepo {
         deleted: false,
         titleOverridden: meta.titleOverridden ?? false,
       });
+    });
+  }
+
+  /**
+   * CLI 事实是标题/时间/lastOutcome/删除标记的唯一来源；组织态列（pin/archive/unread）
+   * 不在这里推导。旧版本交接位由确认后的同一事务清除。
+   */
+  async applyCliFacts(params: {
+    meta: YCodeTaskMeta;
+    titleSource?: string;
+    lastOutcome?: "completed" | "interrupted" | "error";
+    deleted?: boolean;
+  }): Promise<YCodeTaskMeta> {
+    await this.ensureReady();
+    return this.enqueueWrite(params.meta, () => {
+      const db = this.getDatabase();
+      db.exec("BEGIN IMMEDIATE");
+      try {
+        const existing = this.getTaskRow(params.meta);
+        // 预留行尚无 CLI 事实。首条事实补齐 provider/展示基线，保留预留后发生的组织操作。
+        if (!existing || (existing.cli_created_at == null && existing.created_at === 0))
+          this.writeRecord({
+            meta: {
+              ...params.meta,
+              ...(existing?.title_overridden === 1 ? { title: existing.title } : {}),
+            },
+            pinned: existing?.pinned === 1,
+            archived: existing?.archived === 1,
+            deleted: existing?.deleted === 1,
+            titleOverridden: existing?.title_overridden === 1,
+          });
+        const source = params.titleSource ?? "default";
+        // lastOutcome 到产品 status 的映射：interrupted 仍是一次完成的 turn。
+        const status =
+          params.lastOutcome === undefined
+            ? null
+            : params.lastOutcome === "error"
+              ? "error"
+              : "completed";
+        db.prepare(
+          `UPDATE tasks SET
+            cli_title=CASE WHEN cli_title_source='custom' AND ?<>'custom' THEN cli_title ELSE ? END,
+            cli_title_source=CASE WHEN cli_title_source='custom' AND ?<>'custom' THEN cli_title_source ELSE ? END,
+            cli_created_at=coalesce(?,cli_created_at),cli_updated_at=max(coalesce(cli_updated_at,0),?),
+            cli_last_outcome=coalesce(?,cli_last_outcome),cli_deleted=max(coalesce(cli_deleted,0),?),
+            title=CASE WHEN (handoff_pending & 2)<>0 THEN title WHEN cli_title_source='custom' AND ?<>'custom' THEN cli_title ELSE ? END,
+            title_overridden=CASE WHEN (handoff_pending & 2)<>0 THEN title_overridden WHEN ?='custom' OR cli_title_source='custom' THEN 1 ELSE 0 END,
+            updated_at=?,created_at=?,task_status=coalesce(?,task_status),deleted=max(deleted,?),
+            handoff_pending=(handoff_pending & ~4)
+              & CASE WHEN ?=1 THEN ~1 ELSE -1 END
+              & CASE WHEN ?=cli_title AND ?='custom' THEN ~2 ELSE -1 END
+            WHERE workspace_key=? AND task_id=?`,
+        ).run(
+          source,
+          params.meta.title,
+          source,
+          source,
+          params.meta.createdAt,
+          params.meta.updatedAt,
+          params.lastOutcome ?? null,
+          params.deleted ? 1 : 0,
+          source,
+          params.meta.title,
+          source,
+          params.meta.updatedAt,
+          params.meta.createdAt,
+          status,
+          params.deleted ? 1 : 0,
+          params.deleted ? 1 : 0,
+          params.meta.title,
+          source,
+          workspaceKey(params.meta),
+          params.meta.taskId,
+        );
+        const persisted = this.getTaskRow(params.meta);
+        if (!persisted) throw new Error(`task index 写入后缺少 task: ${params.meta.taskId}`);
+        // CLI 明确删除时同一事务清 grouped 引用，避免列表结构继续暴露已隐藏行。
+        if (params.deleted)
+          this.deleteTaskGroupingReferencesReady(workspaceKey(params.meta), params.meta.taskId);
+        db.exec("COMMIT");
+        return rowToMeta(persisted);
+      } catch (error) {
+        if (db.isTransaction) db.exec("ROLLBACK");
+        throw error;
+      }
+    });
+  }
+
+  /** 仅消费 CLI 明确删除；snapshot 缺席不能走这里。 */
+  async applyCliDeletion(params: {
+    workspacePath: string;
+    workspaceIdentity?: string;
+    taskId: string;
+  }): Promise<void> {
+    await this.ensureReady();
+    return this.enqueueWrite(params, () => {
+      const db = this.getDatabase();
+      db.exec("BEGIN IMMEDIATE");
+      try {
+        db.prepare(
+          "UPDATE tasks SET cli_deleted=1,deleted=1,handoff_pending=handoff_pending & ~1 WHERE workspace_key=? AND task_id=?",
+        ).run(workspaceKey(params), params.taskId);
+        this.deleteTaskGroupingReferencesReady(workspaceKey(params), params.taskId);
+        db.exec("COMMIT");
+      } catch (error) {
+        if (db.isTransaction) db.exec("ROLLBACK");
+        throw error;
+      }
+    });
+  }
+
+  /**
+   * CLI 查不到该 session 时只做 orphan 标记，保留行和既有可见性；
+   * 列表明细由产品壳决定，不能把对账缺口解释为删除。
+   */
+  async markCliOrphan(params: {
+    workspacePath: string;
+    workspaceIdentity?: string;
+    taskId: string;
+  }): Promise<void> {
+    await this.ensureReady();
+    return this.enqueueWrite(params, () => {
+      this.getDatabase()
+        .prepare(
+          "UPDATE tasks SET handoff_pending=handoff_pending | 4 WHERE workspace_key=? AND task_id=?",
+        )
+        .run(workspaceKey(params), params.taskId);
+    });
+  }
+
+  /** 对账候选：整 workspace 行 + 未决交接位；调用方按快照在场集合过滤。 */
+  async listReconciliationRows(target: {
+    workspacePath: string;
+    workspaceIdentity?: string;
+  }): Promise<Array<{ meta: YCodeTaskMeta; handoffPending: number }>> {
+    await this.ensureReady();
+    const rows = this.getDatabase()
+      .prepare("SELECT * FROM tasks WHERE workspace_key=? AND provider=?")
+      .all(workspaceKey(target), YCODE_AGENT_PROVIDER) as unknown as TaskIndexRow[];
+    return rows.map((row) => ({ meta: rowToMeta(row), handoffPending: row.handoff_pending ?? 0 }));
+  }
+
+  /** CLI 确认 child 后移除旧版本误建的派生行，不修改会话正文或 CLI deleted。 */
+  async removeSubagentIndexRow(params: {
+    workspacePath: string;
+    workspaceIdentity?: string;
+    taskId: string;
+  }): Promise<void> {
+    await this.ensureReady();
+    return this.enqueueWrite(params, () => {
+      const db = this.getDatabase();
+      db.exec("BEGIN IMMEDIATE");
+      try {
+        db.prepare("DELETE FROM tasks WHERE workspace_key=? AND task_id=?").run(
+          workspaceKey(params),
+          params.taskId,
+        );
+        this.deleteTaskGroupingReferencesReady(workspaceKey(params), params.taskId);
+        db.exec("COMMIT");
+      } catch (error) {
+        if (db.isTransaction) db.exec("ROLLBACK");
+        throw error;
+      }
     });
   }
 

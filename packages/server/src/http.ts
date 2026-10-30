@@ -34,6 +34,10 @@ import {
   type ServerRemoteInfo,
   type ServerRemoteWorkspaceInfo,
 } from "@ycode/shared";
+import {
+  SourceServerWorkspaceIdentityChannelServer,
+  type SourceServerWorkspaceIdentityMapper,
+} from "@ycode/services/node";
 import { connectRemote, createRemoteBackend, type RemoteConnection } from "./remote/index.js";
 import { createHostCapabilityStore } from "./hostCapability.js";
 
@@ -83,6 +87,7 @@ function setupChannelServer(
   ws: WebSocket,
   services: ServiceCollection,
   clientMode: "desktop-continuous" | "web-remote-replayable",
+  workspaceIdentityMapper?: SourceServerWorkspaceIdentityMapper,
 ) {
   const socket = wrapWebSocket(ws);
   const protocol = new SocketProtocol(socket);
@@ -101,7 +106,12 @@ function setupChannelServer(
   if (connectionScope) {
     overrides.set(IYCodeAgentService.channelName, connectionScope.service);
   }
-  services.exposeOnChannelServer(server, overrides);
+  // 独立 Source Server 的 CLI wire 使用 canonical storage key；对外只暴露 stable identity。
+  // 其它业务 channel 不在这里绕过 alias，source-server-workspace channel 仍返回真实 canonical。
+  const exposureServer = workspaceIdentityMapper
+    ? new SourceServerWorkspaceIdentityChannelServer(server, workspaceIdentityMapper)
+    : server;
+  services.exposeOnChannelServer(exposureServer, overrides);
   socket.onClose(() => {
     void connectionScope?.dispose();
     rawServer.dispose();
@@ -124,6 +134,8 @@ interface HttpServerOptions {
   spaFallback?: boolean;
   staticRoot?: string;
   workspaces?: ServerRemoteWorkspaceInfo[];
+  /** 独立 Source Server 装配返回的 canonical → stable 映射；旧调用方不传时保持原 wire。 */
+  workspaceIdentityMapper?: SourceServerWorkspaceIdentityMapper;
 }
 
 function readTrimmedEnv(name: string): string | undefined {
@@ -310,14 +322,24 @@ export function createHttpServer(
     "/ws",
     upgradeWebSocket(() => ({
       onOpen(_event, ws) {
-        setupChannelServer(ws.raw as WebSocket, services, "web-remote-replayable");
+        setupChannelServer(
+          ws.raw as WebSocket,
+          services,
+          "web-remote-replayable",
+          options.workspaceIdentityMapper,
+        );
       },
     })),
   );
 
   const upgradeTrustedHostWebSocket = upgradeWebSocket(() => ({
     onOpen(_event, ws) {
-      setupChannelServer(ws.raw as WebSocket, services, "desktop-continuous");
+      setupChannelServer(
+        ws.raw as WebSocket,
+        services,
+        "desktop-continuous",
+        options.workspaceIdentityMapper,
+      );
     },
   }));
   app.use("/ws/host", async (c, next) => {

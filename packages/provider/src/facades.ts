@@ -71,6 +71,12 @@ export interface ProviderSettingsMutationTarget {
     membership?: ProviderModelMembership,
     useRecommendedConfig?: boolean,
   ): Promise<unknown>;
+  addPersonalModels(
+    providerId: ProviderId,
+    models: readonly { readonly modelId: ModelId; readonly config: ModelConfig }[],
+    membership?: ProviderModelMembership,
+    useRecommendedConfig?: boolean,
+  ): Promise<unknown>;
   renamePersonalModel(
     providerId: ProviderId,
     currentModelId: ModelId,
@@ -363,6 +369,24 @@ export class ProviderSettingsFacade {
         providerId,
         modelId,
         parseModelConfig(config),
+        this.#modelMembership(providerId),
+        useRecommendedConfig,
+      ),
+    );
+  }
+
+  addPersonalModels(
+    providerId: ProviderId,
+    models: readonly { readonly modelId: ModelId; readonly config: ModelConfigObject }[],
+    useRecommendedConfig?: boolean,
+  ): Promise<ProviderSettingsView> {
+    return this.#mutateProvider(providerId, "add-models", (target) =>
+      target.addPersonalModels(
+        providerId,
+        models.map((model) => ({
+          modelId: model.modelId,
+          config: parseModelConfig(model.config),
+        })),
         this.#modelMembership(providerId),
         useRecommendedConfig,
       ),

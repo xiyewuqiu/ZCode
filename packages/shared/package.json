@@ -6,9 +6,11 @@
     ".": "./src/index.ts",
     "./runtime-env": "./src/runtimeEnv.ts",
     "./mcp": "./src/mcp.ts",
+    "./mcp-apps": "./src/mcp-apps/index.ts",
     "./runtime-tool-runtime": "./src/runtime-tool-runtime.ts",
     "./node-repl-browser-broker": "./src/browser-use/nodeReplBroker.ts",
     "./process-diagnostic": "./src/process-diagnostic.ts",
+    "./test-ids": "./src/test-ids.ts",
     "./model-selection": "./src/model-selection.ts",
     "./account-provider-state": "./src/account-provider-state.ts",
     "./model-config": "./src/model-config.ts",
@@ -21,7 +23,8 @@
     "./workspace-hook-discovery": "./src/workspace-hook-discovery.ts",
     "./workspace-hook-mutation": "./src/workspace-hook-mutation.ts",
     "./workspace-hook-review-monotonicity": "./src/workspace-hook-review-monotonicity.ts",
-    "./workspace-hook-trust-store-file": "./src/workspace-hook-trust-store-file.ts"
+    "./workspace-hook-trust-store-file": "./src/workspace-hook-trust-store-file.ts",
+    "./sqlite-migrations": "./src/sqlite-migrations/index.ts"
   },
   "scripts": {
     "lint": "oxlint",

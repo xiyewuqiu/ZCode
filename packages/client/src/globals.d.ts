@@ -1,6 +1,9 @@
 import type {
+  BindRemoteWorkspaceSessionContextRequest,
+  BindRemoteWorkspaceSessionContextResult,
   DesktopCommandId,
   IPlatformService,
+  WSLConnectOptions,
   DesktopZoomState,
   DesktopWindowChromeState,
   DesktopTitleBarTheme,
@@ -31,6 +34,7 @@ import type {
   PostUpdateReleaseNotesPayload,
   RemoteConnectionRuntimeLog,
   RemoteSessionClosedEvent,
+  RemoteSessionReconnectedEvent,
   RemoteTarget,
   SSHConfigAliasOption,
   RendererTelemetryEventPayload,
@@ -74,18 +78,27 @@ declare global {
         options: RemoteTarget,
         requestId?: string,
         context?: {
-          workspacePath: string;
+          workspacePath?: string;
           workspaceIdentity?: string;
+          connectTrigger?: "new" | "reconnect" | "restore";
+          confirmSourceServerInstall?: boolean;
         },
-      ): Promise<{ success: boolean; error?: string; sessionId?: string }>;
+      ): Promise<{
+        success: boolean;
+        error?: string;
+        reasonCode?: string;
+        retryable?: boolean;
+        sessionId?: string;
+        reusedConnectionTarget?: RemoteTarget;
+        profileId?: string;
+        resolvedWslTarget?: Required<WSLConnectOptions>;
+      }>;
       /** 取消当前窗口尚未建立完成的远程连接 */
       cancelPendingRemoteConnection?(requestId?: string): Promise<void>;
       /** 绑定远程 logical session 的 canonical workspace context */
-      bindRemoteWorkspaceSessionContext?(context: {
-        remoteSessionId: string;
-        workspacePath: string;
-        workspaceIdentity?: string;
-      }): Promise<void>;
+      bindRemoteWorkspaceSessionContext?(
+        context: BindRemoteWorkspaceSessionContextRequest,
+      ): Promise<BindRemoteWorkspaceSessionContextResult>;
       /** 释放当前窗口里的远程 session */
       disposeRemoteSession(sessionId: string): Promise<void>;
       /** 检查本机 Docker daemon 是否可用 */
@@ -116,6 +129,10 @@ declare global {
       onRemoteConnectionLog(handler: (entry: RemoteConnectionRuntimeLog) => void): () => void;
       /** 订阅远程 workspace session 关闭事件，返回 disposer */
       onRemoteSessionClosed(handler: (event: RemoteSessionClosedEvent) => void): () => void;
+      /** 订阅 Source 自动重连后的 logical session 换代事件 */
+      onRemoteSessionReconnected?(
+        handler: (event: RemoteSessionReconnectedEvent) => void,
+      ): () => void;
       /** 检查目录是否已在其他窗口打开 */
       activateOrSetWorkspace?(path: string): Promise<{ activated: boolean }>;
       /** 同步当前窗口所有 tab 的 workspace 路径到 main 进程 */
@@ -309,6 +326,21 @@ declare global {
       getSystemLocale?(): Promise<Locale>;
       /** 同步标题栏亮暗色 */
       setTitleBarTheme(theme: DesktopTitleBarTheme): Promise<void>;
+    };
+    /**
+     * 插件 UI 沙箱：独立命名空间，不进 window.ycode。
+     * 只暴露明确的沙箱操作；端口不能过 contextBridge，走 window.postMessage transfer。
+     */
+    ycodePluginSandbox?: {
+      getOwnerWebContentsId(): Promise<number>;
+      registerSandbox(
+        input: import("@ycode/shared/mcp-apps").PluginSandboxRegisterRequestPayload,
+      ): Promise<
+        | ({ ok: true } & import("@ycode/shared/mcp-apps").PluginSandboxHandle)
+        | { ok: false; error: string }
+      >;
+      disposeSandbox(sandboxId: string, initId?: number): Promise<void>;
+      consumeUserGesture(sandboxId: string): Promise<boolean>;
     };
   }
 }

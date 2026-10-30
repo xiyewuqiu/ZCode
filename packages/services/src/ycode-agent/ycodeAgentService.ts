@@ -1,5 +1,10 @@
 import { requestPluginReferenceCatalog } from "#src/ycode-agent/pluginReferenceCatalogRequest.js";
-import { sessionStoragePreviewSchema, sessionPurgeResultSchema } from "@ycode/shared";
+import {
+  sessionDatabaseOptimizeResultSchema,
+  sessionDatabaseStatsSchema,
+  sessionStoragePreviewSchema,
+  sessionPurgeResultSchema,
+} from "@ycode/shared";
 import { sessionDebugSnapshotSchema } from "@ycode/shared";
 /* oxlint-disable eslint(max-lines) -- YCode Protocol transport、通知 wiring 和 app-facing session 方法必须共享同一个 client/emitter 上下文。 */
 import { randomUUID } from "node:crypto";
@@ -8,8 +13,14 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { Emitter } from "@ycode/rpc";
 import type { IDisposable } from "@ycode/rpc";
-import type { ModelSelectionView, ProviderSource } from "@ycode/provider";
-import { completeNewModelSelection } from "@ycode/provider";
+import {
+  MCP_UI_METHOD,
+  mcpUiAppToolCallNotificationSchema,
+  mcpUiHostResponseSchema,
+  type McpUiAppToolCallNotification,
+  type McpUiHostResponse,
+} from "@ycode/shared/mcp-apps";
+import type { ModelSelectionView } from "@ycode/provider";
 import {
   YCODE_SESSION_RUNTIME_PREFERENCES_REQUEST_TIMEOUT_MS,
   formatLogPrefix,
@@ -132,6 +143,7 @@ import type {
   YCodeAgentInitializeResult,
   YCodeAgentListSessionsParams,
   YCodeAgentListSessionSubagentsParams,
+  YCodeAgentMcpUiParams,
   YCodeAgentReadWorkspacePresentationParams,
   YCodeAgentReadSessionEventsParams,
   YCodeAgentReadSessionMessagesParams,
@@ -216,6 +228,7 @@ import {
   conversationTelemetryFactSchema,
   cuaPermissionObservationSchema,
   sessionsIndexTopic,
+  sessionsIndexReconcileResultSchema,
   sessionsIndexTopicWireCandidateSchema,
   MAX_LEGACY_TASK_IDS_PER_SUBSCRIBE,
   V4_METHODS,
@@ -295,6 +308,8 @@ const cuaOperationLogger = createServiceLogger("cua-operation-turn");
 const PLUGIN_MANAGEMENT_WORKSPACE_DIR_NAME = "plugin-workspace";
 // 状态探测完成后释放闲置的 MCP 子进程；只作用于控制面，不回收会话进程。
 const MCP_STATUS_LANE_IDLE_TIMEOUT_MS = 5 * 60_000;
+// 插件管理同样只在设置/市场打开时使用；空闲后释放专用 app-server，避免控制面进程常驻。
+const PLUGIN_MANAGEMENT_LANE_IDLE_TIMEOUT_MS = 5 * 60_000;
 // 官方 Claude marketplace 首次接入需要 clone/copy GitHub 仓库，30s 默认协议超时会杀掉健康 agent。
 // 插件市场管理属于低频网络 I/O 操作，单独放宽超时，不影响普通会话消息的实时失败边界。
 const PLUGIN_MANAGEMENT_REQUEST_TIMEOUT_MS = 5 * 60_000;
@@ -805,6 +820,8 @@ interface CreateYCodeAgentServiceOptions extends Omit<
 > {
   /** 仅供 MCP 状态探测进程使用，不能把空闲回收传给 chat。 */
   mcpStatusIdleTimeoutMs?: number;
+  /** 仅供插件管理控制面使用；空闲后回收，不影响 chat 会话进程。 */
+  pluginIdleTimeoutMs?: number;
   /** Desktop Host 请求 Main 登记 Agent 已授权的精确本地视频路径。 */
   authorizeLocalMediaPreviewPath?: (path: string) => Promise<string>;
   modelSelectionReadinessSource?: ModelSelectionReadinessSource;
@@ -890,6 +907,8 @@ export function createYCodeAgentService(
     requestTimeoutMs: options?.requestTimeoutMs,
     resolveSpawnEnv: options?.resolveSpawnEnv,
     waitForSpawnAdmission: options?.waitForSpawnAdmission,
+    lane: "plugin-management",
+    idleTimeoutMs: options?.pluginIdleTimeoutMs ?? PLUGIN_MANAGEMENT_LANE_IDLE_TIMEOUT_MS,
   });
   // 合并时误删了独立进程：mcp/list 的慢握手会堵住串行 stdio 队列，连带卡住插件卸载。
   // 恢复专用控制面进程及空闲回收；共享 workspace 路径，不共享请求队列或 watchdog。
@@ -930,6 +949,8 @@ export function createYCodeAgentService(
   const toolExecResourceEmitter = new Emitter<YCodeToolExecResource>();
   const mcpResourceSamplesEmitter = new Emitter<YCodeMcpResourceSample[]>();
   const mcpTelemetryEmitter = new Emitter<YCodeMcpTelemetryEvent>();
+  // MCP Apps app-tool 投递：CLI → host 的窗口级通知；UI adapter 按实例过滤。
+  const mcpUiAppToolCallEmitter = new Emitter<McpUiAppToolCallNotification>();
   const pluginOperationProgressEmitters = new Map<
     string,
     Emitter<YCodePluginOperationProgressNotification>
@@ -1178,7 +1199,7 @@ export function createYCodeAgentService(
             return;
           }
           const { workspace } = waiting;
-          const client = await getClient(workspace);
+          await getClient(workspace);
           logger.info(undefined, "provider/model 就绪后已启动等待中的 YCode agent", {
             providerCount: event.snapshot.providerCount,
             reason: event.reason,
@@ -1562,6 +1583,13 @@ export function createYCodeAgentService(
           const parsed = ycodeMcpResourceSamplesSchema.safeParse(message.params);
           if (parsed.success) mcpResourceSamplesEmitter.fire(parsed.data);
           else logger.debug(undefined, "丢弃无效 MCP 资源样本");
+          return;
+        }
+
+        if (message.method === ycodeProtocolNotifications.mcpUiAppToolCall) {
+          const parsed = mcpUiAppToolCallNotificationSchema.safeParse(message.params);
+          if (parsed.success) mcpUiAppToolCallEmitter.fire(parsed.data);
+          else logger.debug(undefined, "丢弃无效 MCP Apps app-tool 投递");
           return;
         }
 
@@ -2550,6 +2578,7 @@ export function createYCodeAgentService(
     sessionRuntimePreferencesRequestEmitter.dispose();
     processResourceSampleEmitter.dispose();
     mcpTelemetryEmitter.dispose();
+    mcpUiAppToolCallEmitter.dispose();
     toolExecResourceEmitter.dispose();
     mcpResourceSamplesEmitter.dispose();
     for (const emitter of pluginOperationProgressEmitters.values()) {
@@ -2728,6 +2757,7 @@ export function createYCodeAgentService(
       const normalizedPreferences: YCodeAgentAppRuntimePreferences = {
         ...preferences,
         modelIoFullRetentionEnabled: preferences.modelIoFullRetentionEnabled === true,
+        toolSearchMode: preferences.toolSearchMode ?? "off",
       };
       latestAppRuntimePreferences = normalizedPreferences;
       const activeClients = [...activeClientsByWorkspaceKey.values()];
@@ -3009,6 +3039,21 @@ export function createYCodeAgentService(
       );
     },
 
+    async getSessionDatabaseStats(params) {
+      // 统计事实源是目标 workspace 的 Agent 单连接；不在 Host/Main 另开 SQLite。
+      const client = await getReadOnlyClient(params);
+      return client.request(V4_METHODS.storageDatabaseStats, {}, sessionDatabaseStatsSchema);
+    },
+
+    async optimizeSessionDatabase(params) {
+      const client = await getReadOnlyClient(params);
+      return client.request(
+        V4_METHODS.storageDatabaseOptimize,
+        { confirm: params.confirm },
+        sessionDatabaseOptimizeResultSchema,
+      );
+    },
+
     async readSession(params: YCodeAgentReadSessionParams) {
       const client = await getReadOnlyClient(params, params.runtimePolicy);
       // task-index 为补正文索引调用 readSession 时，默认策略会在 runtime
@@ -3198,6 +3243,17 @@ export function createYCodeAgentService(
         });
         return await requestMcpList();
       }
+    },
+
+    async mcpUi(params: YCodeAgentMcpUiParams): Promise<McpUiHostResponse> {
+      // 与 listMcpServerStatuses 同一条 workspace agent client：session record 只存在于该进程。
+      // workspace 由 services 用目标连接补齐（identity 优先），renderer 不能替别的 workspace 拼身份。
+      const client = await getReadOnlyClient(params);
+      return client.request(
+        MCP_UI_METHOD,
+        { workspace: buildWorkspaceRef(params), ...params.request },
+        mcpUiHostResponseSchema,
+      );
     },
 
     async listPlugins(params: YCodeAgentPluginViewParams) {
@@ -4775,6 +4831,15 @@ export function createYCodeAgentService(
     // ── sessions-index 通道（列表活性）：复用 conversationSubscribe RPC，
     // 按 topic 前缀由 CLI server 分派 ──
 
+    async reconcileSessionsIndexV4(params) {
+      const client = await getReadOnlyClient(params, "existing-only");
+      return client.request(
+        V4_METHODS.sessionsIndexReconcile,
+        { workspaceId: resolveWorkspaceKey(params), sessionIds: params.sessionIds },
+        sessionsIndexReconcileResultSchema,
+      );
+    },
+
     async subscribeSessionsIndexV4(params: YCodeAgentSessionsIndexSubscribeParams) {
       // 侧栏会同时登记所有 restored workspace。被动订阅若使用启动型 client，
       // workspace 数量会直接放大成 CLI 数量；existing-only 缺 runtime 时只进入 dormant。
@@ -4892,6 +4957,10 @@ export function createYCodeAgentService(
 
     onDynamicMcpTelemetry() {
       return mcpTelemetryEmitter.event;
+    },
+
+    onDynamicMcpUiAppToolCall() {
+      return mcpUiAppToolCallEmitter.event;
     },
 
     // （CLI 重连重订）：进程换代直通 process manager；v4 订阅方（task-index

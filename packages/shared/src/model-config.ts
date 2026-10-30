@@ -2,6 +2,14 @@ import { z } from "zod";
 import { compileModelOptionMap } from "@ycode/model-option-map";
 import { sparseShape } from "./config-schema.js";
 
+/** Provider 默认协议与模型覆盖协议共用同一个枚举，避免两套字面量漂移。 */
+export const modelApiFormatDataSchema = z.enum([
+  "anthropic-messages",
+  "openai-chat-completions",
+  "openai-responses",
+]);
+export type ModelApiFormatData = z.infer<typeof modelApiFormatDataSchema>;
+
 function optionMapSchema(variableName: "reasoningLevel" | "maxOutputTokens") {
   return z
     .string()
@@ -102,6 +110,8 @@ export const modelOptionSpecsDataSchema = z
 export const completeModelConfigDataSchema = z
   .object({
     enabled: z.boolean(),
+    // 缺省表示继承 Provider 默认协议；空值不写入个人配置。
+    apiFormat: modelApiFormatDataSchema.nullable().optional(),
     properties: completeModelPropertiesDataSchema,
     optionSpecs: completeModelOptionSpecsDataSchema,
   })

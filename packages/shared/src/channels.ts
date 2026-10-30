@@ -127,6 +127,18 @@ export const ServiceChannels = {
   PromptAttachmentTransfer: "prompt-attachment-transfer",
   /** Onboarding 完成记录服务（本地持久化，后续上传服务器） */
   OnboardingRecord: "onboarding-record",
+  /** 当前 Host 的项目目录服务 */
+  Project: "project",
+  /** 本机持有的远端项目目录服务 */
+  RemoteProjects: "remote-projects",
+  /** 手机远端 attachment 的窗口目录；原 project 继续属于工作区。 */
+  WindowProject: "window-project",
+  WindowRemoteProjects: "window-remote-projects",
+  WindowProjectChanges: "window-project-changes",
+  /** Source Server 连接/更新管理服务 */
+  SourceServerManagement: "source-server-management",
+  /** Source Server workspace identity / 迁移查询服务 */
+  SourceServerWorkspace: "source-server-workspace",
 } as const;
 
 export type ServiceChannelName = (typeof ServiceChannels)[keyof typeof ServiceChannels];
@@ -153,6 +165,8 @@ export const PlatformChannels = {
   RemoteConnectionLog: "ycode:remote-connection-log",
   /** Main → Renderer：远程 workspace session 已关闭 */
   RemoteSessionClosed: "ycode:remote-session-closed",
+  /** Main → Renderer：Source 自动重连后 remote workspace session 已换代 */
+  RemoteSessionReconnected: "ycode:remote-session-reconnected",
   /** 检查目录是否已在其他窗口打开，如果是则激活该窗口 */
   ActivateOrSetWorkspace: "ycode:activate-or-set-workspace",
   /** 建立 SSH 远程连接 */
@@ -371,6 +385,16 @@ export const PlatformChannels = {
   MigrateLegacyCommonMcp: "ycode:migrate-legacy-common-mcp",
   /** Renderer → Main：获取当前设备的稳定标识符（deviceMid） */
   GetDeviceId: "ycode:get-device-id",
+  /** Renderer → Main：登记 MCP App 沙箱内容（基础切片，完整链路走 host plugin-ui-bridge） */
+  PluginSandboxRegister: "ycode:plugin-sandbox-register",
+  /** Renderer → Main：读取宿主窗口 webContents id，供沙箱 owner 校验 */
+  PluginSandboxOwnerWebContentsId: "ycode:plugin-sandbox-owner-web-contents-id",
+  /** Renderer → Main：释放沙箱（可选 initId 防迟到 dispose 误杀新登记） */
+  PluginSandboxDispose: "ycode:plugin-sandbox-dispose",
+  /** Renderer → Main：一次性消费 guest 输入手势 */
+  PluginSandboxConsumeUserGesture: "ycode:plugin-sandbox-consume-user-gesture",
+  /** Renderer → Main：宿主操作截图并写入剪贴板 */
+  PluginSandboxCopyImage: "ycode:plugin-sandbox-copy-image",
 } as const;
 
 export type PlatformChannelName = (typeof PlatformChannels)[keyof typeof PlatformChannels];
@@ -407,12 +431,26 @@ export const InternalChannels = {
   RendererReadyForServicePort: "ycode:renderer-ready-for-service-port",
   /** preload → renderer：主进程已确认系统通知展示，renderer 可播放提示音 */
   TaskNotificationSound: "ycode:task-notification-sound",
+  /** main → renderer：插件沙箱 MessagePort（经 preload window.postMessage transfer） */
+  PluginSandboxPorts: "ycode:plugin-sandbox-ports",
+} as const;
+
+// ============================================================================
+// 插件 UI 沙箱频道 —— main ↔ guest preload
+// ============================================================================
+/** 插件沙箱 guest 的 preload 与 main 之间的固定频道。 */
+export const PluginSandboxChannels = {
+  /** main → guest preload：初始化并转交唯一一条 MessagePort。 */
+  Init: "ycode:plugin-sandbox-init",
 } as const;
 
 /** @deprecated `/ws` 已忽略该头；保留常量仅供旧客户端兼容。 */
 export const YCODE_RPC_CLIENT_MODE_HEADER = "x-ycode-rpc-client-mode";
 /** desktop 先经受保护 HTTP endpoint 申请，再在 `/ws/host` 握手时一次性消费。 */
 export const YCODE_RPC_HOST_CAPABILITY_HEADER = "x-ycode-rpc-host-capability";
+
+/** 反向 topic resource 请求频道（Desktop Client ↔ Source Server）。 */
+export const TOPIC_RESOURCE_RELAY_CHANNEL = "host-topic-resource";
 
 // ============================================================================
 // 进程间消息类型 —— main ↔ host process 之间的 postMessage
@@ -475,6 +513,8 @@ export const HostResponseTypes = {
   RemoteWorkspaceConnectionLog: "remote-workspace-connection-log",
   /** window Host → main：远程 logical session 已建立 */
   RemoteWorkspaceConnected: "remote-workspace-connected",
+  /** window Host → main：Source transport 重连后 logical session 已换代 */
+  RemoteWorkspaceReconnected: "remote-workspace-reconnected",
   /** window Host → main：远程 logical session 建立失败 */
   RemoteWorkspaceConnectFailed: "remote-workspace-connect-failed",
   /** window Host → main：已连接的远程 logical session 关闭 */

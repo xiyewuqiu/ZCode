@@ -4,9 +4,10 @@ import { completeModelConfigDataSchema, modelConfigDataSchema } from "@ycode/sha
 const complete = completeModelConfigDataSchema.shape;
 // 手动模式只冻结产品明确开放的叶子；新增系统字段默认不属于个人手动配置。
 export const manualModelConfigSchema = completeModelConfigDataSchema
-  .pick({ enabled: true })
+  .pick({ enabled: true, apiFormat: true })
   .extend({
     enabled: modelConfigDataSchema.shape.enabled,
+    apiFormat: modelConfigDataSchema.shape.apiFormat,
     properties: complete.properties
       .pick({
         contextWindow: true,

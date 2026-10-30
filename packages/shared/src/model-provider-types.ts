@@ -1,3 +1,5 @@
+import type { ModelApiFormatData } from "./model-config.js";
+
 /**
  * Provider 身份的类型边界。
  *
@@ -68,5 +70,40 @@ export type ModelConnectivityResult =
         readonly message: string;
         /** 设置连接测试边界已确认的资格失败；其他执行错误保留原消息。 */
         readonly code?: "provider-unavailable" | "model-unavailable";
+      };
+    };
+
+/** 模型列表拉取的候选；只描述从端点发现的事实，不写入配置。 */
+export interface DiscoveredProviderModel {
+  readonly id: string;
+  readonly name?: string;
+  readonly contextWindow?: number;
+  readonly maxOutputTokens?: number;
+}
+
+export type ProviderModelDiscoveryErrorCode =
+  | "auth"
+  | "network"
+  | "protocol"
+  | "unsupported"
+  | "empty";
+
+export interface ProviderModelDiscoveryInput {
+  readonly providerId: string;
+  /** 草稿连接值优先；缺省时 Host 使用已保存的 Provider 配置。 */
+  readonly baseURL?: string;
+  readonly apiFormat?: ModelApiFormatData;
+  /** 表单里刚输入但尚未保存的 Key；优先于已保存凭据。 */
+  readonly apiKey?: string;
+  readonly headers?: Readonly<Record<string, string>>;
+}
+
+export type ProviderModelDiscoveryResult =
+  | { readonly ok: true; readonly models: readonly DiscoveredProviderModel[] }
+  | {
+      readonly ok: false;
+      readonly error: {
+        readonly code: ProviderModelDiscoveryErrorCode;
+        readonly message: string;
       };
     };

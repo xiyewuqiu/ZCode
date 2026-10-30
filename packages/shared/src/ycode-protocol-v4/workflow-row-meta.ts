@@ -64,6 +64,22 @@ export const workflowNotificationMetaSchema = z.discriminatedUnion("kind", [
     context: z.string().max(4000).optional(),
     askedAt: z.number().optional(),
   }),
+  // 留白（docs/dynamic-workflow/transcript-and-notifications.md「The payload」的 `hole` 种类）：run 走到一个
+  // 开着的 `hole<T>()`，那条分支停驻、主代理欠一段代码。`type` 是作者写的类型原文；`before` / `after`
+  // 是留白两侧的阶段名；`draftPath` / `line` 指向草稿文件里留白所在的那一行。与契约同名（contracts 侧手工镜像）。
+  z.object({
+    kind: z.literal("hole"),
+    siteId: z.string().min(1).max(64),
+    ordinal: z.number().int().nonnegative(),
+    name: z.string().min(1).max(128),
+    type: z.string().min(1).max(128),
+    prompt: z.string().max(4000).optional(),
+    draftPath: z.string().max(1024).optional(),
+    line: z.number().int().positive().optional(),
+    before: z.string().max(128).optional(),
+    after: z.string().max(128).optional(),
+    reachedAt: z.number().optional(),
+  }),
   // run 级停滞：每个 stall 段一条，不是终态。
   z.object({
     kind: z.literal("stall"),
@@ -74,6 +90,15 @@ export const workflowNotificationMetaSchema = z.discriminatedUnion("kind", [
 ]);
 export type WorkflowNotificationMeta = z.infer<typeof workflowNotificationMetaSchema>;
 
+// 主代理闲着、run 还欠着决定时的提醒：每个 run 一条，只带发出那一刻的计数与最久的等待。它是 originMeta
+// 上**独立的键**，不是上面那个 union 的成员——闭集多一个成员会让不认识它的客户端解析整帧失败。
+export const workflowBlockedMetaSchema = z.object({
+  questions: z.number().int().nonnegative(),
+  holes: z.number().int().nonnegative(),
+  sinceMs: z.number().int().nonnegative(),
+});
+export type WorkflowBlockedMeta = z.infer<typeof workflowBlockedMetaSchema>;
+
 export const backgroundResultOriginMetaSchema = z.object({
   // 三个取值与 contracts 的 BackgroundResultOriginMeta 保持同步。
   // "workflow" 是 dynamic-workflow run（workId ≡ runId），复用整条后台通知管线。
@@ -83,6 +108,8 @@ export const backgroundResultOriginMetaSchema = z.object({
   // 只在 backgroundSource === "workflow" 的单条通知轮上在场；zod 剥离未知键，
   // 这里不加即整条链路静默丢——本字段是 manifest 渲染的唯一数据源。
   workflowNotification: workflowNotificationMetaSchema.optional(),
+  // 提醒载荷，与 workflowNotification 至多在场一个。`.catch(undefined)`：形状变了也只当缺席。
+  workflowBlocked: workflowBlockedMetaSchema.optional().catch(undefined),
 });
 export type BackgroundResultOriginMeta = z.infer<typeof backgroundResultOriginMetaSchema>;
 
