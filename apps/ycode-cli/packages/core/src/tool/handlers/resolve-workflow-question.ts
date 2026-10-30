@@ -133,6 +133,8 @@ export const resolveWorkflowQuestionToolEntry: ToolEntry = {
   capability: "Answer a blocking question escalated by a subagent inside a running workflow run",
   metadata: {
     name: RESOLVE_WORKFLOW_QUESTION_TOOL_NAME,
+    shouldDefer: true,
+    searchHint: "answer a workflow actor question",
     description: RESOLVE_WORKFLOW_QUESTION_DESCRIPTION,
     // 作答会让一个停驻的 actor 带着这段文字继续干活——不是只读。
     readOnly: false,

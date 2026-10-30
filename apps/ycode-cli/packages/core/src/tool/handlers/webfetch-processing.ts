@@ -7,6 +7,7 @@ import {
 } from "@ycode/contracts";
 import type { ToolExecutionContext } from "../types.js";
 import { auxiliaryModelOptions } from "../../model/auxiliary-model-options.js";
+import { generateAuxiliaryModelText } from "../../model/generate-auxiliary-text.js";
 import { MAX_MODEL_INPUT_CHARS, WEBFETCH_TOOL_NAME } from "./webfetch-constants.js";
 import { truncateContentForModel } from "./webfetch-content.js";
 import { webFetchError } from "./webfetch-errors.js";
@@ -64,14 +65,17 @@ export async function processFetchedContent(
         traceContext: traceFromContext(context),
       },
       () =>
-        model.generateText({
-          messages,
-          tools: [],
-          options: {
-            ...auxiliaryModelOptions(model),
-            maxOutputTokens: Math.min(4096, model.optionSpecs.maxOutputTokens.max),
+        generateAuxiliaryModelText({
+          model,
+          request: {
+            messages,
+            tools: [],
+            options: {
+              ...auxiliaryModelOptions(model),
+              maxOutputTokens: Math.min(4096, model.optionSpecs.maxOutputTokens.max),
+            },
+            abortSignal: context.abortSignal,
           },
-          abortSignal: context.abortSignal,
         }),
     );
 

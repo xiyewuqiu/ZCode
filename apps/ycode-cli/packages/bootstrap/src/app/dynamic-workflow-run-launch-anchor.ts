@@ -32,6 +32,11 @@ export interface RunLaunch extends RunLaunchAnchor {
   phaseNames?: string[];
   subagentModel?: string;
   /**
+   * 脚本点名的模型名（逐字）→ 规范串（docs/dynamic-workflow/launch.md「Models the script names」）。
+   * 与子代理选型同规地不属于锚点：修订记的是**新脚本**点名的模型，绝不沿用前驱的。
+   */
+  modelBindings?: Record<string, string>;
+  /**
    * 本 run 脚本文件的绝对路径。与阶段表、
    * 子代理选型同规地不属于锚点：修订记的是**这一次修订**的脚本来自哪个文件，绝不沿用前驱的。
    */
@@ -85,6 +90,21 @@ export function readRunSubagentModel(journal: JournalStorePort, runId: string): 
  * {@link RunLaunchAnchor} 上：锚点会被修订续跑沿用，而前驱的脚本路径指向的是旧脚本，
  * 沿用它就是让模型下次去编辑一个已经不在跑的文件。
  */
+/**
+ * 从 journal 读回本 run 脚本点名的模型绑定表：同一条 `run-launched` 上的 `modelBindings`。
+ * resume 与宿主建子代理会话时据此把 persona 里的名字查成模型——零 SQL，`dwf_run` 上没有这一列。
+ * 缺席即脚本没点名任何模型（或升级前发起的 run）。
+ */
+export function readRunModelBindings(
+  journal: JournalStorePort,
+  runId: string,
+): Record<string, string> | undefined {
+  for (const stored of journal.listEvents(runId, { limit: RUN_LAUNCH_ANCHOR_SCAN_LIMIT })) {
+    if (stored.event.type === "run-launched") return stored.event.modelBindings;
+  }
+  return undefined;
+}
+
 export function readRunScriptPath(journal: JournalStorePort, runId: string): string | undefined {
   for (const stored of journal.listEvents(runId, { limit: RUN_LAUNCH_ANCHOR_SCAN_LIMIT })) {
     if (stored.event.type === "run-launched") return stored.event.scriptPath;

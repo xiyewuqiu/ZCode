@@ -32,16 +32,16 @@ import { TERMINAL_RUN_STATUSES } from "./dynamic-workflow-run-observation.js";
  * 会再对着旧事件说谎。新词表的 run 两条路给出逐字节相同的载荷（引擎的 `run-settled` 恰好只带
  * 行上的那四个字段），live 与冷回放一致的契约不变。
  *
- * `concurrencyCeiling` 是**必填**而不是可选：它是 `run-started` 载荷上的宿主派生字段，live
+ * `defaultConcurrency` 是**必填**而不是可选：它是 `run-started` 载荷上的宿主派生字段，live
  * 侧恒在场（launch 那一刻算的），这里漏掉就会让冷回放的第一条载荷比 live 少一个键——而
- * 「两侧逐字节相等」正是本模块唯一的契约。调用方给的是同一个 `resolveWorkflowConcurrencyCeiling`。
+ * 「两侧逐字节相等」正是本模块唯一的契约。调用方给的是同一个 `resolveWorkflowDefaultConcurrency`。
  */
 export function replayRunProgress(
   row: DwfRunSessionListItem,
   journal: Pick<JournalStorePort, "listEvents">,
-  concurrencyCeiling: number,
+  defaultConcurrency: number,
 ): DynamicWorkflowRunProgressPayload[] {
-  return replayRunProgressFromEvents(row, journal.listEvents(row.runId, {}), concurrencyCeiling);
+  return replayRunProgressFromEvents(row, journal.listEvents(row.runId, {}), defaultConcurrency);
 }
 
 /**
@@ -57,7 +57,7 @@ export function replayRunProgress(
 export function replayRunProgressFromEvents(
   row: DwfRunSessionListItem,
   stored: readonly StoredEvent[],
-  concurrencyCeiling: number,
+  defaultConcurrency: number,
 ): DynamicWorkflowRunProgressPayload[] {
   const toolCallId = row.toolCallId === undefined ? {} : { toolCallId: row.toolCallId };
   // 发起锚点：与 live 同一条铸造链，派生字段也要一致——
@@ -74,6 +74,11 @@ export function replayRunProgressFromEvents(
     launched?.type === "run-launched" && launched.subagentModel !== undefined
       ? { subagentModel: launched.subagentModel }
       : {};
+  // 绑定表与子代理模型同一条事件、同一条论证：live 侧从 launch 入参或同一条事件读回同一张表。
+  const modelBindings =
+    launched?.type === "run-launched" && launched.modelBindings !== undefined
+      ? { modelBindings: launched.modelBindings }
+      : {};
   const terminal = TERMINAL_RUN_STATUSES.has(row.status);
   const last = stored.at(-1);
   // 只替换**尾部**的结算：resume 过的 run 中途还躺着上一世的 `run-settled`，那是真实历史，
@@ -89,7 +94,8 @@ export function replayRunProgressFromEvents(
       ...launchInputId,
       ...resumedFrom,
       ...subagentModel,
-      concurrencyCeiling,
+      ...modelBindings,
+      concurrencyCeiling: defaultConcurrency,
     }),
   );
   if (!terminal) return payloads;
@@ -113,7 +119,8 @@ export function replayRunProgressFromEvents(
       ...launchInputId,
       ...resumedFrom,
       ...subagentModel,
-      concurrencyCeiling,
+      ...modelBindings,
+      concurrencyCeiling: defaultConcurrency,
     }),
   );
   return payloads;

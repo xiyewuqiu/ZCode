@@ -1,4 +1,5 @@
 import { runtimeInputMetadata } from "./runtime-input-presentation.js";
+import { parseAgentListingDelta } from "./agent-listing-metadata.js";
 // ============================================================
 // Session History Hydration - rebuild provider-visible context
 // ============================================================
@@ -41,6 +42,8 @@ import {
 import { compactActiveSessionMessages, isActiveCompactionBoundaryPart } from "./compact-session.js";
 import { filePartToContentBlock, projectPersistedToolMediaContent } from "./file-part-hydration.js";
 import { selectToolPartsForHistory } from "./tool-part-order.js";
+import { ModelCallWrapperSchema } from "@ycode/contracts";
+import { hydrateCompactDiscovery, hydrateToolSearchContent } from "./tool-search-hydration.js";
 
 const INTERRUPTED_TOOL_RESULT = "[Tool execution was interrupted before resume]";
 
@@ -94,7 +97,15 @@ export async function hydrateMessageHistoryFromSession(input: {
       // user <system-reminder>，后续 mid-conversation system projection 会失去 attachment source。
       const syntheticAttachment = syntheticSystemReminderAttachmentFromParts(parts);
       if (syntheticAttachment) {
-        input.history.addAttachment(syntheticAttachment.source, syntheticAttachment.content);
+        // agent_listing_delta 的增量元数据必须随恢复一起回填，否则下一次收集会把
+        // 已通知过的类型误当成新增，重复推送 system reminder。
+        input.history.addEntries([
+          {
+            kind: "attachment",
+            content: syntheticAttachment.content,
+            metadata: syntheticAttachment.metadata,
+          },
+        ]);
         appliedMessageCount++;
         continue;
       }
@@ -104,6 +115,23 @@ export async function hydrateMessageHistoryFromSession(input: {
       const presentation = runtimeInputMetadata(
         (message.info.metadata as Record<string, unknown> | undefined)?.inputPresentation,
       );
+      // Compact 边界保存的已发现工具必须回到首个摘要 user entry，否则同一条
+      // 发现事实会在恢复后丢失，Local 又退回只公告名称的状态。
+      const boundaryPart = parts.find(isActiveCompactionBoundaryPart);
+      const compactBoundary =
+        boundaryPart?.type === "compaction"
+          ? hydrateCompactDiscovery(boundaryPart.compactBoundary)
+          : undefined;
+      if (compactBoundary && entries[0]) {
+        entries[0] = {
+          ...entries[0],
+          metadata: {
+            ...legacySyntheticRuntimeMetadata(),
+            ...entries[0].metadata,
+            compactBoundary,
+          },
+        };
+      }
       input.history.addEntries(
         presentation
           ? entries.map((entry) =>
@@ -135,6 +163,7 @@ export async function hydrateMessageHistoryFromSession(input: {
         (part): ToolCallInput => ({
           id: part.callID,
           input: part.state.input,
+          modelCallWrapper: modelCallWrapperFromPart(part),
           name: providerToolNameFromPart(part),
         }),
       ),
@@ -148,6 +177,7 @@ export async function hydrateMessageHistoryFromSession(input: {
 
     for (const part of toolParts) {
       const providerToolName = providerToolNameFromPart(part);
+      const modelCallWrapper = modelCallWrapperFromPart(part);
       if (part.state.status === "completed") {
         // live tool result 使用结构化媒体，但旧恢复只读取 output 摘要，
         // 导致模型切换或冷恢复后丢失 Read/MCP 产生的真实媒体。
@@ -167,8 +197,11 @@ export async function hydrateMessageHistoryFromSession(input: {
                 attachmentBlocks,
               )
             : undefined;
-        const content = projectedMediaContent ?? part.state.output;
-        input.history.addToolResult(part.callID, providerToolName, content, true);
+        const content =
+          hydrateToolSearchContent(part.state.metadata?.modelContent) ??
+          projectedMediaContent ??
+          part.state.output;
+        input.history.addToolResult(part.callID, providerToolName, content, true, false, modelCallWrapper);
         continue;
       }
 
@@ -181,12 +214,21 @@ export async function hydrateMessageHistoryFromSession(input: {
           providerToolName,
           typeof persistedModelContent === "string" ? persistedModelContent : part.state.error,
           false,
+          true,
+          modelCallWrapper,
         );
         continue;
       }
 
       interruptedToolCount++;
-      input.history.addToolResult(part.callID, providerToolName, INTERRUPTED_TOOL_RESULT, false);
+      input.history.addToolResult(
+        part.callID,
+        providerToolName,
+        INTERRUPTED_TOOL_RESULT,
+        false,
+        true,
+        modelCallWrapper,
+      );
     }
   }
 
@@ -278,9 +320,11 @@ async function userEntriesFromParts(
     if (part.type === "text" && !part.ignored) {
       const syntheticAttachment = syntheticSystemReminderAttachmentFromTextPart(part);
       if (syntheticAttachment) {
-        syntheticAttachmentEntries.push(
-          systemReminderAttachmentEntry(syntheticAttachment.source, syntheticAttachment.content),
-        );
+        syntheticAttachmentEntries.push({
+          kind: "attachment",
+          content: syntheticAttachment.content,
+          metadata: syntheticAttachment.metadata,
+        });
         continue;
       }
       promptBlocks.push({ type: "text", text: textPartToProviderText(part) });
@@ -419,7 +463,7 @@ function textPartToProviderText(part: Extract<MessagePart, { type: "text" }>): s
 }
 
 interface SyntheticSystemReminderAttachment {
-  source: SystemReminderSource;
+  metadata: RuntimeMessageMetadata;
   content: string;
 }
 
@@ -444,7 +488,7 @@ function syntheticSystemReminderAttachmentFromTextPart(
   if (!isRestorableSystemReminderAttachmentSource(metadata.source)) return undefined;
 
   return {
-    source: metadata.source,
+    metadata,
     content: part.text,
   };
 }
@@ -527,6 +571,10 @@ function runtimeMessageMetadataFromPartMetadata(
   const presentation = runtimeInputMetadata(runtimeMessage.inputPresentation);
   if (presentation) return presentation;
   const source = runtimeMessage.source;
+  if (source === "agent_listing_delta") {
+    const delta = parseAgentListingDelta(runtimeMessage.agentListingDelta);
+    return { source, ...(delta ? { agentListingDelta: delta } : {}) };
+  }
   if (source === "real_user") {
     return realUserRuntimeMetadata();
   }
@@ -577,6 +625,11 @@ function assistantReasoningFromParts(parts: MessagePart[]): ModelReasoningConten
 
 function isToolPart(part: MessagePart): part is ToolPart {
   return part.type === "tool";
+}
+
+function modelCallWrapperFromPart(part: ToolPart) {
+  const parsed = ModelCallWrapperSchema.safeParse(part.metadata?.modelCallWrapper);
+  return parsed.success ? parsed.data : undefined;
 }
 
 function providerToolNameFromPart(part: ToolPart): string {

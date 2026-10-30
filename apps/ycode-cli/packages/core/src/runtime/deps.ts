@@ -250,6 +250,11 @@ export {
   hydrateMessageHistoryFromSession,
 } from "../agent/session-history-hydrator.js";
 export type { SessionHistoryHydrationResult } from "../agent/session-history-hydrator.js";
+export {
+  compactActiveSessionMessages,
+  findActiveCompactHistoryGeneration,
+  isActiveCompactionBoundaryPart,
+} from "../agent/compact-session.js";
 export { hydrateReadFileStateFromSession } from "../agent/read-file-state-hydrator.js";
 export type { ReadFileStateHydrationResult } from "../agent/read-file-state-hydrator.js";
 export { countContextPrefixMessages, MessageHistoryImpl } from "../agent/message-history.js";
@@ -286,7 +291,9 @@ export {
   COMPACT_PROMPT_TOO_LONG_RETRY_MARKER,
   COMPACT_PROMPT_TOO_LONG_USER_MESSAGE,
   DEFAULT_COMPACT_CONTEXT_WINDOW,
+  DEFAULT_SPECULATIVE_COMPACT_THRESHOLD_PERCENT,
   MAX_COMPACT_PROMPT_TOO_LONG_RETRIES,
+  MAX_CONSECUTIVE_AUTOCOMPACT_FAILURES,
   MAX_OUTPUT_TOKENS_FOR_SUMMARY,
   buildCompactPrompt,
   buildCompactSummaryMessage,
@@ -295,6 +302,7 @@ export {
   estimateMessageTokens,
   formatCompactSummary,
   getAutoCompactThreshold,
+  getSpeculativeCompactThreshold,
   getMessagesToSummarize,
   getUsageTotalTokens,
   hasEnoughMessagesToCompact,
@@ -302,7 +310,7 @@ export {
   shouldAutoCompact,
   buildDefaultMicrocompactThreshold,
 } from "../compact/index.js";
-export type { AutoCompactPolicyConfig } from "../compact/index.js";
+export type { AutoCompactDecision, AutoCompactPolicyConfig } from "../compact/index.js";
 export type { AutoCompactTokenOverride } from "../compact/index.js";
 export type { LocalMicrocompactPolicyConfig } from "../compact/index.js";
 export {

@@ -54,8 +54,12 @@ import type {
   ToolExecutionSpanWriter,
   ToolExecutionTelemetry,
 } from "@ycode/contracts";
-import type { PersistedReadFileStateMetadata } from "./read-file-state-metadata.js";
+import type {
+  PersistedReadFileStateMetadata,
+  PersistedReadFileStateTool,
+} from "./read-file-state-metadata.js";
 import type { RuntimeTaskRegistry } from "../runtime-task/registry.js";
+import type { ModelCallWrapper, ToolSearchExecutionContext } from "@ycode/contracts";
 
 // -----------------------------------------------
 // Tool Metadata
@@ -76,6 +80,12 @@ export interface ToolMetadata {
   riskLevel: RiskLevel;
   needsApproval: boolean;
   providerVisible?: boolean;
+  /** ToolSearch Local：声明该工具默认只公告名称，完整 schema 由搜索加载。 */
+  shouldDefer?: boolean;
+  /** 覆盖 shouldDefer，始终作为常驻工具发送完整定义。 */
+  alwaysLoad?: boolean;
+  /** 不改变 provider description 的检索材料，供 ToolSearch 关键词匹配。 */
+  searchHint?: string;
   /**
    * 声明该工具是“成功即终止 turn”的终态工具：一旦返回成功结果，executor 就在该结果上挂
    * turnControl 终止当前 turn。这是工具的内在能力声明（像 concurrentSafe/destructive），
@@ -89,6 +99,10 @@ export interface ToolMetadata {
     description?: string;
     /** 来自声明 ycode_official 鉴权的 MCP server；仅用于信任其结果里的结构化标识。 */
     official?: boolean;
+    /** 该 server 所属插件的稳定 id（`${name}@${marketplace}`）；非插件 MCP 为空。 */
+    pluginId?: string;
+    /** 工具 `_meta` 归一化后的 MCP App 描述；存在即投影 display.ui（pluginId 缺省时用 serverName 顶替）。 */
+    ui?: import("@ycode/shared/mcp-apps").McpToolUiDescriptor;
   };
 }
 
@@ -171,6 +185,8 @@ export interface ToolExecutionContext {
   modelCatalogPort?: ModelCatalogPort;
   runtimeTaskRegistry?: RuntimeTaskRegistry;
   readFileState?: ReadFileStateMap;
+  /** 当前请求的 ToolSearch Local 决策；搜索/包装调用与 executor 共用同一份目录。 */
+  toolSearch?: ToolSearchExecutionContext;
   recordReadFileStateMetadata?: (metadata: PersistedReadFileStateMetadata) => void;
   /** 记录 Skill resolved metadata；仅用于 telemetry，不改变模型可见结果。 */
   recordSkillTelemetryMetadata?: (metadata: SkillTelemetryMetadata) => void;
@@ -188,6 +204,11 @@ export interface ToolExecutionContext {
   providerVisibleToolNames?: readonly string[];
   sessionId: SessionId;
   turnId?: TurnId;
+  /**
+   * 用户在确认窗里调整过、且已应用到本次入参的字段（{@link ToolEntry.applyInputAdjustments} 的
+   * `applied`）。handler 据它告诉模型「实际跑的不是你传的那个值」；缺席即没有调整。
+   */
+  inputAdjustments?: Readonly<Record<string, unknown>>;
 }
 
 export interface ToolEmbeddedSearchContext {
@@ -203,7 +224,7 @@ export interface ReadFileStateEntry {
   limit?: number;
   isPartialView: boolean;
   readAt: Date;
-  sourceTool?: "Read" | "Write" | "Edit";
+  sourceTool?: PersistedReadFileStateTool;
   revisionId?: string;
   mtimeMs?: number;
   sizeBytes?: number;
@@ -248,10 +269,23 @@ export interface ToolInputResolutionContext {
    * 不静默放行一个宿主解不了的字符串。
    */
   modelCatalogPort?: ModelCatalogPort;
+  /**
+   * 技能加载探针：工作流创作工具的技能门用它回答「本会话历史里加载过这个技能吗」。
+   * 同步、只读，判据就是 provider 可见历史；缺席即不设门（见 handlers/workflow-skill-gate.ts）。
+   */
+  hasLoadedSkill?: (skillName: string) => boolean;
   sessionId?: string;
 }
 
 export type ToolInputResolutionResult = { result: true; input: unknown } | ToolHandlerFailure;
+
+/**
+ * {@link ToolEntry.applyInputAdjustments} 的结果：调整后的入参，与**实际生效**的那部分调整
+ * （键同入参字段名；与入参原值相同的改动不算）。`applied` 缺席即什么都没变。
+ */
+export type ToolInputAdjustmentResult =
+  | { result: true; input: unknown; applied?: Readonly<Record<string, unknown>> }
+  | ToolHandlerFailure;
 
 export type ToolHandler<TInput = unknown, TOutput = unknown> = (
   input: TInput,
@@ -315,6 +349,18 @@ export interface ToolEntry extends ToolContractDeclaration {
     input: unknown,
     context: ToolInputResolutionContext,
   ) => Promise<ToolInputResolutionResult> | ToolInputResolutionResult;
+  /**
+   * 应用用户在确认窗里对入参做的调整（docs/dynamic-workflow/launch.md「Adjusting the settings in
+   * the window」）。executor 在授权之后、handler 之前调用，`adjustments` 是 broker 结果的
+   * `inputAdjustments`。返回的入参必须仍是 `resolveInput` 产出的那种形状——handler 不为调整另开
+   * 一条路；失败即工具失败，handler 不跑。同步：只读上下文里已有的端口，不做 I/O。
+   * 不声明的工具忽略一切调整。
+   */
+  applyInputAdjustments?: (
+    input: unknown,
+    adjustments: Readonly<Record<string, unknown>>,
+    context: ToolInputResolutionContext,
+  ) => ToolInputAdjustmentResult;
   formatModelContent?: (output: unknown) => ModelMessageContent;
   formatPersistedModelContent?: (
     input: ToolPersistedModelContentInput,
@@ -347,6 +393,12 @@ export interface ToolEntry extends ToolContractDeclaration {
   runtimeOutputSchema?: unknown;
   timeout: ToolTimeoutPolicy;
   cancellation: ToolCancellationPolicy;
+  /**
+   * 宿主注入的执行期实例 pin：模型侧 App 工具在**审批之前**就登记生命周期，
+   * 让页面实例在确认窗外一直存活；返回的 signal 在实例撤销时 abort，release 幂等。
+   * 只由可信宿主注册路径写入，executor 不按工具名推断。
+   */
+  retainExecution?: (callId: string) => { signal: AbortSignal; release(): void };
 }
 
 export type ToolApprovalGate =
@@ -377,6 +429,12 @@ export interface ToolRuntimePermissionCapability {
   riskLevel?: RiskLevel;
   sideEffectScope?: ModelToolSideEffectScope;
   permission?: Partial<ToolContractDeclaration["permission"]>;
+  /**
+   * 工具按本次入参给出的具体解释（例如 Bash 命中的破坏性 Git 命令）。
+   * PermissionService 只在 ask/deny 时把它追加到通用理由后，从不参与判定，
+   * 也不影响未提供该字段的工具。
+   */
+  reasonDetail?: string;
 }
 
 export interface ToolRuntimePermissionCapabilityContext {
@@ -459,6 +517,8 @@ export interface ExecutableToolCall {
   id: string;
   name: string;
   input: unknown;
+  /** 内部历史保留目标身份；该标记只用于模型投影还原原包装。 */
+  modelCallWrapper?: ModelCallWrapper;
 }
 
 // -----------------------------------------------

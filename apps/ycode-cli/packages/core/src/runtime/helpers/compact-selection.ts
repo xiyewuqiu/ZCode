@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- compact round 选择、prompt-too-long 降级与整组保留预算共享同一套 token 估算。 */
 import {
   COMPACT_PROMPT_TOO_LONG_RETRY_MARKER,
   CompactTrigger,
@@ -27,10 +28,32 @@ export interface CompactEntrySelection {
   totalGroups: number;
 }
 
+export const COMPACT_RECENT_TAIL_MIN_TOKENS = 4_000;
+export const COMPACT_RECENT_TAIL_MAX_TOKENS = 50_000;
+export const COMPACT_RECENT_TAIL_RATIO = 0.1;
+// Codex 对齐的保留预算：工具输出最多 64k，用户消息最多 20k。
+// YCode 现有 10% / 50k tail 仍是总预算；这两个上限只在更大窗口或自定义 tail 时兜底。
+export const COMPACT_RETAINED_TOOL_OUTPUT_MAX_TOKENS = 64_000;
+export const COMPACT_RETAINED_USER_MESSAGE_MAX_TOKENS = 20_000;
+
+/**
+ * 活跃边缘预算：保留最近 10% 上下文（上限 50k），确保压缩后仍能直接看到
+ * 当前代码、工具输出和用户约束，而不是只靠摘要转述。
+ */
+export function resolveCompactRecentTailTokenBudget(contextWindowTokens?: number): number {
+  const window = positiveInt(contextWindowTokens) ?? 200_000;
+  return Math.min(
+    COMPACT_RECENT_TAIL_MAX_TOKENS,
+    Math.max(COMPACT_RECENT_TAIL_MIN_TOKENS, Math.floor(window * COMPACT_RECENT_TAIL_RATIO)),
+  );
+}
+
 export function selectCompactEntries(input: {
   entries: readonly RuntimeMessageEntry[];
   minimumGroupsToPreserve?: number;
+  preserveRecentTokenBudget?: number;
   trigger: CompactTrigger;
+  useMidConversationSystem?: boolean;
 }): CompactEntrySelection {
   const split = splitRuntimeEntriesForCompactSelection(input.entries, input.trigger);
   const baseGroupsToPreserve = split.shouldPreserveRecent && split.groups.length > 1 ? 1 : 0;
@@ -39,9 +62,26 @@ export function selectCompactEntries(input: {
     positiveInt(input.minimumGroupsToPreserve) ?? 0,
   );
   const maxGroupsToPreserve = Math.max(0, split.groups.length - 1);
-  const groupsToPreserve = split.shouldPreserveRecent
+  let groupsToPreserve = split.shouldPreserveRecent
     ? Math.min(requestedGroupsToPreserve, maxGroupsToPreserve)
     : 0;
+  const tailBudget = positiveInt(input.preserveRecentTokenBudget);
+  if (split.shouldPreserveRecent && tailBudget !== undefined && tailBudget > 0) {
+    const groupTokenEstimates = estimateCompactGroupTokens(split.groups, {
+      useMidConversationSystem: input.useMidConversationSystem,
+    });
+    groupsToPreserve = Math.max(
+      groupsToPreserve,
+      countWholeGroupsToPreserve(split.groups, groupTokenEstimates, tailBudget, {
+        useMidConversationSystem: input.useMidConversationSystem,
+      }),
+    );
+    // 至少留出两个 round 给摘要，避免把整段历史都塞进 verbatim tail。
+    if (split.groups.length > 2) {
+      groupsToPreserve = Math.min(groupsToPreserve, split.groups.length - 2);
+    }
+    groupsToPreserve = Math.min(groupsToPreserve, maxGroupsToPreserve);
+  }
   const summaryGroups =
     groupsToPreserve > 0
       ? split.groups.slice(0, split.groups.length - groupsToPreserve)
@@ -274,6 +314,67 @@ function estimateCompactGroupTokens(
       useMidConversationSystem: options.useMidConversationSystem,
     }),
   );
+}
+
+/**
+ * 从最新 round 向旧遍历，只有整个 round 放得下才保留。
+ *
+ * - 最新 round 永远整体保留，即使单轮超过预算；
+ * - 更旧的 round 一旦整体超出 tail / 工具输出 / 用户消息预算，就整体丢弃并停止，
+ *   不会出现只保留半截 tool result 的情况。
+ */
+function countWholeGroupsToPreserve(
+  groups: readonly RuntimeMessageEntry[][],
+  groupTokenEstimates: readonly number[],
+  tailBudgetTokens: number,
+  options: { useMidConversationSystem?: boolean } = {},
+): number {
+  let coveredTokens = 0;
+  let coveredGroups = 0;
+  let retainedToolTokens = 0;
+  let retainedUserTokens = 0;
+
+  for (let index = groups.length - 1; index >= 0; index -= 1) {
+    const group = groups[index]!;
+    const groupTokens = groupTokenEstimates[index] ?? 0;
+    const { toolTokens, userTokens } = estimateCompactGroupRoleTokens(group, options);
+    const isNewest = coveredGroups === 0;
+    const exceedsBudget =
+      coveredTokens + groupTokens > tailBudgetTokens ||
+      retainedToolTokens + toolTokens > COMPACT_RETAINED_TOOL_OUTPUT_MAX_TOKENS ||
+      retainedUserTokens + userTokens > COMPACT_RETAINED_USER_MESSAGE_MAX_TOKENS;
+    if (!isNewest && exceedsBudget) break;
+
+    coveredTokens += groupTokens;
+    retainedToolTokens += toolTokens;
+    retainedUserTokens += userTokens;
+    coveredGroups += 1;
+    if (coveredTokens >= tailBudgetTokens) break;
+  }
+
+  return coveredGroups;
+}
+
+function estimateCompactGroupRoleTokens(
+  group: readonly RuntimeMessageEntry[],
+  options: { useMidConversationSystem?: boolean } = {},
+): { toolTokens: number; userTokens: number } {
+  const toolEntries = group.filter((entry) => runtimeEntryRole(entry) === "tool");
+  const userEntries = group.filter((entry) => runtimeEntryRole(entry) === "user");
+  return {
+    toolTokens:
+      toolEntries.length > 0
+        ? estimateRuntimeEntryTokens(toolEntries, {
+            useMidConversationSystem: options.useMidConversationSystem,
+          })
+        : 0,
+    userTokens:
+      userEntries.length > 0
+        ? estimateRuntimeEntryTokens(userEntries, {
+            useMidConversationSystem: options.useMidConversationSystem,
+          })
+        : 0,
+  };
 }
 
 function truncateRuntimeEntriesForCompactRetry(

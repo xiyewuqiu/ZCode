@@ -1,7 +1,9 @@
 import { resolve } from "node:path";
-import { createConfig } from "@ycode/adapters/config";
+import { createConfig, resolvePath } from "@ycode/adapters/config";
 import { createNodeSkillAdapter } from "@ycode/adapters/skills";
 import type { Logger, SkillContent, SkillDiagnostic, SkillLoadOutcome } from "@ycode/contracts";
+import { resolveBundledSkillRoots } from "./app/bundled-skills.js";
+import { getCliStorageRoot } from "./app/paths.js";
 import { resolveYCodePlugins } from "./plugins.js";
 import { collectDisabledPaths } from "./skill-command-overrides.js";
 
@@ -26,7 +28,7 @@ export interface YCodeSkillInspection {
 export async function listYCodeSkills(
   options: ListYCodeSkillsOptions = {},
 ): Promise<SkillLoadOutcome> {
-  const discovery = createSkillDiscovery(options);
+  const discovery = await createSkillDiscovery(options);
   if (!discovery.enabled) {
     return {
       diagnostics: [],
@@ -43,7 +45,7 @@ export async function listYCodeSkills(
 export async function inspectYCodeSkill(
   options: InspectYCodeSkillOptions,
 ): Promise<YCodeSkillInspection> {
-  const discovery = createSkillDiscovery(options);
+  const discovery = await createSkillDiscovery(options);
   if (!discovery.enabled) {
     throw new Error("Skills are disabled.");
   }
@@ -70,7 +72,7 @@ export async function inspectYCodeSkill(
   };
 }
 
-function createSkillDiscovery(options: ListYCodeSkillsOptions):
+async function createSkillDiscovery(options: ListYCodeSkillsOptions): Promise<
   | {
       enabled: false;
       workingDirectory: string;
@@ -79,7 +81,8 @@ function createSkillDiscovery(options: ListYCodeSkillsOptions):
       enabled: true;
       skillPort: ReturnType<typeof createNodeSkillAdapter>;
       workingDirectory: string;
-    } {
+    }
+> {
   const workingDirectory = resolve(options.workingDirectory ?? process.cwd());
   const configResult = createConfig({
     env: options.env,
@@ -105,11 +108,17 @@ function createSkillDiscovery(options: ListYCodeSkillsOptions):
     workingDirectory,
   });
 
+  // 内置技能包与插件技能根并列注入：`ycode skills list`、引用目录与 runtime 看到同一份发现结果。
+  const bundledSkillRoots = await resolveBundledSkillRoots({
+    cliStorageRoot: getCliStorageRoot(resolvePath(configResult.config.storage.dir)),
+    logger: options.logger,
+  });
+
   return {
     enabled: true,
     skillPort: createNodeSkillAdapter({
       extraRoots: configResult.config.skills.roots,
-      extraResolvedRoots: pluginOutcome.skillRoots,
+      extraResolvedRoots: [...pluginOutcome.skillRoots, ...bundledSkillRoots],
       disabledPaths: collectDisabledPaths(configResult.config.skillOverrides),
     }),
     workingDirectory,

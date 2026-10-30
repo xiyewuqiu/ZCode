@@ -11,6 +11,8 @@ const PREFLIGHT_AUTOCOMPACT_OUTPUT_RESERVE_TOKENS = 21_000;
 export const MAX_OUTPUT_TOKENS_FOR_SUMMARY = 20_000;
 export const AUTOCOMPACT_BUFFER_TOKENS = 13_000;
 export const DEFAULT_AUTOCOMPACT_THRESHOLD_PERCENT = 100;
+// Codex 在硬阈值前约 65% 就开始投机摘要；YCode 保持硬阈值不变，只提前预热。
+export const DEFAULT_SPECULATIVE_COMPACT_THRESHOLD_PERCENT = 65;
 export const MAX_CONSECUTIVE_AUTOCOMPACT_FAILURES = 3;
 
 export interface AutoCompactPolicyConfig {
@@ -22,6 +24,8 @@ export interface AutoCompactPolicyConfig {
   bufferTokens?: number;
   thresholdPercentOverride?: number;
   maxConsecutiveFailures?: number;
+  /** 投机摘要触发阈值占有效上下文窗口的百分比；0 表示关闭。 */
+  speculativeThresholdPercent?: number;
   microcompact?: LocalMicrocompactPolicyConfig;
 }
 
@@ -85,6 +89,24 @@ export function getAutoCompactThreshold(config: AutoCompactPolicyConfig = {}): n
   const effectiveContextWindow = getEffectiveContextWindowSize(config);
   const buffer = positiveInt(config.bufferTokens) ?? AUTOCOMPACT_BUFFER_TOKENS;
   return Math.max(0, effectiveContextWindow - buffer);
+}
+
+/**
+ * 投机摘要触发阈值。必须严格低于 auto compact 硬阈值，否则不会提前生成。
+ * 显式传入 0 关闭投机压缩。
+ */
+export function getSpeculativeCompactThreshold(config: AutoCompactPolicyConfig = {}): number {
+  const configured = config.speculativeThresholdPercent;
+  const percent =
+    configured !== undefined && Number.isFinite(configured) && configured >= 0
+      ? Math.floor(configured)
+      : DEFAULT_SPECULATIVE_COMPACT_THRESHOLD_PERCENT;
+  if (percent === 0) return Number.POSITIVE_INFINITY;
+  const effectiveContextWindow = getEffectiveContextWindowSize(config);
+  return Math.min(
+    getAutoCompactThreshold(config),
+    Math.max(0, Math.floor((effectiveContextWindow * percent) / 100)),
+  );
 }
 
 export function shouldAutoCompact(input: {

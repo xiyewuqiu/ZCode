@@ -1,4 +1,5 @@
 import { isAbsolute, join, resolve } from "node:path";
+import { tmpdir } from "node:os";
 import {
   createInMemorySessionEventStore,
   createNodeToolArtifactStore,
@@ -67,11 +68,10 @@ import { createInputFacade } from "./input-facade.js";
 import { createPluginFacadeForApp } from "./plugin-facade.js";
 import { resolvePluginRuntimeFeatures } from "./plugin-runtime-features.js";
 import { createSessionFacade } from "./session-facade.js";
+import { createMcpUiAgentAccess } from "../ycode-protocol/mcp-ui/agentAccess.js";
 import { resolveAppRuntimeConfig, runtimeConfigLogContext } from "./runtime-config.js";
-import {
-  collectDynamicWorkflowDisabledSkillPaths,
-  DYNAMIC_WORKFLOW_GATED_COMMAND_NAMES,
-} from "./dynamic-workflow-gate.js";
+import { resolveBundledSkillRoots } from "./bundled-skills.js";
+import { collectDynamicWorkflowDisabledSkillPaths } from "./dynamic-workflow-gate.js";
 import { createWorkspaceHookRuntimeSecurity } from "./workspace-hook-trust.js";
 import { createScriptWorkflowBridge } from "./script-workflow-methods.js";
 import {
@@ -216,6 +216,8 @@ export async function createYCodeApp(options: YCodeAppOptions): Promise<YCodeApp
       startupTimer,
       workingDirectory,
     });
+    // 随 CLI 内置的技能包（dynamic-workflows 等）：不属于任何插件，用户无法停用或卸载。
+    const bundledSkillRoots = await resolveBundledSkillRoots({ cliStorageRoot, logger });
     const pluginSubagentProfiles = loadPluginAgentProfiles({
       logger,
       plugins: pluginOutcome.plugins,
@@ -401,6 +403,7 @@ export async function createYCodeApp(options: YCodeAppOptions): Promise<YCodeApp
           caCertFile: configResult.config.network.caCertFile,
         },
         outputRootDir: join(storageRoot, "cli", "exec"),
+        bashOutputTempDir: tmpdir(),
         processEnv: options.env ?? process.env,
       });
     const ownsExecutionPort = options.executionPort === undefined;
@@ -589,6 +592,7 @@ export async function createYCodeApp(options: YCodeAppOptions): Promise<YCodeApp
               persona,
               pinnedModel,
               runSubagentModel,
+              actorModel,
               sessionId: actorSessionId,
               submitPort,
               submitProfile,
@@ -617,6 +621,8 @@ export async function createYCodeApp(options: YCodeAppOptions): Promise<YCodeApp
                     {
                       parentSelection: getRuntime().getSessionModelSelection(),
                       ...(runSubagentModel === undefined ? {} : { runSelection: runSubagentModel }),
+                      // persona 点名的模型（脚本里的 `agent(…, { model })`）排在 run 选择之上。
+                      ...(actorModel === undefined ? {} : { actorSelection: actorModel }),
                     },
                     pinnedModel,
                   ).configOverrides,
@@ -742,13 +748,13 @@ export async function createYCodeApp(options: YCodeAppOptions): Promise<YCodeApp
           ? (options.skillPort ??
             createNodeSkillAdapter({
               extraRoots: configResult.config.skills.roots,
-              extraResolvedRoots: pluginOutcome.skillRoots,
+              extraResolvedRoots: [...pluginOutcome.skillRoots, ...bundledSkillRoots],
               disabledPaths: [
                 ...collectDisabledPaths(configResult.config.skillOverrides),
-                // 动态工作流灰度关闭时不提供 dynamic-workflows 技能：
+                // 动态工作流关闭时不提供 dynamic-workflows 技能：
                 // 十个工具都不在场，再让模型读到「怎么写工作流脚本」只会诱导它去调不存在的工具。
                 ...(runtimeConfig.dynamicWorkflowEnabled === false
-                  ? collectDynamicWorkflowDisabledSkillPaths(pluginOutcome.skillRoots)
+                  ? collectDynamicWorkflowDisabledSkillPaths(bundledSkillRoots)
                   : []),
               ],
             }))
@@ -786,18 +792,16 @@ export async function createYCodeApp(options: YCodeAppOptions): Promise<YCodeApp
       artifactStore,
       customCommandPromptResolver: async (text, resolverOptions) => {
         const builtinPrompt = resolveYCodeBuiltinPromptCommand(text, {
+          // 动态工作流关闭时内置 `/workflow` 不得展开。目录侧已经把它从 `/` 面板
+          // 剔除，但用户仍可手打命令名，两条路径必须给出同一个结论。TUI 缺席时不设门禁；
+          // headless 按 --enable-workflow 显式取值，见 runtimeConfig 字段注释。
+          dynamicWorkflowEnabled: runtimeConfig.dynamicWorkflowEnabled,
           workingDirectory,
         });
         if (builtinPrompt !== undefined) {
           return builtinPrompt;
         }
         return await resolveYCodeCustomCommandPrompt(text, {
-          // 动态工作流灰度关闭时 `/workflow` 不得展开成插件提示词。目录侧已经
-          // 把它从 `/` 面板剔除，但用户仍可手打命令名，两条路径必须给出同一个结论。
-          // 缺席（TUI、headless、workflow_child）不设门禁，见 runtimeConfig 字段注释。
-          ...(runtimeConfig.dynamicWorkflowEnabled === false
-            ? { disabledCommandNames: DYNAMIC_WORKFLOW_GATED_COMMAND_NAMES }
-            : {}),
           env: options.env,
           executionPort,
           logger,
@@ -874,6 +878,20 @@ export async function createYCodeApp(options: YCodeAppOptions): Promise<YCodeApp
       traceContext,
       untrustedProjectMcpServers,
       workingDirectory,
+    });
+
+    // MCP Apps 宿主访问面：App 是 mcpPort 的 owner，bootstrap 的 mcp-ui bridge 只读这份窄视图。
+    // project 级 untrusted server 不进入可渲染集合；是否连接以会话 statuses 为准。
+    const mcpUiAgentAccess = createMcpUiAgentAccess({
+      ...(mcpPort ? { mcpPort } : {}),
+      untrustedServerNames: untrustedProjectMcpServers,
+      traceContext,
+      workingDirectory,
+      // 页面工具调用必须经 session facade → executor 的权限 / 审批边界。
+      callToolForUi: sessionFacade.callMcpToolForUi,
+      ...(runtimeConfig.memory?.workspaceIdentity
+        ? { workspaceIdentity: runtimeConfig.memory.workspaceIdentity }
+        : {}),
     });
 
     const closeSession = sessionFacade.close;
@@ -1101,6 +1119,8 @@ export async function createYCodeApp(options: YCodeAppOptions): Promise<YCodeApp
         return { kind: "chunked" };
       },
       ...sessionFacade,
+      // MCP Apps：属性存在 = 本会话有 MCP 端口；缺席时宿主 fail closed 为 no-host。
+      ...(mcpUiAgentAccess ? { mcpUiAgentAccess: () => mcpUiAgentAccess } : {}),
       close: async () => {
         try {
           await closeSession?.();

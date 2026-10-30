@@ -1,5 +1,6 @@
 import { extname } from "node:path";
 import { formatJson, type PresentationSurface } from "@ycode/core";
+import type { ToolSearchMode } from "@ycode/contracts";
 import type { RunContext, GlobalOptions } from "@ycode/shared-types";
 import { loadBootstrapModule } from "./bootstrap-loader.js";
 import {
@@ -69,6 +70,7 @@ export const runPrompt = async (
   toolDisallowlist?: readonly string[],
   forceMcs = false,
   presentationSurface: PresentationSurface = "terminal",
+  toolsearchMode: ToolSearchMode = "off",
 ): Promise<number> => {
   if (prompt.trim().length === 0) {
     ctx.stderr.write(`${EMPTY_PROMPT_ERROR}\n`);
@@ -194,7 +196,10 @@ export const runPrompt = async (
       runtimeConfig: {
         ...(mode ? { mode } : {}),
         ...(toolDisallowlist ? { toolDisallowlist } : {}),
+        toolSearch: { mode: toolsearchMode },
         ...(forceMcs ? { midConversationSystem: { mode: "force" as const } } : {}),
+        // headless 按本次调用显式开关；不改 core 缺省值，保持 TUI 与 stdio 的既有策略。
+        dynamicWorkflowEnabled: options.enableWorkflow === true,
         memory: { extractionEnabled: options.memoryBench === true },
         modelStreaming: "on",
         presentationSurface,

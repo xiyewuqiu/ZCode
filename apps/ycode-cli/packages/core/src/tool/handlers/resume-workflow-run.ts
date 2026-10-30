@@ -176,6 +176,8 @@ export const resumeWorkflowRunToolEntry: ToolEntry = {
   capability: "Resume a stopped dynamic-workflow run under the same run ID",
   metadata: {
     name: RESUME_WORKFLOW_RUN_TOOL_NAME,
+    shouldDefer: true,
+    searchHint: "resume a cancelled workflow run",
     description: RESUME_WORKFLOW_RUN_DESCRIPTION,
     // 恢复 = 重新启动执行子进程与 actor 会话（完结节点 replay、未完结重派发），与
     // CreateWorkflow 同档，只读声明不成立。

@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- compact timeline/boundary 持久化与失败回滚共享同一套消息/part 事务。 */
 import { createModelId, createModelProviderId } from "@ycode/contracts";
 import {
   CompactTrigger,
@@ -22,7 +23,6 @@ import {
   defaultCompactPhaseForTrigger,
   defaultCompactReasonForTrigger,
   compactFailureReasonFromError,
-  emptyTokenUsageInfo,
   isTurnCancellationError,
 } from "../helpers/index.js";
 import type { CompactTimelineContext } from "../types.js";
@@ -298,8 +298,8 @@ export async function persistCompactSummary(
     operationId?: string;
     postCompactReminderEntries?: readonly RuntimeMessageEntry[];
   },
-): Promise<void> {
-  if (!this.sessionStore) return;
+): Promise<MessageId[]> {
+  if (!this.sessionStore) return [];
 
   const created = Date.now();
   const persistedModel = resolvePersistedModel(this, options?.model);
@@ -375,10 +375,20 @@ export async function persistCompactSummary(
       );
       if (reminderMessageId) persistedMessageIds.push(reminderMessageId);
     }
+    return persistedMessageIds;
   } catch (error) {
     await removeCompactPersistenceMessagesBestEffort.call(this, persistedMessageIds, traceContext);
     throw error;
   }
+}
+
+/** 提交前基准失效时回滚 summary/reminder 消息；boundary 尚未写入。 */
+export async function rollbackCompactPersistenceMessages(
+  this: AgentRuntimeInternal,
+  messageIds: readonly MessageId[],
+  traceContext: TraceContext,
+): Promise<void> {
+  await removeCompactPersistenceMessagesBestEffort.call(this, messageIds, traceContext);
 }
 
 async function persistCompactReminderMessage(

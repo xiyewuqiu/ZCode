@@ -1,5 +1,10 @@
 import { querySessionDebug } from "./session-debug.js";
-import { previewSessionStorage, purgeSessionStorage } from "./session-storage.js";
+import {
+  optimizeSessionDatabase,
+  previewSessionStorage,
+  purgeSessionStorage,
+  readSessionDatabaseStats,
+} from "./session-storage.js";
 import {
   ycodePluginsCancelOperationParamsSchema,
   ycodeProtocolMethods,
@@ -83,6 +88,7 @@ import {
   updateSavedWorkflowMetaOp,
 } from "./saved-workflows.js";
 import { listMcpServers } from "./mcp.js";
+import { handleMcpUiRpc } from "./mcp-ui/rpc.js";
 import { updateInteractionPreferences } from "./interaction-preferences.js";
 import { updateModelIoPreferences } from "./model-io-preferences.js";
 import { updateDynamicWorkflowPolicy } from "./dynamic-workflow-policy.js";
@@ -439,7 +445,12 @@ export class YCodeProtocolAgentServer {
       // subscribe hydration、workspace 配置与 resume 都可能跨 await。若只看
       // session 当前状态，sampler 会在 handler 持有旧 record 时把它关闭。进程级 lease
       // 覆盖整个 request；能识别的 sessionIds 额外用于冷恢复闸门与 LRU touch。
-      if (request.method !== V4_METHODS.conversationPurge) {
+      // 维护命令自己取得进程独占闸门；若先拿普通租约，acquireStorageMaintenance
+      // 会永远看到 activeOperationCount > 0，整理无法开始。
+      if (
+        request.method !== V4_METHODS.conversationPurge &&
+        request.method !== V4_METHODS.storageDatabaseOptimize
+      ) {
         releaseResidencyOperation = await this.context.sessionResidentPool?.acquireOperation(
           collectResidencySessionIds(request.params),
         );
@@ -566,10 +577,16 @@ export class YCodeProtocolAgentServer {
         return await previewSessionStorage(this.context, request.params);
       case V4_METHODS.conversationPurge:
         return await purgeSessionStorage(this.context, request.params);
+      case V4_METHODS.storageDatabaseStats:
+        return await readSessionDatabaseStats(this.context);
+      case V4_METHODS.storageDatabaseOptimize:
+        return await optimizeSessionDatabase(this.context, request.params);
       case V4_METHODS.command:
         return this.requireV4Gateway().handleCommand(request.params);
       case V4_METHODS.commandsQuery:
         return this.requireV4Gateway().queryCommands(request.params);
+      case V4_METHODS.sessionsIndexReconcile:
+        return this.requireV4Gateway().reconcileSessions(request.params);
       case ycodeProtocolMethods.sessionCreate:
         return await createSession(this.context, request.params, request.trace);
       case ycodeProtocolMethods.sessionResume:
@@ -643,6 +660,10 @@ export class YCodeProtocolAgentServer {
         return await testProviderModelConnectivity(this.context, request.params);
       case ycodeProtocolMethods.mcpList:
         return await listMcpServers(this.context, request.params);
+      // MCP Apps 宿主 RPC：会话内的资源校验 / 实例凭证 / app-tools 信箱；
+      // 沙箱登记仍由 renderer 经 IPlatformService 交给 main。
+      case ycodeProtocolMethods.mcpUi:
+        return await handleMcpUiRpc(this.context, request.params);
       case ycodeProtocolMethods.pluginsList:
         return await listPlugins(this.context, request.params);
       case ycodeProtocolMethods.pluginsReferenceCatalogWithCategory:

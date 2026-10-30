@@ -27,6 +27,7 @@ import { listMcpServerStatuses } from "../mcp-config.js";
 import { loadSessionTranscriptFromStore } from "../session-transcript.js";
 import { createSubagentObservation } from "./subagent-observation.js";
 import { getLocaleConfigPath } from "./locale-selection.js";
+import { createMcpAppFacade } from "./mcp-app-facade.js";
 import { isClosableSessionStore } from "./session-store.js";
 import type { ProviderRegistryModelSource } from "./provider-registry-model-runtime.js";
 import {
@@ -50,6 +51,10 @@ type SessionFacade = Pick<
   | "close"
   | "connectMcpServer"
   | "disconnectMcpServer"
+  | "callMcpToolForUi"
+  | "getMcpAppConnectionSnapshot"
+  | "onMcpAppConnectionInvalidated"
+  | "replaceMcpAppProvidedTools"
   | "generateWorkspaceText"
   | "testModelConnectivity"
   | "forkFromCheckpoint"
@@ -381,6 +386,12 @@ export function createSessionFacade(deps: CreateSessionFacadeDeps): SessionFacad
       if (!deps.mcpPort) return undefined;
       return deps.mcpPort.disconnectServer(name);
     },
+    ...createMcpAppFacade({
+      ...(deps.mcpPort ? { mcpPort: deps.mcpPort } : {}),
+      runtime: deps.runtime,
+      traceContext: deps.traceContext,
+      workingDirectory: deps.workingDirectory,
+    }),
     listCheckpoints: async (options) => {
       await deps.prepareResume();
       return deps.runtime.listWorkspaceCheckpoints(options);

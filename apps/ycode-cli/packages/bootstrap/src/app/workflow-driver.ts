@@ -104,6 +104,7 @@ import {
   seedActorSession,
 } from "./workflow-driver-transcript.js";
 import type { AgentRuntimeWorkflowDriverDeps, SessionState } from "./workflow-driver-types.js";
+import { createSeatGateEmit } from "./workflow-seat-gate.js";
 
 /**
  * WorkflowDriver 的真实实现。构造经 {@link createAgentRuntimeWorkflowDriver}（绑定 deps，回填 sink）。
@@ -139,7 +140,9 @@ class AgentRuntimeWorkflowDriver implements WorkflowDriver {
     this.deps = deps;
     this.sink = sink;
     this.journal = deps.journal;
-    this.emit = deps.emit;
+    // 引擎的 record() 对**每一条**事件都紧接着调 driver.emit；`node-settled` 是三条结算路共同的
+    // 出口，座位闸门据此腾座位（实现体在 workflow-seat-gate.ts，无闸门时原样返回 deps.emit）。
+    this.emit = createSeatGateEmit(deps.emit, deps.seatGate);
     this.escalationHost = {
       deps,
       sessions: this.sessions,
@@ -214,6 +217,8 @@ class AgentRuntimeWorkflowDriver implements WorkflowDriver {
       port: this.deps.concurrency,
       runId: this.deps.runId ?? "run",
       live,
+      // 座位闸门按 **actor** 键入（不是 ask 实例）：per-actor FIFO 保证一个 actor 至多一个在飞 ask。
+      ...(this.deps.seatGate === undefined ? {} : { seat: { gate: this.deps.seatGate, key: refToString(actor) } }),
       handlers: {
         // 子代理的第一笔工作区写入 ⇒ 引擎关导入缓存。
         onMutating: (instance) => this.sink.askMutating(instance),
@@ -295,6 +300,10 @@ class AgentRuntimeWorkflowDriver implements WorkflowDriver {
     state.abortController = new AbortController();
     // 上一个 ask 的 waiting / executing 相位、工具计数都不能带到这个 ask 上；瞬态重驱计数同理。
     state.modelActivity.reset();
+    // ask 的起点喂给座位闸门（终点在 emit 里认 `node-settled`）：从这一刻起这个子代理算"在工作"，
+    // 它的下一个 turn step 因此要过座位。同一个 actor 连着接到下一个 ask 时这是幂等的加入——
+    // 它本来就一直在工作，中途没有空过。
+    this.deps.seatGate?.askStarted(refToString(state.actor), instance);
     state.transientAttempts = 0;
     state.cancelRedrive?.();
     state.cancelRedrive = undefined;
@@ -601,6 +610,3 @@ export function createAgentRuntimeWorkflowDriver(
 ): (sink: WorkflowReportSink) => WorkflowDriver {
   return (sink) => new AgentRuntimeWorkflowDriver(deps, sink);
 }
-
-export { mintActorSessionId } from "./workflow-driver-helpers.js";
-export type { ActorRuntimeFactory } from "./workflow-driver-types.js";

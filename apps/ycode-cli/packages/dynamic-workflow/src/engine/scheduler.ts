@@ -323,7 +323,8 @@ export class AskScheduler {
     }
   }
 
-  private pumpAll(): void {
+  /** 重新扫一遍所有 actor 的就绪队列；引擎 retune 抬高上界后调用。 */
+  pumpAll(): void {
     for (const actor of this.actorOrder) this.pumpActor(actor);
   }
 

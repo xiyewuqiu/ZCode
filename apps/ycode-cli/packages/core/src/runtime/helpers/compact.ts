@@ -19,9 +19,12 @@ import { buildProviderRequestMessages } from "./provider-request-messages.js";
 export { buildPostCompactReadStateReminderEntries } from "./compact-post-reminders.js";
 export { countCompactPreservedRuntimeMessages } from "./compact-preservation.js";
 export {
+  COMPACT_RETAINED_TOOL_OUTPUT_MAX_TOKENS,
+  COMPACT_RETAINED_USER_MESSAGE_MAX_TOKENS,
   estimateRuntimeEntryTokens,
   getRuntimeEntriesToSummarize,
   hasEnoughRuntimeEntriesToCompact,
+  resolveCompactRecentTailTokenBudget,
   selectCompactEntries,
   selectCompactEntriesAfterPromptTooLong,
   selectCompactEntriesForInitialPromptTooLong,

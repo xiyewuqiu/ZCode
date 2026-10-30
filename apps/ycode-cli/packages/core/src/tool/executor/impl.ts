@@ -1,10 +1,25 @@
-import type { TraceContext, TurnId } from "@ycode/contracts";
+import {
+  CoreErrorType,
+  createCoreError,
+  createRootTraceContext,
+  type TraceContext,
+  type TurnId,
+} from "@ycode/contracts";
 import { createDenyPermissionBroker } from "../../permission/broker.js";
 import type { ToolSchedule } from "../scheduler.js";
-import type { ExecutableToolCall, ToolBatchEvent, ToolExecutionResult } from "../types.js";
+import type {
+  ExecutableToolCall,
+  ToolBatchEvent,
+  ToolEntry,
+  ToolExecutionResult,
+} from "../types.js";
 import { BackgroundTaskTracker } from "./background-tasks.js";
 import { executeToolBatch, executeToolSchedule } from "./batch-runner.js";
 import { executeToolCall } from "./call-runner.js";
+import { createErrorResult } from "./errors.js";
+import { emitToolCallError } from "./events.js";
+import { runPreToolUseHooks } from "./hook-flow.js";
+import { resolveToolPermission } from "./permission-flow.js";
 import type {
   ToolBatchExecuteOptions,
   ToolExecuteOptions,
@@ -12,6 +27,7 @@ import type {
   ToolExecutorDeps,
   ToolExecutorOptions,
 } from "./types.js";
+import { validateInput } from "./validation.js";
 
 export class ToolExecutorImpl implements ToolExecutor {
   private readonly deps: ToolExecutorDeps;
@@ -56,6 +72,7 @@ export class ToolExecutorImpl implements ToolExecutor {
       dynamicWorkflowRunPort: options.dynamicWorkflowRunPort,
       dynamicWorkflowSnippetPort: options.dynamicWorkflowSnippetPort,
       modelCatalogPort: options.modelCatalogPort,
+      hasLoadedSkill: options.hasLoadedSkill,
       runtimeTaskRegistry: options.runtimeTaskRegistry,
       readFileState: options.readFileState ?? new Map(),
       subagentBackgroundBashMaxMs: options.subagentBackgroundBashMaxMs,
@@ -84,11 +101,89 @@ export class ToolExecutorImpl implements ToolExecutor {
     this.backgroundTasks = new BackgroundTaskTracker(this.deps);
   }
 
-  execute(
+  async execute(
     toolCall: ExecutableToolCall,
     options?: ToolExecuteOptions,
   ): Promise<ToolExecutionResult> {
-    return executeToolCall(this.deps, this.backgroundTasks, toolCall, options);
+    const entry = this.deps.registry.get(toolCall.name);
+    if (!entry?.retainExecution) {
+      return executeToolCall(this.deps, this.backgroundTasks, toolCall, options);
+    }
+    let lifetime: ReturnType<NonNullable<ToolEntry["retainExecution"]>>;
+    try {
+      // 实例 pin 必须在**审批之前**取得：确认窗打开期间页面实例不能被回收。
+      lifetime = entry.retainExecution(toolCall.id);
+    } catch (error) {
+      const result = createErrorResult(
+        toolCall,
+        createCoreError(
+          CoreErrorType.ToolCancelled,
+          error instanceof Error ? error.message : "Tool instance is unavailable",
+        ),
+      );
+      // 与其它 handler 前早退一致：先发布 ToolCallError，避免工具行停在 inputStreaming。
+      await emitToolCallError(
+        this.deps,
+        toolCall.id,
+        options?.traceContext ??
+          this.deps.traceContext ??
+          createRootTraceContext({ sessionId: this.deps.sessionId }),
+        this.deps.turnId,
+        result.error,
+      );
+      return result;
+    }
+    const signal = options?.signal
+      ? AbortSignal.any([options.signal, lifetime.signal])
+      : lifetime.signal;
+    return executeToolCall(this.deps, this.backgroundTasks, toolCall, { ...options, signal }).finally(
+      () => lifetime.release(),
+    );
+  }
+
+  async authorizeAppTool(
+    toolCall: ExecutableToolCall,
+    entry: ToolEntry,
+    options?: ToolExecuteOptions,
+  ): Promise<unknown> {
+    options?.signal?.throwIfAborted();
+    const trace =
+      options?.traceContext ??
+      this.deps.traceContext ??
+      createRootTraceContext({ sessionId: this.deps.sessionId });
+    const mode = this.deps.getMode();
+    const invalid = validateInput(toolCall.input, entry);
+    if (invalid) throw new Error(invalid.message);
+    const hooks = await runPreToolUseHooks(
+      this.deps,
+      toolCall,
+      toolCall.input,
+      entry,
+      mode,
+      trace,
+      options?.signal,
+    );
+    if (hooks.preventContinuation || hooks.permissionBehavior === "deny") {
+      throw new Error(hooks.stopReason ?? "Tool denied by host hook");
+    }
+    const input = hooks.updatedInput ?? toolCall.input;
+    const updatedInvalid = validateInput(input, entry);
+    if (updatedInvalid) throw new Error(updatedInvalid.message);
+    const decision = await resolveToolPermission(
+      this.deps,
+      toolCall,
+      entry,
+      input,
+      hooks,
+      mode,
+      trace,
+      options?.signal,
+    );
+    options?.signal?.throwIfAborted();
+    if (!decision.allowed) {
+      throw new Error(decision.result.error?.message ?? "Tool denied by host policy");
+    }
+    return decision.executionInput;
   }
 
   trackExternalBackgroundTask(

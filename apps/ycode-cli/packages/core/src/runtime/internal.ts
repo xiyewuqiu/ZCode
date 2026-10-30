@@ -56,6 +56,9 @@ import type { AgentRuntimeHookMethods } from "./internal-hook-methods.js";
 import type { ProjectMemoryExtractionScheduler } from "./helpers/project-memory-extraction.js";
 import type { RuntimeTelemetryFacade } from "../telemetry/runtime-telemetry.js";
 import type { WorkspaceHookRuntimeAdmissionPort } from "../hooks/workspace-hook-runtime-admission.js";
+import type { GetAgentDefinitions } from "../subagent/definitions.js";
+import type { CompactionController } from "./methods/compaction-controller.js";
+import type { WorkflowBlockedReminderClock } from "../runtime-task/workflow-blocked-reminder.js";
 
 export interface AgentRuntimeInternal
   extends AgentRuntimeCoreMethods, AgentRuntimeTurnMethods, AgentRuntimeHookMethods {
@@ -101,10 +104,15 @@ export interface AgentRuntimeInternal
   mcpInitialized: boolean;
   mcpToolsRegistered: boolean;
   subagentPort?: SubagentPort;
+  getAgentDefinitions: GetAgentDefinitions;
   dynamicWorkflowRunPort?: DynamicWorkflowRunPort;
   modelCatalogPort?: ModelCatalogPort;
   runtimeTaskRegistry: RuntimeTaskRegistry;
   branchGeneration: number;
+  /** 「run 欠着决定、会话闲着」的提醒钟（dynamic-workflow-blocked-reminder.ts 装配）。 */
+  workflowBlockedReminder?: WorkflowBlockedReminderClock;
+  /** 会话唯一的压缩代数 / 互斥锁 / 投机任务所有者。 */
+  compactionController: CompactionController;
   artifactStore?: ToolArtifactStorePort;
   executionPort?: ExecutionPort;
   fileSystemPort?: FileSystemPort;

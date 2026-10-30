@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- MessageHistory 的读写契约、克隆与 metadata 归一化集中维护，拆分会增加状态漂移风险。 */
 // ============================================================
 // Message History - Maintains conversation context across turns
 // ============================================================
@@ -6,19 +7,34 @@ import {
   type RuntimeInputPresentation,
   modelMessageContentToText,
   type ModelCacheControl,
+  type ModelCallWrapper,
   type ModelMessageContent,
   type ModelMessageContentBlock,
   type Model,
   type ModelReasoningContentBlock,
+  type ModelToolCall,
   type TokenUsageInfo,
 } from "@ycode/contracts";
+import { parseAgentListingDelta, type AgentListingDelta } from "./agent-listing-metadata.js";
 import { SYSTEM_REMINDER_SOURCES, type SystemReminderSource } from "../system-reminder/source.js";
 
 // Tool call from model (simple type, no brand)
 export interface ToolCallInput {
+  /** 内部历史使用目标身份；该标记只用于模型投影还原 DeferredToolCall。 */
+  modelCallWrapper?: ModelCallWrapper;
   id: string;
   name: string;
   input: unknown;
+}
+
+// 仅模型协议出口和原始调用诊断使用；内部消费者始终读取目标 name/input。
+export function toModelToolCall(call: ToolCallInput): ModelToolCall {
+  if (!call.modelCallWrapper) return call;
+  return {
+    id: call.id,
+    name: call.modelCallWrapper,
+    input: { name: call.name, input: call.input },
+  };
 }
 
 export type ReasoningContentInput = ModelReasoningContentBlock;
@@ -30,6 +46,7 @@ export interface ModelInputMessage {
   toolCalls?: ToolCallInput[];
   toolCallId?: string;
   toolName?: string;
+  modelCallWrapper?: ModelCallWrapper;
   isError?: boolean;
   providerId?: Model["providerId"];
   modelId?: Model["modelId"];
@@ -42,7 +59,16 @@ export type RuntimeMessageSource =
   | "legacy_synthetic";
 
 export interface RuntimeMessageMetadata {
+  /** Compact 边界保留的已发现工具；用于 Local 模式跨 compact 提升。 */
+  compactBoundary?: { boundaryId: string; preCompactDiscoveredTools?: readonly string[] };
+  /** ToolSearch 公告增量事实；只由正常提醒收集写入。 */
+  toolSearchAnnouncement?: {
+    addedNames: readonly string[];
+    removedNames: readonly string[];
+    readdedNames: readonly string[];
+  };
   source: RuntimeMessageSource;
+  agentListingDelta?: AgentListingDelta;
   inputPresentation?: RuntimeInputPresentation;
 }
 
@@ -105,6 +131,7 @@ export interface MessageHistory {
     content: ModelMessageContent,
     success: boolean,
     isError?: boolean,
+    modelCallWrapper?: ModelCallWrapper,
   ): void;
 
   // 借用当前权威 entries，只允许同步只读；跨异步边界时由调用方做数组浅快照。
@@ -118,6 +145,7 @@ export interface MessageHistory {
 
   // Get current message count
   getMessageCount(): number;
+
 
   // Cache management
   getCacheStats(): CacheStats;
@@ -198,6 +226,7 @@ export class MessageHistoryImpl implements MessageHistory {
           id: tc.id,
           name: tc.name,
           input: tc.input,
+          ...(tc.modelCallWrapper ? { modelCallWrapper: tc.modelCallWrapper } : {}),
         })),
         ...(model ? { providerId: model.providerId, modelId: model.modelId } : {}),
       },
@@ -212,8 +241,11 @@ export class MessageHistoryImpl implements MessageHistory {
     content: ModelMessageContent,
     success: boolean,
     isError = !success,
+    modelCallWrapper?: ModelCallWrapper,
   ): void {
-    this.entries.push(createRuntimeToolResultEntry(toolCallId, toolName, content, isError));
+    this.entries.push(
+      createRuntimeToolResultEntry(toolCallId, toolName, content, isError, modelCallWrapper),
+    );
     this.cacheStats.totalMessages = this.entries.length;
   }
 
@@ -264,6 +296,21 @@ export class MessageHistoryImpl implements MessageHistory {
       lastCacheHit: false,
     };
   }
+}
+
+/**
+ * Runtime entries 按约定不可变；压缩基准只需比较引用即可判断“前缀是否仍完整”。
+ * 微压缩、rewind 或另一次替换会生成新对象，从而让旧基准失效。
+ */
+export function runtimeEntrySnapshotSuffix(
+  snapshot: readonly RuntimeMessageEntry[],
+  current: readonly RuntimeMessageEntry[],
+): RuntimeMessageEntry[] | undefined {
+  if (current.length < snapshot.length) return undefined;
+  for (let index = 0; index < snapshot.length; index += 1) {
+    if (snapshot[index] !== current[index]) return undefined;
+  }
+  return current.slice(snapshot.length);
 }
 
 export function countContextPrefixMessages(
@@ -369,6 +416,7 @@ export function createRuntimeAssistantEntry(
         id: toolCall.id,
         name: toolCall.name,
         input: toolCall.input,
+        ...(toolCall.modelCallWrapper ? { modelCallWrapper: toolCall.modelCallWrapper } : {}),
       })),
       ...(model ? { providerId: model.providerId, modelId: model.modelId } : {}),
     },
@@ -381,6 +429,7 @@ export function createRuntimeToolResultEntry(
   toolName: string,
   content: ModelMessageContent,
   isError: boolean,
+  modelCallWrapper?: ModelCallWrapper,
 ): RuntimeMessageMessageEntry {
   return {
     message: {
@@ -388,6 +437,7 @@ export function createRuntimeToolResultEntry(
       content,
       toolCallId,
       toolName,
+      ...(modelCallWrapper ? { modelCallWrapper } : {}),
       isError,
     },
   };
@@ -448,10 +498,35 @@ function cloneTokenUsageInfo(tokens: TokenUsageInfo): TokenUsageInfo {
   };
 }
 
-function cloneRuntimeMessageMetadata(
+export function cloneRuntimeMessageMetadata(
   metadata: RuntimeMessageMetadata | undefined,
 ): RuntimeMessageMetadata | undefined {
-  return metadata ? { ...metadata } : undefined;
+  if (!metadata) return undefined;
+  const { agentListingDelta, compactBoundary, toolSearchAnnouncement, ...rest } = metadata;
+  const delta = parseAgentListingDelta(agentListingDelta);
+  return {
+    ...rest,
+    ...(delta ? { agentListingDelta: delta } : {}),
+    ...(compactBoundary
+      ? {
+          compactBoundary: {
+            boundaryId: compactBoundary.boundaryId,
+            ...(compactBoundary.preCompactDiscoveredTools
+              ? { preCompactDiscoveredTools: [...compactBoundary.preCompactDiscoveredTools] }
+              : {}),
+          },
+        }
+      : {}),
+    ...(toolSearchAnnouncement
+      ? {
+          toolSearchAnnouncement: {
+            addedNames: [...toolSearchAnnouncement.addedNames],
+            removedNames: [...toolSearchAnnouncement.removedNames],
+            readdedNames: [...toolSearchAnnouncement.readdedNames],
+          },
+        }
+      : {}),
+  };
 }
 
 function messageFromEntryInput(input: ModelInputMessage | RuntimeMessageEntry): ModelInputMessage {
@@ -489,6 +564,8 @@ export function cloneModelInputMessage(message: ModelInputMessage): ModelInputMe
   if (message.toolCallId) next.toolCallId = message.toolCallId;
   // 空字符串是可恢复调用的 provider 原始名称，不能在 request-local clone 时按 falsy 丢失。
   if (message.toolName !== undefined) next.toolName = message.toolName;
+  if (message.modelCallWrapper !== undefined)
+    next.modelCallWrapper = message.modelCallWrapper;
   if (message.isError !== undefined) next.isError = message.isError;
   if (message.providerId) next.providerId = message.providerId;
   if (message.modelId) next.modelId = message.modelId;

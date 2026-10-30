@@ -1,5 +1,70 @@
-import { sessionPurgeParamsSchema, sessionStorageTargetSchema } from "@ycode/shared";
+import {
+  sessionDatabaseOptimizeParamsSchema,
+  sessionPurgeParamsSchema,
+  sessionStorageTargetSchema,
+  type SessionDatabaseOptimizeResult,
+} from "@ycode/shared";
 import type { YCodeProtocolAgentServerContext } from "./server-types.js";
+
+/** 共享会话库只读统计；不改变连接、锁或业务表。 */
+export async function readSessionDatabaseStats(context: YCodeProtocolAgentServerContext) {
+  const store = context.deps.sessionStore;
+  if (!store?.getSessionDatabaseStats) throw new Error("session_storage_unavailable");
+  return await store.getSessionDatabaseStats();
+}
+
+/**
+ * 显式整理共享会话库。存在运行中/排队/待交互会话时直接拒绝；
+ * 取进程维护闸门后由 store 执行 checkpoint + optimize + 条件式 VACUUM。
+ */
+export async function optimizeSessionDatabase(
+  context: YCodeProtocolAgentServerContext,
+  input: unknown,
+): Promise<SessionDatabaseOptimizeResult> {
+  const params = sessionDatabaseOptimizeParamsSchema.parse(input);
+  const store = context.deps.sessionStore;
+  const pool = context.sessionResidentPool;
+  if (!store?.optimizeSessionDatabase || !store.getSessionDatabaseStats)
+    throw new Error("session_storage_unavailable");
+  const startedAt = Date.now();
+  const before = await store.getSessionDatabaseStats();
+  const refused = (reason: "sessions-active" | "database-busy"): SessionDatabaseOptimizeResult => ({
+    status: "refused",
+    action: "none",
+    reason,
+    before,
+    after: before,
+    reclaimedBytes: 0,
+    durationMs: Date.now() - startedAt,
+  });
+  if (pool?.hasActiveWork()) return refused("sessions-active");
+
+  let release: (() => void) | undefined;
+  try {
+    release = pool?.acquireStorageMaintenance();
+  } catch {
+    // 还有协议请求或去激活在飞：快速拒绝，不排队等待 SQLite 锁。
+    return refused("database-busy");
+  }
+  try {
+    const result = await store.optimizeSessionDatabase(params);
+    context.logger?.info("Session database maintenance finished", {
+      event: "ycode_protocol.storage.database.optimized",
+      maintenanceStatus: result.status,
+      action: result.action,
+      ...(result.reason ? { reason: result.reason } : {}),
+      databaseBytesBefore: result.before.databaseBytes,
+      databaseBytesAfter: result.after.databaseBytes,
+      freelistPagesBefore: result.before.freelistCount,
+      freelistPagesAfter: result.after.freelistCount,
+      reclaimedBytes: result.reclaimedBytes,
+      durationMs: result.durationMs,
+    });
+    return result;
+  } finally {
+    release?.();
+  }
+}
 
 export async function previewSessionStorage(
   context: YCodeProtocolAgentServerContext,

@@ -628,7 +628,11 @@ function officialPluginCacheRoot(
   );
 }
 
-function candidateBaseDirs(): string[] {
+/**
+ * 入口旁的候选基目录。内置技能包（./bundled-skills.ts）复用同一套遍历，
+ * 以免「官方插件找得到、技能包找不到」两套路径假设漂移。
+ */
+export function candidateBaseDirs(): string[] {
   // Electron app-server 运行在 resources/glm/ycode.cjs，官方插件资源也随桌面包
   // stage 到同级 packages/*-plugin。候选目录必须优先看入口文件目录，避免生产态退回到
   // monorepo-only 的 __dirname 查找假设。

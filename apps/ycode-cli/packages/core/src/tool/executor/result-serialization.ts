@@ -26,6 +26,7 @@ import {
   OfficialCuaFrameContractError,
   projectHookAugmentedModelContent,
   projectOfficialCuaStructuredContent,
+  projectToolReferenceContent,
 } from "./result-content-projection.js";
 import type { ToolExecutorDeps } from "./types.js";
 import { isRecord } from "./utils.js";
@@ -80,6 +81,19 @@ export async function serializeOutput(
     Math.min(effectiveBudget.maxModelBytes, effectiveBudget.maxInlineBytes),
   );
   const artifactPath = findArtifactPath(output);
+  const referenceProjection = projectToolReferenceContent(
+    modelContent,
+    maxModelBytes,
+    effectiveBudget.preview?.direction ?? "head",
+  );
+  if (referenceProjection) {
+    return {
+      ...referenceProjection,
+      originalBytes,
+      budgetStrategy: effectiveBudget.strategy,
+      artifactPath,
+    };
+  }
   const shouldPersistArtifact =
     (originalBytes > maxModelBytes || exceedsCharacterBudget) &&
     effectiveBudget.artifact?.enabled === true &&
@@ -247,6 +261,21 @@ export function appendHookAdditionalContexts(
     return omittedFrameCredential ? { ...projected, truncated: true } : projected;
   }
   const previewDirection = entry.resultBudget?.preview?.direction ?? "head";
+  const modelContent = serialization.modelContent ?? serialization.content;
+  const referenceProjection = Array.isArray(modelContent)
+    ? projectToolReferenceContent(
+        [...modelContent, { type: "text", text: hookContext }],
+        maxModelBytes,
+        previewDirection,
+      )
+    : undefined;
+  if (referenceProjection) {
+    return {
+      ...serialization,
+      ...referenceProjection,
+      truncated: serialization.truncated || referenceProjection.truncated || omittedFrameCredential,
+    };
+  }
   const artifactPreview = isPersistedArtifactPreview(serialization);
   const contentProjection = artifactPreview
     ? appendHookToPersistedArtifactPreview(serialization.content, suffix, maxModelBytes)

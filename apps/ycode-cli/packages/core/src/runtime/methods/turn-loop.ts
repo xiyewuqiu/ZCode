@@ -11,10 +11,12 @@ import {
   buildRuntimeOutputStyleReminderBody,
   buildTodoReminderBody,
   buildRuntimeProviderRequestMessages,
+  prepareRuntimeProviderRequest,
   createCompactRapidRefillError,
   throwIfTurnAborted,
   shouldBuildTodoReminder,
 } from "../helpers/index.js";
+import { buildToolSearchAnnouncement } from "../../tool/search/exposure.js";
 import {
   systemReminderAttachmentEntry,
   todoReminderRuntimeMetadata,
@@ -22,15 +24,15 @@ import {
 import type { AgentRuntimeInternal } from "../internal.js";
 import { runModelBackedTurnStep } from "./turn-model-step.js";
 import {
-  AUTOMATION_MUTATION_TOOL_NAMES,
   evaluateRapidRefill,
-  isAutomationMutationRestrictedTurn,
   MAX_CONSECUTIVE_RAPID_REFILLS,
   RAPID_REFILL_TOOL_TURN_THRESHOLD,
   recordCompactHistoryRound,
   recordCompactSuccess,
 } from "./turn-loop-state.js";
 import type { RegularTurnLoopState } from "./turn-loop-state.js";
+import { getTurnTools } from "./turn-tool-visibility.js";
+import { appendRuntimeAgentListing } from "../helpers/agent-listing.js";
 import {
   appendTurnRequestEntries,
   commitTurnRequestEntries,
@@ -77,6 +79,7 @@ export async function runRegularTurnLoop(
       state.events,
       state.turnAbortSignal,
       {
+        getAgentListingTools: () => getTurnTools(this, state),
         compactReason: CompactReason.ContextLimit,
         modelStepIndex: state.modelStepCount,
         phase: compactPhase,
@@ -101,15 +104,12 @@ export async function runRegularTurnLoop(
 
     await this.initializeMcp(state.turnTraceContext);
     throwIfTurnAborted(state.turnAbortSignal);
-    const turnDisallowedTools = buildTurnDisallowedTools(state);
-    // automation 派发到已 active 会话或重试恢复时，入口 metadata 可能没有带到
-    // loop state；但 queryId 仍是 automation-*。provider 请求边界必须按 queryId 再硬过滤
-    // automation 写工具，否则模型会先看到并创建、修改或删除任务定义。
-    const tools = state.automationCreateLimitReached
-      ? []
-      : turnDisallowedTools
-        ? this.getTools(state.model).filter((tool) => !turnDisallowedTools.has(tool.name))
-        : this.getTools(state.model);
+    const tools = getTurnTools(this, state);
+    if (!outputTokenRecoveryActive) {
+      // agent 目录只在安全的前置步骤边界（tool 面已确定、模型请求前）公告；
+      // 已通知集合来自持久化历史，避免同一类型重复提醒。
+      await appendRuntimeAgentListing(this, state.turnRequestState, tools, state.turnTraceContext);
+    }
     if (!outputTokenRecoveryActive && this.needsPlanModeExitReminder) {
       this.needsPlanModeExitReminder = false;
       commitTurnRequestEntries(this, state.turnRequestState, [
@@ -158,22 +158,49 @@ export async function runRegularTurnLoop(
         systemReminderAttachmentEntry("output_style", outputStyleReminderBody),
       ]);
     }
+    if (!outputTokenRecoveryActive) {
+      const announcement = buildToolSearchAnnouncement({
+        model: state.model,
+        mode: this.config.toolSearch?.mode,
+        tools,
+        registry: this.getToolRegistry(),
+        entries: state.turnRequestState.entries,
+      });
+      if (announcement) {
+        // 公告正文和增量事实必须先一起提交；否则同一目录会在后续请求重复公告。
+        commitTurnRequestEntries(this, state.turnRequestState, [announcement]);
+      }
+    }
+    // （2026-09-12）：原"回合开始注入 plugin_ui_state reminder"已删除，插件给模型的信息
+    // 一律走 ui/update-model-context。
     const providerEntries = [...state.turnRequestState.entries];
     const requestEntries = providerEntries;
-    // provider-visible user ordering projection 会改变最终 latest user 落点，
-    // cache-control 必须在 projection 后统一设置，避免 raw synthetic entry 抢占缓存锚点。
-    const providerProjection = buildRuntimeProviderRequestMessages(this, {
+    const prepared = prepareRuntimeProviderRequest(this, {
+      model: state.model,
+      tools,
+      registry: this.getToolRegistry(),
       entries: requestEntries,
       applyCacheControl: true,
-      model: state.model,
     });
-    const { messages } = providerProjection;
+    this.logger?.debug("ToolSearch request exposure", {
+      event: "tool.search.exposure",
+      enabled: prepared.toolSearch.enabled,
+      mode: prepared.toolSearch.mode,
+      reason: prepared.reason,
+      catalogSize: prepared.toolSearch.catalog.length,
+      schemaCount: prepared.request.tools.length,
+    });
+    // provider-visible user ordering projection 会改变最终 latest user 落点，
+    // cache-control 必须在 projection 后统一设置，避免 raw synthetic entry 抢占缓存锚点。
+    const providerProjection = prepared.projection;
+    const { messages } = prepared.request;
     const recordableEntries = filterOutputTokenContinuationEntries(requestEntries);
     const recordableProjection =
       recordableEntries === requestEntries
         ? providerProjection
         : buildRuntimeProviderRequestMessages(this, {
             entries: recordableEntries,
+            loadedToolCallIds: prepared.loadedToolCallIds,
             applyCacheControl: true,
             model: state.model,
           });
@@ -202,23 +229,12 @@ export async function runRegularTurnLoop(
       sourceEntries: providerProjection.sourceEntries,
       requestEntries,
       recordedMessages: recordableProjection.messages,
-      tools,
+      tools: prepared.request.tools,
+      toolSearch: prepared.toolSearch,
     });
 
     if (result === "break") {
       break;
     }
   }
-}
-
-function buildTurnDisallowedTools(state: RegularTurnLoopState): Set<string> | null {
-  const tools = new Set(state.toolDisallowlist ?? []);
-  if (isAutomationMutationRestrictedTurn(state)) {
-    // 定时任务执行轮只应运行任务 prompt，不能反过来管理自己的定义。
-    // 保留 CronList 供只读查询；所有 mutation 在 provider 请求边界统一隐藏。
-    for (const toolName of AUTOMATION_MUTATION_TOOL_NAMES) {
-      tools.add(toolName);
-    }
-  }
-  return tools.size > 0 ? tools : null;
 }

@@ -81,6 +81,7 @@ export * from "./hooks/index.js";
 
 // MCP components
 export * from "./mcp/index.js";
+export * from "./mcp/app-tools.js";
 
 // Plugin 对话引用（@ Plugin capability hint）
 export * from "./plugin-reference/index.js";

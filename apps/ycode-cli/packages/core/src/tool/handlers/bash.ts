@@ -43,6 +43,10 @@ import { supportsBashBackgroundLifecycle } from "./bash-background-lifecycle.js"
 import { isBashAutoBackgroundEligible } from "./bash-background-policy.js";
 import { resolveBashPermissionRulePolicy } from "./bash-command-permission-policy.js";
 import { decideBashCwdPolicy } from "./bash-cwd-policy.js";
+import {
+  classifyDestructiveGitCommand,
+  formatDestructiveGitReason,
+} from "./bash-git-safety.js";
 import { readStringProperty } from "./bash-metadata.js";
 import { formatBashModelContent, formatPersistedBashModelContent } from "./bash-model-content.js";
 import {
@@ -79,7 +83,28 @@ function resolveBashPermissionCapability(
   context?: ToolRuntimePermissionCapabilityContext,
 ): ToolRuntimePermissionCapability | undefined {
   const command = readStringProperty(input, "command");
-  if (!command || !isRuntimeReadOnlyBashCommand(command, context)) return undefined;
+  if (!command) return undefined;
+
+  // 破坏性 Git 命令单独标成 critical：普通模式必须弹出确认，计划模式由
+  // PermissionService 拒绝；reasonDetail 把“哪条命令、危险点、替代方案”带到用户和模型面前。
+  const destructiveGit = classifyDestructiveGitCommand(command);
+  if (destructiveGit.findings.length > 0) {
+    return {
+      destructive: true,
+      needsApproval: true,
+      readOnly: false,
+      riskLevel: "critical" as const,
+      sideEffectScope: "system" as const,
+      reasonDetail: formatDestructiveGitReason(destructiveGit.findings),
+      permission: {
+        needsApproval: true,
+        riskLevel: "critical" as const,
+        sideEffectScope: "system" as const,
+      },
+    };
+  }
+
+  if (!isRuntimeReadOnlyBashCommand(command, context)) return undefined;
   return {
     destructive: false,
     needsApproval: false,
@@ -128,6 +153,10 @@ async function executeBashHandler(
     commandTelemetry?.finishCompleted();
     return emptyBashOutput(parsed);
   }
+
+  // 防御性收口：正常流程在 PermissionService 已拒绝计划模式下的非只读命令；
+  // 这里再拦一次，防止 hook 或未来的直接 handler 入口把命令送进执行层。
+  assertDestructiveGitNotBlockedByMode(parsed.command, context);
 
   const request = createExecutionRequest(parsed, context, timeoutPolicy);
   const progressTiming: BashProgressTiming = {};
@@ -209,6 +238,32 @@ async function executeBashHandler(
     result,
   });
   return output;
+}
+
+function assertDestructiveGitNotBlockedByMode(
+  command: string,
+  context: ToolExecutionContext,
+): void {
+  const mode = context.sessionModePort?.getMode();
+  const planEnabled = context.sessionModePort?.isPlanEnabled?.() ?? mode === "plan";
+  if (mode !== "plan" && !planEnabled) return;
+
+  const scan = classifyDestructiveGitCommand(command);
+  if (scan.findings.length === 0) return;
+
+  throw createCoreError(
+    CoreErrorType.PermissionDenied,
+    `Plan mode does not allow destructive Git commands. ${formatDestructiveGitReason(scan.findings)}`,
+    {
+      context: {
+        mode,
+        ruleId: "mode.plan.destructiveGit",
+        toolCallId: context.toolCallId,
+        toolName: "Bash",
+      },
+      recoverable: true,
+    },
+  );
 }
 
 function emptyBashOutput(input: BashInput): BashOutput {

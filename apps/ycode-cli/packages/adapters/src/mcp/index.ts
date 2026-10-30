@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import {
@@ -26,6 +26,8 @@ import type {
   McpContentBlock,
   McpOAuthConfig,
   McpPort,
+  McpReadResourceRequest,
+  McpReadResourceResult,
   McpServerConfig,
   McpServerStatus,
   McpToolCallResult,
@@ -33,6 +35,7 @@ import type {
   TraceContext,
 } from "@ycode/contracts";
 import { YCODE_MCP_SERVER_REQUEST_ID_META_KEY } from "@ycode/contracts";
+import { buildMcpAppsClientCapabilities } from "@ycode/shared/mcp-apps";
 import { normalizeMcpToolDescriptor } from "./descriptor.js";
 import {
 
@@ -172,6 +175,7 @@ class NodeMcpAdapter implements McpPort {
   private readonly network?: NetworkEgressEnvPolicy;
   private readonly telemetry?: McpTelemetryTracker;
   private readonly connectionGenerations = new Map<string, number>();
+  private readonly appConnectionListeners = new Map<string, Set<() => void>>();
   private credentialStore?: SharedYCodeCredentialStore;
   /**
    * span → 服务端 request id。同一 session 的多次调用共用 traceId 会串号，
@@ -340,6 +344,47 @@ class NodeMcpAdapter implements McpPort {
     return status;
   }
 
+  onAppConnectionInvalidated(name: string, listener: () => void): () => void {
+    const listeners = this.appConnectionListeners.get(name) ?? new Set();
+    listeners.add(listener);
+    this.appConnectionListeners.set(name, listeners);
+    return () => {
+      listeners.delete(listener);
+      if (!listeners.size) this.appConnectionListeners.delete(name);
+    };
+  }
+
+  appConnectionSnapshot(name: string): { identity: string; generation: number } | null {
+    const record = this.records.get(name);
+    if (!record?.client || record.status.status !== "connected") return null;
+    // 只向宿主输出摘要；配置中的凭据不进入协议或日志。属性排序避免配置序造成换源。
+    const canonical = (value: unknown): unknown => {
+      if (Array.isArray(value)) return value.map(canonical);
+      if (value && typeof value === "object") {
+        return Object.fromEntries(
+          Object.entries(value)
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([key, item]) => [key, canonical(item)]),
+        );
+      }
+      return value;
+    };
+    return {
+      identity: createHash("sha256")
+        .update(
+          JSON.stringify([
+            process.platform,
+            process.execPath,
+            this.workingDirectory ?? "",
+            name,
+            canonical(record.config),
+          ]),
+        )
+        .digest("hex"),
+      generation: this.connectionGenerations.get(name) ?? 0,
+    };
+  }
+
   async status(): Promise<Record<string, McpServerStatus>> {
     return Object.fromEntries(
       Array.from(this.records.entries()).map(([name, record]) => [name, record.status]),
@@ -391,6 +436,38 @@ class NodeMcpAdapter implements McpPort {
     return Array.from(this.records.values()).flatMap((record) => record.tools);
   }
 
+  async readResource(
+    request: McpReadResourceRequest,
+    options: McpCallToolOptions = {},
+  ): Promise<McpReadResourceResult> {
+    const record = this.records.get(request.serverName);
+    const client = record?.client;
+    if (!client || record.status.status !== "connected") {
+      throw new Error(`MCP server ${request.serverName} is not connected`);
+    }
+    const timeoutMs = options.timeoutMs ?? record.config.timeoutMs ?? DEFAULT_MCP_TIMEOUT_MS;
+    // 与 callTool 共用 record.client；不另建连接，避免资源读取绕过重连/鉴权路径。
+    const result = await client.readResource(
+      { uri: request.uri },
+      { signal: options.signal, timeout: timeoutMs },
+    );
+    return {
+      contents: result.contents.map((content) => {
+        const base = {
+          uri: content.uri,
+          ...(content.mimeType !== undefined ? { mimeType: content.mimeType } : {}),
+          ...(content._meta !== undefined
+            ? { _meta: content._meta as Record<string, unknown> }
+            : {}),
+        };
+        // SDK 的 contents 是 text / blob 的可辨识联合，逐项收窄后再展开。
+        return "text" in content
+          ? { ...base, text: content.text }
+          : { ...base, blob: content.blob };
+      }),
+    };
+  }
+
   async callTool(
     request: McpCallToolRequest,
     options: McpCallToolOptions = {},
@@ -400,6 +477,26 @@ class NodeMcpAdapter implements McpPort {
       options.timeoutMs ?? initialRecord?.config.timeoutMs ?? DEFAULT_MCP_TIMEOUT_MS;
     const deadline = createMcpDeadline(timeoutMs);
     const timeoutMessage = `MCP tool ${request.serverName}/${request.toolName} timed out after ${timeoutMs}ms`;
+    // 页面写操作被批准时绑定了具体连接代际：代际不符即拒绝，且禁止重连 / 重新授权后重放。
+    if (options.appConnection) {
+      const snapshot = this.appConnectionSnapshot(request.serverName);
+      const current = this.records.get(request.serverName);
+      if (
+        !snapshot ||
+        snapshot.identity !== options.appConnection.identity ||
+        snapshot.generation !== options.appConnection.generation ||
+        !current?.client
+      ) {
+        throw new Error("MCP App connection changed");
+      }
+      options.signal?.throwIfAborted();
+      return await this.callToolOnClient(
+        current.client,
+        request,
+        remainingMcpDeadlineMs(deadline, timeoutMessage),
+        options.signal,
+      );
+    }
     const pending = initialRecord?.connecting;
     if (pending) {
       // connecting 是 adapter 持有的共享连接/OAuth 恢复任务。过去这里裸 await，
@@ -868,6 +965,11 @@ class NodeMcpAdapter implements McpPort {
         },
         {
           versionNegotiation: resolveVersionNegotiation(config, timeoutMs),
+          capabilities: {
+            // MCP Apps 规范：宿主经 `extensions["io.modelcontextprotocol/ui"]` 宣告能渲染的 UI mimeType，
+            // 官方 SDK 的 server 据此决定是否下发 ui 资源（getUiCapability）。
+            ...buildMcpAppsClientCapabilities(),
+          },
         },
       );
       this.updateCurrentRecord(name, generation, {
@@ -1429,6 +1531,8 @@ class NodeMcpAdapter implements McpPort {
   private nextConnectionGeneration(name: string): number {
     const generation = (this.connectionGenerations.get(name) ?? 0) + 1;
     this.connectionGenerations.set(name, generation);
+    // 回调可能增删监听器，本次通知必须固定接收者。
+    for (const listener of [...(this.appConnectionListeners.get(name) ?? [])]) listener();
     return generation;
   }
 

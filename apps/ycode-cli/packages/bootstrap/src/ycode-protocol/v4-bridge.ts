@@ -97,6 +97,7 @@ import {
   registerForkedSession,
   readSessionContextUsage,
 } from "./server-operations.js";
+import { disposeMcpUiSessionHost } from "./mcp-ui/rpc.js";
 import type {
   YCodeProtocolAgentServerContext,
   YCodeProtocolSessionRecord,
@@ -1083,21 +1084,12 @@ export function createConversationV4Gateway(
     },
     // deleteSession 的执行面：内联旧 closeSession op 的 4 步（不 import 旧 op——
     // 语义与 server-operations.ts closeSession 对齐，随会话注册表归 v4 后收编）。
-    closeSession: async (sessionId) => {
-      const record = context.sessions.get(sessionId);
-      if (!record) {
-        // handler 已校验存在性；此处只兜并发竞态（重复删除幂等成功）。
-        return;
-      }
-      record.unsubscribe?.();
-      await record.app.close?.();
-      // v4 通道：会话关闭同时清 publisher / 订阅调度；重开会话走 snapshot 冷启动。
-      // disposeSession 必须在注册表删除之前调用——
-      // gateway 靠 getSessionWorkspaceId（读 context.sessions）定位 workspace 才能把
-      // session.removed 推给 sessions-index 订阅者；先 delete 再 dispose 时 workspaceId
-      // 恒为 null，删除会话后侧栏列表项永不消失（e2e conversation-session-v4-sidebar 抓出）。
-      context.v4Gateway?.disposeSession(sessionId);
-      context.sessions.delete(sessionId);
+    closeSession: closeSessionRecord,
+    deleteSession: async (sessionId) => {
+      const store = context.deps.sessionStore;
+      // 旧 store/测试桩没有软删除能力时退回既有 close 语义，不能阻断会话关闭。
+      if (store?.softDeleteSession) await store.softDeleteSession(sessionId as SessionId);
+      await closeSessionRecord(sessionId);
     },
     // createSession 的执行面：record 建立/事件接线/catalog 同步/失败自清理全在旧
     // createSession op 内（半初始化 record 的回收顺序修过 bug，不重复实现）。
@@ -1408,7 +1400,17 @@ export function createConversationV4Gateway(
         ...(session.parentID ? { parentSessionId: String(session.parentID) } : {}),
         title: session.title ?? "",
         titleSource: normalizeStoredTitleSource(session.titleSource),
-        phase: "completedSuccess" as const,
+        ...(session.lastOutcome
+          ? {
+              lastOutcome: session.lastOutcome,
+              phase:
+                session.lastOutcome === "error"
+                  ? ("error" as const)
+                  : session.lastOutcome === "interrupted"
+                    ? ("completedInterrupted" as const)
+                    : ("completedSuccess" as const),
+            }
+          : { phase: "completedSuccess" as const }),
         sessionEnded: true,
         hasBackgroundWork: false,
         lastActivityAt: session.time?.updated ?? 0,
@@ -1423,6 +1425,24 @@ export function createConversationV4Gateway(
       return [];
     }
   };
+  async function closeSessionRecord(sessionId: string): Promise<void> {
+    const record = context.sessions.get(sessionId);
+    if (!record) {
+      // handler 已校验存在性；此处只兜并发竞态（重复删除幂等成功）。
+      return;
+    }
+    record.unsubscribe?.();
+    // MCP Apps：无法渲染的会话必须撤销实例凭证，避免迟到页面继续持有执行权。
+    disposeMcpUiSessionHost(context, sessionId);
+    await record.app.close?.();
+    // v4 通道：会话关闭同时清 publisher / 订阅调度；重开会话走 snapshot 冷启动。
+    // disposeSession 必须在注册表删除之前调用——
+    // gateway 靠 getSessionWorkspaceId（读 context.sessions）定位 workspace 才能把
+    // session.removed 推给 sessions-index 订阅者；先 delete 再 dispose 时 workspaceId
+    // 恒为 null，删除会话后侧栏列表项永不消失（e2e conversation-session-v4-sidebar 抓出）。
+    context.v4Gateway?.disposeSession(sessionId);
+    context.sessions.delete(sessionId);
+  }
   return new ConversationV4Gateway({
     cliVersion: context.deps.version,
     sessionExists: (sessionId) => context.sessions.has(sessionId),
@@ -1545,6 +1565,7 @@ export function createConversationV4Gateway(
       return {
         createdAt: record.createdAt,
         lastActivityAt: record.updatedAt,
+        ...(record.lastOutcome ? { lastOutcome: record.lastOutcome } : {}),
         ...(record.parentSessionId ? { parentSessionId: String(record.parentSessionId) } : {}),
       };
     },
@@ -1561,6 +1582,39 @@ export function createConversationV4Gateway(
     // ── workspace-config hook（配置目录订阅种子；live session 快路径，避免临时 app）──
     getWorkspaceConfig: (workspaceId) => buildLiveWorkspaceConfigStateV4(context, workspaceId),
     getStoredSessionSummaries: loadStoredSessionSummaries,
+    /**
+     * snapshot 缺席不是删除：只按明确 sessionId 读取 CLI 持久事实。
+     * 不恢复 runtime、不创建 record，也不使用 Host 时钟补齐。
+     */
+    reconcileSessions: async ({ workspaceId, sessionIds }) => {
+      const store = context.deps.sessionStore;
+      if (!store) throw new Error("Session store is unavailable");
+      const remote = parseRemoteWorkspaceIdentity(workspaceId);
+      const directory = remote?.workspacePath ?? workspaceId;
+      const sessions = await Promise.all(
+        [...new Set(sessionIds)].map(async (sessionId) => {
+          const session = await store.getSession(sessionId as SessionId);
+          const sameWorkspace =
+            session &&
+            session.directory === directory &&
+            (remote
+              ? session.workspaceID === workspaceId
+              : !session.workspaceID || session.workspaceID === workspaceId);
+          if (!sameWorkspace) return { sessionId, exists: false as const, deleted: false as const };
+          return {
+            sessionId,
+            exists: true as const,
+            deleted: session.time.deleted !== undefined,
+            title: session.title,
+            titleSource: normalizeStoredTitleSource(session.titleSource),
+            createdAt: session.time.created,
+            updatedAt: session.time.updated,
+            ...(session.lastOutcome ? { lastOutcome: session.lastOutcome } : {}),
+          };
+        }),
+      );
+      return { sessions };
+    },
     refreshLegacySessionSummaries: (workspaceId, legacyTaskIds) =>
       parseRemoteWorkspaceIdentity(workspaceId)
         ? loadStoredSessionSummaries(workspaceId, legacyTaskIds)

@@ -3,6 +3,8 @@ const NO_TOOLS_PREAMBLE = `CRITICAL: Respond with TEXT ONLY. Do NOT call any too
 - Do NOT use Read, Bash, Grep, Glob, Edit, Write, or ANY other tool.
 - You already have all the context you need in the conversation above.
 - Tool calls will be REJECTED and will waste your only turn — you will fail the task.
+- Record pending work and concrete next steps in the summary. Do NOT perform that work now.
+- If a tool call was interrupted before execution, state explicitly that it did not execute; never imply it succeeded.
 - Your entire response must be plain text: an <analysis> block followed by a <summary> block.
 
 `;

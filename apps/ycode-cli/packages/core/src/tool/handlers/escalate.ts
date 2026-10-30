@@ -96,6 +96,8 @@ export const escalateToolEntry: ToolEntry = {
   capability: "Escalate a blocking question from a workflow subagent to the main agent and wait",
   metadata: {
     name: ESCALATE_TOOL_NAME,
+    shouldDefer: true,
+    searchHint: "escalate a blocking question to the main agent",
     description: ESCALATE_DESCRIPTION,
     readOnly: false,
     destructive: false,

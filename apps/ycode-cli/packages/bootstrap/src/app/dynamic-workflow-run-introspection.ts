@@ -18,12 +18,17 @@ import type {
 import type { JournalStorePort } from "@ycode/dynamic-workflow";
 import { reduceWorkflowRunsState, type WorkflowRunsState } from "@ycode/shared/ycode-protocol-v4";
 import type { DynamicWorkflowIntrospectableJournal } from "./dynamic-workflow-run-journal.js";
-import { readRunScriptPath, readRunSubagentModel } from "./dynamic-workflow-run-launch-anchor.js";
+import {
+  readRunModelBindings,
+  readRunScriptPath,
+  readRunSubagentModel,
+} from "./dynamic-workflow-run-launch-anchor.js";
 import {
   artifactsOf,
   journalRunSummary,
   registryRunSummary,
   runConcurrencyField,
+  runModelBindingsField,
   runScriptPathField,
   runSubagentModelField,
   terminalErrorField,
@@ -33,6 +38,7 @@ import {
   type RunRegistryEntry,
 } from "./dynamic-workflow-run-observation.js";
 import { replayRunProgressFromEvents } from "./dynamic-workflow-run-replay.js";
+import { runHolesOf } from "./dynamic-workflow-run-holes.js";
 import { buildWorkflowRunRoster } from "./dynamic-workflow-run-roster.js";
 import type { WorkflowEscalationRegistry } from "./workflow-escalation-registry.js";
 
@@ -53,18 +59,18 @@ interface DynamicWorkflowRunIntrospectionContext {
   /** 升级问答的停驻表，pendingQuestions 切片的唯一投影源。 */
   escalations: WorkflowEscalationRegistry;
   /**
-   * 本进程的并发天花板（service 的那一份实现）。详情面据它判断一个 run 的上界值不值得一提
+   * 本进程的默认并发（service 的那一份实现）。详情面据它判断一个 run 的上界值不值得一提
    * （{@link runConcurrencyField}）。是函数而不是数：内省成员在服务构造时造好一次，而天花板
    * 是每次读时的事实。
    */
-  concurrencyCeiling: () => number;
+  defaultConcurrency: () => number;
 }
 
 /** 造 `listRuns` / `getRunDetail` 两个成员，由 service 展开进返回的端口对象。 */
 export function createRunIntrospectionMethods(
   ctx: DynamicWorkflowRunIntrospectionContext,
 ): Required<Pick<DynamicWorkflowRunPort, "listRuns" | "getRunDetail">> {
-  const { introspection, journal, parentSessionId, runs, escalations, concurrencyCeiling } = ctx;
+  const { introspection, journal, parentSessionId, runs, escalations, defaultConcurrency } = ctx;
   return {
     /**
      * 按项目枚举 run：journal 行 ∪ 本会话注册表。**只读**——`possiblyInterrupted` 是
@@ -139,9 +145,11 @@ export function createRunIntrospectionMethods(
           ...gapSummary,
           // 并发上界的间隙副本（见 RunRegistryEntry.maxConcurrency）：行还没落，但这个值在
           // submit 那一刻就已确定，详情面没有理由在这几个微任务里装作不知道。
-          ...runConcurrencyField(entry.maxConcurrency, concurrencyCeiling()),
+          ...runConcurrencyField(entry.maxConcurrency, defaultConcurrency()),
           // 子代理模型的间隙副本，同一条论证（见 RunRegistryEntry.subagentModel）。
           ...runSubagentModelField(entry.subagentModel),
+          // 绑定表的间隙副本，同一条论证（见 RunRegistryEntry.modelBindings）。
+          ...runModelBindingsField(entry.modelBindings),
           // 脚本文件的间隙副本，同一条论证（见 RunRegistryEntry.scriptPath）。
           ...runScriptPathField(entry.scriptPath),
           // 计数此刻还没有任何权威来源，诚实地为 0；用量的起点却是已知的（修订 run 继承前驱的
@@ -161,6 +169,8 @@ export function createRunIntrospectionMethods(
           // 这条间隙分支正是「run 在飞、journal 行还没落」的那一刻，也就是问题**最可能**
           // 停驻的时刻——漏掉它，刚起步的 run 里那个被挡住的 actor 在模型侧不可见。
           ...pendingQuestionsField(escalations, runId),
+          // 留白（与快照同源同投影）：这条间隙分支里引擎可能已经停在某处留白。
+          ...holesField(runHolesOf(runId, entry, journal)),
           // 产物：这条间隙分支里 dwf_run 行还没落，
           // 但**节点行可能已经落了**——引擎在 createRun 之后立刻就能 putNode 一条 artifact
           // 行。所以这里照样取一次，而不是想当然地给空：一个刚声明完看板就被查详情的 run
@@ -180,13 +190,16 @@ export function createRunIntrospectionMethods(
         ...summary,
         // 落库的上界（`dwf_run.caps_max_concurrency`），只在低于天花板时在场。刻意不进
         // journalRunSummary——那是列表行的共同截面，一个很少设置的字段不该把每一行都加宽。
-        ...runConcurrencyField(row.caps.maxConcurrency, concurrencyCeiling()),
+        ...runConcurrencyField(row.caps.maxConcurrency, defaultConcurrency()),
         // 本 run 的子代理模型，只在设过时在场。它不在 dwf_run 的列上（刻意不做迁移）——
         // 权威是 `run-launched` 事件。与快照同一条规则：有条目就读条目（三条建条目的路都落值），
         // 只有冷行才去扫一次事件头。与并发上界同规地刻意不进 journalRunSummary：一个很少设置
         // 的字段不该把列表的每一行都加宽。
         ...runSubagentModelField(
           entry === undefined ? readRunSubagentModel(journal, runId) : entry.subagentModel,
+        ),
+        ...runModelBindingsField(
+          entry === undefined ? readRunModelBindings(journal, runId) : entry.modelBindings,
         ),
         // 本 run 的脚本文件，只在记过时在场。与子代理模型逐条同规：权威是 `run-launched`
         // 事件（dwf_run 上没有这一列），有条目就读条目，只有冷行才去扫一次事件头；同样刻意
@@ -214,7 +227,7 @@ export function createRunIntrospectionMethods(
           .listRecentLogEvents(runId, DEFAULT_LOG_TAIL_LIMIT)
           .map(toLogTailEntry),
         ...buildWorkflowRunRoster({
-          run: reduceRunState(row, stored, concurrencyCeiling()),
+          run: reduceRunState(row, stored, defaultConcurrency()),
           events: stored,
           nodes: journal.listNodes(runId),
           actors: journal.listActors(runId),
@@ -227,6 +240,8 @@ export function createRunIntrospectionMethods(
         ...(pendingQuestions === undefined || pendingQuestions.length === 0
           ? {}
           : { pendingQuestions }),
+        // 留白：与快照同源同投影，零条时整字段缺席。
+        ...holesField(runHolesOf(runId, entry, journal)),
         // 产物截面：任意状态都附，含 failed / cancelled
         // ——一个死在第 12 步的 run 仍然交付了它前面产出的那张图。与 `listArtifacts` 和终态
         // 快照走**同一个** artifactsOf，三处给出同一份清单（三处各归并一份，迟早会在
@@ -286,11 +301,18 @@ function pendingQuestionsOf(
 function reduceRunState(
   row: Parameters<typeof replayRunProgressFromEvents>[0],
   stored: Parameters<typeof replayRunProgressFromEvents>[1],
-  concurrencyCeiling: number,
+  defaultConcurrency: number,
 ): WorkflowRunsState["runs"][number] | undefined {
   let state: WorkflowRunsState | undefined;
-  for (const payload of replayRunProgressFromEvents(row, stored, concurrencyCeiling)) {
+  for (const payload of replayRunProgressFromEvents(row, stored, defaultConcurrency)) {
     state = reduceWorkflowRunsState(state, payload) ?? state;
   }
   return state?.runs.find((run) => run.runId === row.runId);
+}
+
+/** 留白切片：零条时整字段缺席（与 pendingQuestions 同规）。 */
+function holesField(
+  holes: readonly import("@ycode/contracts").DynamicWorkflowRunHole[],
+): { holes?: readonly import("@ycode/contracts").DynamicWorkflowRunHole[] } {
+  return holes.length === 0 ? {} : { holes };
 }

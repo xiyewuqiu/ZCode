@@ -71,12 +71,33 @@ export interface CoreFanoutSite {
   cardinality?: number;
 }
 
+/**
+ * An OPEN `hole<T>()` site, AST-free (docs/analysis.md「Sites」). A filled hole is not a
+ * step and is not listed here — it survives only as a phase in the trace.
+ */
+export interface CoreHoleSite {
+  id: string;
+  /** The filled hole whose body holds this hole (docs/analysis.md「Sites」); absent at the top level. */
+  fill?: string;
+  order: number;
+  /** The hole's literal name (its phase name; unique by rule 9012). */
+  name: string;
+  /** The author's spelling of the type argument (`Plan`), the contract the fill is checked against. */
+  type: string;
+  loc: ScriptLoc;
+  /** The call is the (awaited) operand of a top-level `return`: the script's end is open. */
+  tail?: true;
+  within?: string;
+}
+
 export interface CoreSites {
   asks: CoreAskSite[];
   worldReads: CoreSimpleSite[];
   joins: CoreSimpleSite[];
   actors: CoreActorSite[];
   fanouts: CoreFanoutSite[];
+  /** Open holes, source order (see {@link CoreHoleSite}). */
+  holes: CoreHoleSite[];
 }
 
 /**
@@ -90,6 +111,8 @@ export interface CoreFacts {
   worldReadData: Map<string, TaintOcc[]>;
   joinIn: Map<string, TaintOcc[]>;
   fanoutIn: Map<string, TaintOcc[]>;
+  /** Artifact occurrences reaching each open hole's prompt. */
+  holeData: Map<string, TaintOcc[]>;
   returnData: TaintOcc[];
 }
 
@@ -109,9 +132,15 @@ export interface AnalysisCore {
   types: CoreTypes;
 }
 
-/** Site-id vocabulary: is this label an actor site? (Actor labels never make data edges.) */
+/**
+ * Site-id vocabulary: is this label an actor site? (Actor labels never make data edges.)
+ *
+ * 修复原因：留白函数体里的站点带留白 id 的前缀（`hole#21b40fca/actor#1`，docs/analysis.md「Sites」），
+ * 原先的 `startsWith("actor#")` 认不出它们，于是补全体内的 ask 全部解析不到 receiver、落到
+ * `unknown` 车道。按**最后一段**判种类。
+ */
 export function isActorSite(site: string): boolean {
-  return site.startsWith("actor#");
+  return /(^|\/)actor#/.test(site);
 }
 
 /** Quote a string field: embedded `"` escaped as `\"` (same rule as serialize.ts). */
@@ -210,7 +239,11 @@ export function serializeCore(core: AnalysisCore): string {
         (control.controllers.length > 0 ? ` by=${control.controllers.join(",")}` : "") +
         (control.maybeControllers.length > 0 ? ` maybe=${control.maybeControllers.join(",")}` : ""),
     ),
-    ...core.trace.phases.map((phase) => `phase ${phase.id} ${quote(phase.name)} ${at(phase.loc)}`),
+    ...core.trace.phases.map(
+      (phase) =>
+        `phase ${phase.id} ${quote(phase.name)} ${at(phase.loc)}` +
+        (phase.fill === undefined ? "" : ` fill=${phase.fill}`),
+    ),
   ].join("\n")}\n`;
 }
 
@@ -261,6 +294,12 @@ function renderSites(core: AnalysisCore): string[] {
         `${site.cardinality === undefined ? "" : ` count=${site.cardinality}`}${typeOf(site.id)}`,
       order: site.order,
     })),
+    ...core.sites.holes.map((site) => ({
+      line:
+        `hole ${site.id} ${quote(site.name)} ${at(site.loc)} order=${site.order}` +
+        `${withinOf(site.within)} type=${quote(site.type)}${site.tail ? " tail" : ""}`,
+      order: site.order,
+    })),
   ];
   return lines.sort((a, b) => a.order - b.order).map((entry) => entry.line);
 }
@@ -284,6 +323,7 @@ function renderFacts(facts: CoreFacts): string[] {
     ...group("world-read-data", facts.worldReadData),
     ...group("join-in", facts.joinIn),
     ...group("fan-out-in", facts.fanoutIn),
+    ...group("hole-data", facts.holeData),
     ...facts.returnData.map((occ) => `fact return <- ${occText(occ)}`),
   ];
 }

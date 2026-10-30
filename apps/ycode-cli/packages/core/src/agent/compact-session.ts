@@ -83,3 +83,23 @@ export function isCompactPreservableSessionMessage(message: MessageWithParts): b
 export function isActiveCompactionBoundaryPart(part: MessagePart): boolean {
   return part.type === "compaction" && (Boolean(part.compactBoundary) || !part.timelineStatus);
 }
+
+/**
+ * 恢复当前激活链上最后一个 compact boundary 的压缩代数。
+ * 旧会话没有该字段时按 0，保持与首次压缩一致。
+ */
+export function findActiveCompactHistoryGeneration(messages: MessageWithParts[]): number {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index]!;
+    if (!message.parts.some(isActiveCompactionBoundaryPart)) continue;
+    for (const part of message.parts) {
+      if (part.type === "compaction" && isActiveCompactionBoundaryPart(part)) {
+        const generation = part.compactBoundary?.historyGeneration;
+        return typeof generation === "number" && Number.isFinite(generation) && generation > 0
+          ? Math.floor(generation)
+          : 0;
+      }
+    }
+  }
+  return 0;
+}

@@ -24,6 +24,8 @@ export interface SessionRow {
   time_title_updated: number | null;
   time_compacting: number | null;
   time_archived: number | null;
+  time_deleted?: number | null;
+  last_outcome: "completed" | "error" | "interrupted" | null;
 }
 
 export interface MessageRow {

@@ -43,6 +43,10 @@ export function defer<T>(): Deferred<T> {
 /** 引擎注入给调度器的依赖面。 */
 export interface SchedulerHost {
   readonly runId: string;
+  /**
+   * 本 run 的并发上界。**每次派发前现读**，不是构造时抄下的一份：`setMaxConcurrency` 会整份
+   * 换掉引擎持有的 caps，而调度器的派发判据必须看见新值。引擎侧因此以 getter 实现这个属性。
+   */
   readonly caps: Caps;
   readonly driver: WorkflowDriver;
   readonly validate: ValidateFn;

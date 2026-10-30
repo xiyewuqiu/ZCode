@@ -110,6 +110,8 @@ export const listSavedWorkflowsToolEntry: ToolEntry = {
   capability: "List the reusable dynamic-workflow definitions saved in this project",
   metadata: {
     name: LIST_SAVED_WORKFLOWS_TOOL_NAME,
+    shouldDefer: true,
+    searchHint: "list saved workflow definitions",
     description: LIST_SAVED_WORKFLOWS_DESCRIPTION,
     readOnly: true,
     destructive: false,

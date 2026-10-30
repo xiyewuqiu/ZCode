@@ -18,12 +18,14 @@ export {
   AUTOCOMPACT_BUFFER_TOKENS,
   DEFAULT_AUTOCOMPACT_THRESHOLD_PERCENT,
   DEFAULT_AUTOCOMPACT_OUTPUT_RESERVE_TOKENS,
+  DEFAULT_SPECULATIVE_COMPACT_THRESHOLD_PERCENT,
   DEFAULT_COMPACT_CONTEXT_WINDOW,
   MAX_CONSECUTIVE_AUTOCOMPACT_FAILURES,
   MAX_OUTPUT_TOKENS_FOR_SUMMARY,
   getAutoCompactOutputReserveTokens,
   getAutoCompactThreshold,
   getEffectiveContextWindowSize,
+  getSpeculativeCompactThreshold,
   shouldAutoCompact,
 } from "./policy.js";
 export {

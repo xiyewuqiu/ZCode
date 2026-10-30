@@ -14,6 +14,7 @@ import type { McpTelemetryTracker } from "@ycode/adapters";
 import type { WorkspaceHookPolicyProvider } from "@ycode/core";
 import {
   ycodeProtocolErrorCodes,
+  type AppToolSearchMode,
   type YCodeDeliveryKind,
   type ModelSelection,
   type YCodeModelContextBudgetStrategy,
@@ -80,6 +81,8 @@ export interface YCodeProtocolSessionRecord {
   app: YCodeApp;
   memoryEnabled: boolean;
   nativeSearchEnhancementsEnabled: boolean;
+  /** 创建/恢复时固定的 ToolSearch 模式；子 Agent 继承。 */
+  toolSearchMode: AppToolSearchMode;
   modelContextBudgetStrategy: YCodeModelContextBudgetStrategy;
   createdAt: number;
   deliveryKind?: YCodeDeliveryKind;
@@ -98,6 +101,8 @@ export interface YCodeProtocolSessionRecord {
   traceContext: TraceContext;
   unsubscribe?: () => void;
   updatedAt: number;
+  /** CLI 已持久化的上次 turn 结果；只供 sessions-index 投影，不从正文推测。 */
+  lastOutcome?: "completed" | "interrupted" | "error";
   workspace: YCodeWorkspaceRef;
   activeAbortController?: AbortController;
   /** background runner 释放 ready lock 后，持久化/snapshot/broadcast 尚未完成的引用计数。 */

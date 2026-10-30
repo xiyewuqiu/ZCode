@@ -14,6 +14,7 @@
 import type { ImportedWorldQueue } from "./imported-cache.js";
 import type { ArtifactOp } from "../facade/registry.js";
 import type {
+  Caps,
   ImportedRunCache,
   JournalStorePort,
   RunEvent,
@@ -66,6 +67,12 @@ export interface EngineState {
   isRunSettled(): boolean;
   /** run 已结算时用于 reject / throw 的错误。 */
   runError(): WorkflowError;
+  /** 本 run 当今的 caps 快照（调度器每次派发前经引擎 getter 现读）。 */
+  caps(): Caps;
+  /** 整份替换 caps 快照（config 递进来的对象不被回写）。 */
+  setCaps(caps: Caps): void;
+  /** 重新扫一遍派发队列；retune 抬高上界后由 engine-run-caps.ts 调用。 */
+  pumpAll(): void;
   /** run 级失败（first-wins；见 engine-settlement.ts 的 settleFailed）。 */
   failRun(error: WorkflowError): void;
   /** 事件既落 journal 又扇出（Boundary C）；出生阶段在引擎的漏斗里补上。 */

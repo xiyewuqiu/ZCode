@@ -267,6 +267,7 @@ function cloneContentBlock(block: ModelMessageContentBlock): ModelMessageContent
     case "text":
     case "reasoning":
     case "resource_link":
+    case "tool_reference":
       return { ...block };
   }
 }

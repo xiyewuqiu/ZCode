@@ -42,6 +42,10 @@ export async function admitPrompt(
     }
 
     const activeTurn = this.activeTurn;
+    // 用户自己发话（无合成来源）给每个 run 新的一对「欠着决定」提醒。
+    if (options?.inputPresentation === "user_steer" || options?.inputSource === undefined) {
+      this.workflowBlockedReminder?.userSpoke();
+    }
     const canSteer =
       attachments === undefined &&
       activeTurn?.steerable === true &&

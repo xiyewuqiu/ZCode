@@ -1,6 +1,9 @@
 // Session Store Port：为会话输入、消息和投影提供稳定的存储边界。
 // ============================================================
-import type { SessionStorageMaintenancePort } from "./session-storage.port.js";
+import type {
+  SessionDatabaseMaintenancePort,
+  SessionStorageMaintenancePort,
+} from "./session-storage.port.js";
 
 import type {
   MessageId,
@@ -46,10 +49,14 @@ export type SessionTaskType = (typeof SESSION_TASK_TYPES)[number];
 export const SESSION_TITLE_SOURCES = ["default", "first_input", "generated", "custom"] as const;
 export type SessionTitleSource = (typeof SESSION_TITLE_SOURCES)[number];
 
+/** CLI 持久化的上次 turn 结果；Host 只投影，不从正文窗口猜测。 */
+export type SessionLastOutcome = "completed" | "error" | "interrupted";
+
 export const MESSAGE_VISIBILITIES = ["user-visible", "model-only"] as const;
 export type MessageVisibility = (typeof MESSAGE_VISIBILITIES)[number];
 
 export const SYNTHETIC_USER_MESSAGE_SOURCES = [
+  "agent_listing_delta",
   "background_task",
   "fork",
   "goal_state_change",
@@ -156,6 +163,7 @@ export interface SessionInfo {
   titleSource?: SessionTitleSource;
   titleMessageID?: MessageId;
   version: string;
+  lastOutcome?: SessionLastOutcome;
   shareURL?: string;
   summaryAdditions?: number;
   summaryDeletions?: number;
@@ -169,6 +177,8 @@ export interface SessionInfo {
     titleUpdated?: number;
     compacting?: number;
     archived?: number;
+    /** CLI 软删除时间；存在时列表/reconcile 都按已删除事实处理。 */
+    deleted?: number;
   };
 }
 
@@ -254,6 +264,7 @@ export interface UpdateSessionInput {
   titleSource?: SessionTitleSource;
   titleMessageID?: MessageId | null;
   expectedTitleSources?: readonly SessionTitleSource[];
+  lastOutcome?: SessionLastOutcome;
   shareURL?: string | null;
   summary?: {
     additions?: number;
@@ -1087,7 +1098,8 @@ export interface LocalSettingStorePort {
   }): CollaborationMode | Promise<CollaborationMode>;
 }
 
-export interface SessionStorePort extends Partial<SessionStorageMaintenancePort> {
+export interface SessionStorePort
+  extends Partial<SessionStorageMaintenancePort>, Partial<SessionDatabaseMaintenancePort> {
   createSession(input: CreateSessionInput): Promise<SessionInfo>;
   /** legacy 兼容原语；V4 stable/compact-edit fork 禁止调用，统一走 commitForkBundle。 */
   createForkedSessionWithMetadata?(
@@ -1099,6 +1111,8 @@ export interface SessionStorePort extends Partial<SessionStorageMaintenancePort>
   commitSharedContextImportBundle?(bundle: SharedContextImportCommitBundle): Promise<SessionInfo>;
   transitionSharedContextImport?(input: SharedContextImportTransition): Promise<boolean>;
   updateSession(input: UpdateSessionInput): Promise<SessionInfo>;
+  /** 软删除：保留正文与活动时间，只写删除时间；重复调用幂等。 */
+  softDeleteSession?(sessionID: SessionId, timeDeleted?: number): Promise<void>;
   getSession(sessionID: SessionId): Promise<SessionInfo | null>;
   listSessions(input?: ListSessionsInput): Promise<SessionInfo[]>;
   /**

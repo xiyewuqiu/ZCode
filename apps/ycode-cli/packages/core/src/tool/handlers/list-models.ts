@@ -131,6 +131,8 @@ export const listModelsToolEntry: ToolEntry = {
   capability: "List the models this host has configured, for choosing a workflow's subagent model",
   metadata: {
     name: LIST_MODELS_TOOL_NAME,
+    shouldDefer: true,
+    searchHint: "list configured models for a workflow subagent",
     description: LIST_MODELS_DESCRIPTION,
     readOnly: true,
     destructive: false,

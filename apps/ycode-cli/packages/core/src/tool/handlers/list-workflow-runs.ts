@@ -135,6 +135,8 @@ export const listWorkflowRunsToolEntry: ToolEntry = {
   capability: "List this project's dynamic-workflow runs, including runs from other sessions",
   metadata: {
     name: LIST_WORKFLOW_RUNS_TOOL_NAME,
+    shouldDefer: true,
+    searchHint: "list workflow runs",
     description: LIST_WORKFLOW_RUNS_DESCRIPTION,
     readOnly: true,
     destructive: false,

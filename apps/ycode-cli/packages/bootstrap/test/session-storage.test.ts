@@ -4,7 +4,10 @@ import {
   SessionResidentPool,
   type SessionResidencyFacts,
 } from "../src/ycode-protocol/session-resident-pool.js";
-import { purgeSessionStorage } from "../src/ycode-protocol/session-storage.js";
+import {
+  optimizeSessionDatabase,
+  purgeSessionStorage,
+} from "../src/ycode-protocol/session-storage.js";
 import type { YCodeProtocolAgentServerContext } from "../src/ycode-protocol/server-types.js";
 
 test("maintenance rejects in-flight work and blocks new requests until released", async () => {
@@ -85,5 +88,73 @@ test("protocol validates confirmation, checks preview before close, and always r
   assert.deepEqual(order, []);
   await assert.rejects(purgeSessionStorage(context, params), /disk failure/);
   assert.deepEqual(order, ["close", "purge"]);
+  (await pool.acquireOperation("one"))();
+});
+
+test("database maintenance refuses active or in-flight sessions and releases the gate", async () => {
+  const stats = {
+    databaseBytes: 8192,
+    walBytes: 0,
+    pageSize: 4096,
+    pageCount: 2,
+    freelistCount: 0,
+    freelistBytes: 0,
+    autoVacuum: 0,
+    journalMode: "wal",
+  };
+  const facts: SessionResidencyFacts = {
+    persisted: true,
+    hasResidencyBlockingWork: false,
+    hasPendingInteractions: false,
+    hasQueuedCommands: false,
+    hasSubscribers: false,
+    hasLegacySubscriber: false,
+    lastActivityAt: Date.now(),
+  };
+  const pool = new SessionResidentPool({
+    listSessionIds: () => ["one"],
+    readResidencyFacts: () => facts,
+    deactivate: async () => {},
+  });
+  let optimized = 0;
+  const context = {
+    sessionResidentPool: pool,
+    deps: {
+      sessionStore: {
+        getSessionDatabaseStats: async () => ({ ...stats }),
+        optimizeSessionDatabase: async () => {
+          optimized++;
+          return {
+            status: "optimized",
+            action: "optimize-only",
+            reason: "freelist-low",
+            before: stats,
+            after: stats,
+            reclaimedBytes: 0,
+            durationMs: 1,
+          };
+        },
+      },
+    },
+  } as unknown as YCodeProtocolAgentServerContext;
+
+  await assert.rejects(optimizeSessionDatabase(context, {}));
+  facts.hasResidencyBlockingWork = true;
+  const active = await optimizeSessionDatabase(context, { confirm: true });
+  assert.equal(active.status, "refused");
+  assert.equal(active.reason, "sessions-active");
+  assert.equal(optimized, 0);
+
+  facts.hasResidencyBlockingWork = false;
+  const operation = await pool.acquireOperation("one");
+  const busy = await optimizeSessionDatabase(context, { confirm: true });
+  assert.equal(busy.status, "refused");
+  assert.equal(busy.reason, "database-busy");
+  operation();
+
+  const result = await optimizeSessionDatabase(context, { confirm: true });
+  assert.equal(result.status, "optimized");
+  assert.equal(optimized, 1);
+  // 维护结束后闸门必须释放，普通请求可以继续。
   (await pool.acquireOperation("one"))();
 });

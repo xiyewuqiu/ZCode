@@ -3,6 +3,7 @@
 import type { JsonSchema } from "../model/index.js";
 import type { TraceContext } from "../tracing/tracer.js";
 import type { McpServerFailureKind } from "@ycode/shared";
+import type { McpAppsToolVisibility, McpToolUiDescriptor } from "@ycode/shared/mcp-apps";
 
 export type McpServerTransportType = "stdio" | "http" | "sse";
 export type McpProtocolVersion = "legacy" | "auto" | "2026-07-28";
@@ -182,6 +183,24 @@ export interface McpToolDescriptor {
    * `isOfficialMcpOriginTrusted`。
    */
   official?: boolean;
+  /**
+   * 工具对谁开放（`_meta.ui.visibility`，缺省 `["model", "app"]`），与是否带 UI 资源无关。
+   * 不含 "model" 的工具不进 provider contracts；不含 "app" 的工具拒绝页面发起的 `mcp/uiCallTool`。
+   * 由 adapter 归一化写入；缺省（旧 descriptor）时以 `ui.visibility` 兜底，再缺省视为两者都可见。
+   */
+  visibility?: McpAppsToolVisibility[];
+  /**
+   * 工具 `_meta` 归一化后的插件 UI 呈现描述。
+   * 只有声明了合法 `ui://` resourceUri 的工具才有；其中的 visibility 与上面的字段同源。
+   */
+  ui?: McpToolUiDescriptor;
+}
+
+/** 可见性判定的唯一实现：descriptor.visibility → ui.visibility → 两者都可见。 */
+export function resolveMcpToolVisibility(
+  descriptor: Pick<McpToolDescriptor, "visibility" | "ui">,
+): McpAppsToolVisibility[] {
+  return descriptor.visibility ?? descriptor.ui?.visibility ?? ["model", "app"];
 }
 
 export type McpContentBlock = Record<string, unknown>;
@@ -191,6 +210,25 @@ export interface McpToolCallResult {
   structuredContent?: unknown;
   isError?: boolean;
   _meta?: Record<string, unknown>;
+}
+
+/** 读取 MCP 资源（插件 UI 的 `ui://` HTML）。 */
+export interface McpReadResourceRequest {
+  serverName: string;
+  uri: string;
+  trace?: TraceContext;
+}
+
+export interface McpResourceContent {
+  uri: string;
+  mimeType?: string;
+  text?: string;
+  blob?: string;
+  _meta?: Record<string, unknown>;
+}
+
+export interface McpReadResourceResult {
+  contents: McpResourceContent[];
 }
 
 export interface McpConnectionSnapshot {
@@ -235,11 +273,23 @@ export interface McpCallToolRequest {
 }
 
 export interface McpCallToolOptions {
+  /**
+   * 页面写操作固定此连接（identity + generation）。代际不符时拒绝执行，
+   * 且禁止自动重连 / 重新授权后重放——批准只属于原连接。
+   */
+  appConnection?: { identity: string; generation: number };
   signal?: AbortSignal;
   timeoutMs?: number;
 }
 
 export interface McpPort {
+  /**
+   * 可信配置派生的稳定来源与现有连接代际。断开 / 重连时返回 null，
+   * 宿主据此在下次校验时撤销页面凭证。实现可选：缺省视为不撤销。
+   */
+  appConnectionSnapshot?(serverName: string): { identity: string; generation: number } | null;
+  /** 连接代际变化（重连 / 断开 / close）时通知；返回取消订阅函数。 */
+  onAppConnectionInvalidated?(serverName: string, listener: () => void): () => void;
   connectConfiguredServers(
     servers: Record<string, McpServerConfig>,
     options?: McpConnectOptions,
@@ -259,5 +309,13 @@ export interface McpPort {
   status(): Promise<Record<string, McpServerStatus>>;
   listTools(): Promise<McpToolDescriptor[]>;
   callTool(request: McpCallToolRequest, options?: McpCallToolOptions): Promise<McpToolCallResult>;
+  /**
+   * 读取 MCP 资源（插件 UI 的 `ui://` HTML）。与 pingServer 同样可选：mock port 不必实现，
+   * 调用方缺失时按"不支持资源"处理。实现必须与 callTool 共用同一连接与重连路径。
+   */
+  readResource?(
+    request: McpReadResourceRequest,
+    options?: McpCallToolOptions,
+  ): Promise<McpReadResourceResult>;
   close(): Promise<void>;
 }

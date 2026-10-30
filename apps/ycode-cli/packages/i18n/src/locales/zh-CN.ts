@@ -28,6 +28,7 @@ export const zhCN: YCodeCopy = {
   -v, --version    显示版本
   -p, --prompt <text>  单次运行 prompt，不打开 TUI
   --memory-bench   配合 --prompt 开启自动 Memory 提取并等待后退出（需已开启 Memory）
+  --enable-workflow 配合 --prompt 或 --target 为本次运行开启动态工作流（headless 默认关闭）
   --browser-use <mode> 启用 Browser Use backend（当前支持：headless）
   --surface <surface>  设置无头 prompt/app-server 的呈现面：terminal 或 desktop
   --browser-executable <path> headless Browser Use 使用的 Chrome/Chromium 路径
@@ -38,6 +39,7 @@ export const zhCN: YCodeCopy = {
     工具名用逗号或空格分隔，例如 "Bash Edit"。
     "Bash(git *)" 也会移除整个 Bash，不支持按命令内容匹配。
   --force-mcs      对 Anthropic provider 强制启用 mid-conversation system 投影
+  --toolsearch-mode <mode>  本次运行的工具搜索模式：auto、native、local 或 off（默认 off）
   --locale <locale>  UI 语言：en-US、zh-CN 或 auto
   --mode <mode>    prompt 权限模式：build、edit、plan 或 yolo（--prompt 默认 yolo）
   --resume <sessionId>  按 sessionId 恢复持久化 session（sess_...）
@@ -53,6 +55,7 @@ Slash Commands:
   /compact [instructions]  压缩当前对话
   /expert [status|resume|stop|<task>]  运行或管理 expert workflow
   /dwf [list|cancel|resume]  列出、取消或恢复 dynamic workflow run
+  /workflow [task]      为任务设计并启动 dynamic workflow
   /fork [latest|checkpointId]  从 workspace checkpoint 派生新 session
   /mcp [list|status|connect|disconnect]  查看或管理 MCP servers
   /mode [mode]          查看或切换权限模式：build、edit、plan 或 yolo

@@ -16,7 +16,6 @@ import {
 } from "@ycode/contracts";
 import { TASK_TOOL_NAME } from "../compat.js";
 import type { ToolEntry, ToolHandler } from "../types.js";
-import { formatAgentProfilesForPrompt, type AgentProfile } from "../../subagent/profile.js";
 
 const MAX_AGENT_MODEL_BYTES = 120_000;
 
@@ -90,19 +89,13 @@ const AGENT_TOOL_OUTPUT_SCHEMA = {
  */
 function buildAgentProviderDescription(
   options: {
-    embeddedSearchEnabled?: boolean;
-    profiles?: readonly AgentProfile[];
     dynamicWorkflowEnabled?: boolean;
   } = {},
 ): string {
-  const agentList = formatAgentProfilesForPrompt(options.profiles ?? [], {
-    embeddedSearchEnabled: options.embeddedSearchEnabled,
-  });
-
   return [
     "Launch a new agent to handle complex, multi-step tasks. Each agent type has specific capabilities and tools available to it.",
     "",
-    agentList,
+    "Available agent types are listed in <system-reminder> messages in the conversation.",
     "",
     "When using the Agent tool, specify a subagent_type parameter to select which agent type to use. If omitted, the general-purpose agent is used.",
     "",
@@ -113,7 +106,6 @@ function buildAgentProviderDescription(
     "- The agent's final message is returned to you as the tool result; it is not shown to the user — relay what matters.",
     "- A new Agent call starts fresh, so the prompt must be self-contained.",
     "- `run_in_background: true` runs the agent asynchronously; you'll be notified when it completes.",
-    "- When you launch multiple agents for independent work, send them in a single message with multiple tool uses so they run concurrently.",
     // 只保留「用户点名工作流」这一种情形：工作流一律由用户显式请求触发，与系统提示词其余
     // 部分一致。不能把「结果层层喂给下一步的多代理编排」也划给 CreateWorkflow，
     // 那等于让模型在用户没开口时自行选择工作流。
@@ -225,6 +217,8 @@ export const agentToolEntry: ToolEntry = {
   capability: "Launch a profile-backed subagent; background execution is runtime-configured",
   metadata: {
     name: "Agent",
+    shouldDefer: true,
+    searchHint: "delegate a task to a subagent",
     description: AGENT_PROVIDER_DESCRIPTION,
     readOnly: true,
     destructive: false,
@@ -317,9 +311,7 @@ function createTaskToolEntryFromAgent(entry: ToolEntry): ToolEntry {
 }
 
 export function createAgentToolEntry(
-  _options: {
-    embeddedSearchEnabled?: boolean;
-    profiles?: readonly AgentProfile[];
+  options: {
     /** 见 buildAgentProviderDescription：缺省 true，只有灰度显式关闭时才去掉工作流那一行。 */
     dynamicWorkflowEnabled?: boolean;
   } = {},
@@ -328,15 +320,13 @@ export function createAgentToolEntry(
     ...agentToolEntry,
     metadata: {
       ...agentToolEntry.metadata,
-      description: buildAgentProviderDescription(_options),
+      description: buildAgentProviderDescription(options),
     },
   };
 }
 
 export function createTaskToolEntry(
   options: {
-    embeddedSearchEnabled?: boolean;
-    profiles?: readonly AgentProfile[];
     /** Task 是 Agent 的兼容别名，描述整段内嵌 Agent 的，因此同一道门一起传下去。 */
     dynamicWorkflowEnabled?: boolean;
   } = {},

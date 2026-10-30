@@ -28,6 +28,7 @@ Options:
   -v, --version    Show version
   -p, --prompt <text>  Run a single prompt without opening the TUI
   --memory-bench   With --prompt, enable automatic Memory extraction and wait before exiting (requires Memory enabled)
+  --enable-workflow With --prompt or --target, enable dynamic workflows for this run (off by default in headless)
   --browser-use <mode> Enable Browser Use backend (supported: headless)
   --surface <surface>  Presentation surface for headless prompts/app-server: terminal or desktop
   --browser-executable <path> Chrome/Chromium executable for headless Browser Use
@@ -38,6 +39,7 @@ Options:
     Comma or space-separated tool names, e.g. "Bash Edit".
     "Bash(git *)" removes all of Bash; command patterns are not matched.
   --force-mcs      Force mid-conversation system projection for Anthropic providers
+  --toolsearch-mode <mode>  Tool search for this run: auto, native, local, or off (default: off)
   --locale <locale>  UI locale: en-US, zh-CN, or auto
   --mode <mode>    Permission mode for prompts: build, edit, plan, or yolo (default: yolo for --prompt)
   --resume <sessionId>  Resume a persisted session by sessionId (sess_...)
@@ -53,6 +55,7 @@ Slash Commands:
   /compact [instructions]  Compact the current conversation
   /expert [status|resume|stop|<task>]  Run or manage the expert workflow
   /dwf [list|cancel|resume]  List, cancel, or resume dynamic workflow runs
+  /workflow [task]      Design and launch a dynamic workflow for a task
   /fork [latest|checkpointId]  Fork a new session from a workspace checkpoint
   /mcp [list|status|connect|disconnect]  Show or manage MCP servers
   /mode [mode]          Show or switch permission mode: build, edit, plan, or yolo

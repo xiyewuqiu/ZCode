@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- turn 方法契约与 compact/reactive 签名集中声明，拆分会引入跨文件类型漂移。 */
 import type { BackgroundBashOutputResult } from "@ycode/shared";
 import type { RuntimeInputPresentation } from "@ycode/contracts";
 import type {
@@ -67,6 +68,7 @@ import type {
   WorkspaceRewindResult,
 } from "./types.js";
 import type { RuntimeMessageEntry } from "../agent/message-history.js";
+import type { SpeculativeCompactCandidate } from "./methods/compact-speculative.js";
 import type {
   RuntimeBackgroundStopOptions,
   RuntimeBackgroundStopResult,
@@ -214,7 +216,11 @@ export interface AgentRuntimeTurnMethods {
       sourceCommandId?: string;
       trigger?: CompactTrigger;
       model?: Model;
+      /** 压缩后重建 Agent 目录所用的工具面。 */
+      agentListingTools?: readonly { name: string }[];
       activeEntries?: readonly RuntimeMessageEntry[];
+      getCurrentEntries?: () => readonly RuntimeMessageEntry[];
+      speculativeResult?: SpeculativeCompactCandidate;
     },
   ): Promise<{
     displayText: string;
@@ -364,7 +370,7 @@ export interface AgentRuntimeTurnMethods {
       operationId?: string;
       postCompactReminderEntries?: readonly RuntimeMessageEntry[];
     },
-  ): Promise<void>;
+  ): Promise<MessageId[]>;
   persistUserPrompt(
     messageID: MessageId,
     input: string,

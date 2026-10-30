@@ -1,5 +1,6 @@
 /* eslint-disable max-lines -- YCode Protocol 的 session/workspace 方法共享同一个 server context 与 snapshot helpers，迁移期先集中维护。 */
 import { observeSessionDebug } from "./session-debug.js";
+import { disposeMcpUiSessionHost } from "./mcp-ui/rpc.js";
 import {
   TASK_LIST_SESSION_TYPES,
   isTaskListSessionType,
@@ -69,6 +70,7 @@ import {
   ycodeWorkspaceGenerateTextParamsSchema,
   getConversationMessageProjectionPolicy,
   parseRemoteWorkspaceIdentity,
+  type AppToolSearchMode,
   type YCodeSessionCreateParams,
   type YCodeDeliveryKind,
   type IntegratedTerminalShellSelection,
@@ -142,6 +144,8 @@ interface SessionStartupPreferences {
   memoryEnabled: boolean;
   modelContextBudgetStrategy: YCodeModelContextBudgetStrategy;
   nativeSearchEnhancementsEnabled: boolean;
+  /** 创建/恢复时固定；后续修改设置不影响已运行会话。 */
+  toolSearchMode: AppToolSearchMode;
   resolveInitialBashShellSelection: () => Promise<ExecutionShellSelection | undefined>;
 }
 
@@ -1485,6 +1489,7 @@ export async function activateSessionForResume(
   // 表现为原会话消失、冒出"新任务刚刚"）。恢复路径回填 store 的真实时间。
   if (session.time?.created) record.createdAt = session.time.created;
   if (session.time?.updated) record.updatedAt = session.time.updated;
+  record.lastOutcome = session.lastOutcome;
   context.assertServing?.();
   context.sessions.set(params.sessionId, record);
   const resumeResult = await runSessionModelConfigMutation(record.app, async () => {
@@ -2669,6 +2674,8 @@ export async function closeSession(context: YCodeProtocolAgentServerContext, raw
     return { closed: false };
   }
   record.unsubscribe?.();
+  // MCP Apps：会话关闭即撤销该会话全部实例凭证并清空 app-tools 信箱。
+  disposeMcpUiSessionHost(context, params.sessionId);
   await record.app.close?.();
   // v4 通道：会话关闭同时清 publisher / 订阅调度；重开会话走 snapshot 冷启动。
   // dispose 必须先于注册表删除——gateway 靠 getSessionWorkspaceId
@@ -2984,6 +2991,16 @@ export function onSessionEvent(
   // getSessionIndexMeta），UI 侧栏按它排序。纯配置/恢复/标题元数据事件不是用户会话活动，
   // 之前无差别 bump 会让"切一次模型/点开任务"把任务顶到列表最前并触发整表重排。
   const nonActivityEvent = isNonActivitySessionEvent(event);
+  // core 已在发布终态前持久化结果；列表复用同一事实，不从裁剪正文窗口猜测结果。
+  if (event.type === SessionEventType.TurnComplete || event.type === SessionEventType.TurnError) {
+    const payload = event.payload as { resultType?: string };
+    record.lastOutcome =
+      event.type === SessionEventType.TurnError
+        ? "error"
+        : payload.resultType === "cancelled"
+          ? "interrupted"
+          : "completed";
+  }
   if (event.type === SessionEventType.ModelSelected) {
     // 恢复候选只服务初始 UI；用户新选择生效后不能在后续清空时被旧候选复活。
     delete record.restoredModelSelection;
@@ -3172,6 +3189,7 @@ async function requestSessionRuntimePreferences(
         memoryEnabled: false,
         modelContextBudgetStrategy: DEFAULT_YCODE_MODEL_CONTEXT_BUDGET_STRATEGY,
         nativeSearchEnhancementsEnabled: true,
+        toolSearchMode: "off",
       };
     }
     throw error;
@@ -3190,6 +3208,7 @@ async function resolveSessionStartupPreferences(
       memoryEnabled: source.parent.memoryEnabled,
       modelContextBudgetStrategy: DEFAULT_YCODE_MODEL_CONTEXT_BUDGET_STRATEGY,
       nativeSearchEnhancementsEnabled: source.parent.nativeSearchEnhancementsEnabled,
+      toolSearchMode: source.parent.toolSearchMode,
       resolveInitialBashShellSelection: async () => inheritedShellSelection,
     };
   }
@@ -3208,6 +3227,7 @@ async function resolveSessionStartupPreferences(
     memoryEnabled: runtimePreferences.memoryEnabled,
     modelContextBudgetStrategy: DEFAULT_YCODE_MODEL_CONTEXT_BUDGET_STRATEGY,
     nativeSearchEnhancementsEnabled: runtimePreferences.nativeSearchEnhancementsEnabled,
+    toolSearchMode: runtimePreferences.toolSearchMode,
     resolveInitialBashShellSelection: async () => {
       const executionPreferences = await requestSessionRuntimePreferences(
         context,
@@ -3296,6 +3316,9 @@ async function createRecord(
       toolAllowlist: "toolAllowlist" in params ? params.toolAllowlist : undefined,
       toolDisallowlist: "toolDenylist" in params ? params.toolDenylist : undefined,
       nativeSearchEnhancementsEnabled: startupPreferences.nativeSearchEnhancementsEnabled,
+      // ToolSearch 模式在 create/resume 时固定进 runtimeConfig；运行中的会话不会因设置变化被改写，
+      // 后续轮次的工具暴露由 runtime 基于同一配置派生。
+      toolSearch: { mode: startupPreferences.toolSearchMode },
       modelContextBudgetStrategy: startupPreferences.modelContextBudgetStrategy,
       // Memory Settings 是现有 CLI features.memory/use 之外的总开关。只在关闭时
       // 写入 override，避免开启值反向覆盖用户已有的 CLI 禁用配置。
@@ -3352,6 +3375,7 @@ async function createRecord(
     memoryEnabled: startupPreferences.memoryEnabled,
     modelContextBudgetStrategy: startupPreferences.modelContextBudgetStrategy,
     nativeSearchEnhancementsEnabled: startupPreferences.nativeSearchEnhancementsEnabled,
+    toolSearchMode: startupPreferences.toolSearchMode,
     ...(parentSessionId ? { parentSessionId } : {}),
     persistence: "persistence" in params ? (params.persistence ?? "immediate") : "immediate",
     protocolEventSequences: new Map(),

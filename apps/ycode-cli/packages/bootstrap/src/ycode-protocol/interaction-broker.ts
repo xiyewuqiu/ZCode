@@ -27,6 +27,7 @@ import type {
   V4InteractionRegistrationOptions,
 } from "../ycode-protocol-v4/interaction-registry.js";
 import type { YCodeProtocolAgentServerContext } from "./server-types.js";
+import { withWorkflowSettingsAdjustment } from "./workflow-settings-answer.js";
 import {
   buildProtocolPermissionOptions,
   buildSessionPermissionUpdates,
@@ -92,7 +93,10 @@ async function requestPermission(
     // v4 answer → YCodePermissionResponse：optionId 语义来自 v4 reducer 合成的
     // allowOnce/allowAlways/deny（见 product-projection onPermissionRequested）。
     (answer) => {
-      const response = v4AnswerToPermissionResponse(answer, permissionOptions, request.toolName);
+      // 工作流确认窗里调整过的设置随放行应答一起走（docs/dynamic-workflow/launch.md
+      // 「Adjusting the settings in the window」）。
+      const base = v4AnswerToPermissionResponse(answer, permissionOptions, request.toolName);
+      const response = withWorkflowSettingsAdjustment(base, answer, request.toolName);
       return response.decision === "deny" && answer.freeText?.trim()
         ? { ...response, preserveReasonFormatting: true }
         : response;

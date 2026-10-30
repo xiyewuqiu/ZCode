@@ -28,6 +28,7 @@ import {
   resolveRuntimePermissionContext,
 } from "./permission-capability.js";
 import { buildDefaultPermissionUpdates } from "./permission-suggestions.js";
+import { applyPermissionInputAdjustments } from "./permission-input-adjustments.js";
 import { recheckPermissionHookModifiedInput } from "./permission-input-recheck.js";
 import type { ToolExecutorDeps } from "./types.js";
 import { summarizeInput } from "./utils.js";
@@ -35,7 +36,13 @@ import { validateInput } from "./validation.js";
 import { applyMemoryFilePermission } from "./memory-file-permission.js";
 
 type ToolPermissionFlowResult =
-  | { allowed: true; executionInput: unknown; permissionWaitMs?: number }
+  | {
+      allowed: true;
+      executionInput: unknown;
+      permissionWaitMs?: number;
+      /** 确认窗里实际生效的调整（{@link applyPermissionInputAdjustments}），交给 handler。 */
+      inputAdjustments?: Readonly<Record<string, unknown>>;
+    }
   | { allowed: false; result: ToolExecutionResult };
 
 export async function resolveToolPermission(
@@ -404,28 +411,44 @@ export async function resolveToolPermission(
   }
 
   telemetry?.setPermissionDecision("granted");
-  if (resolvedPermission.decision !== "modify") {
-    return {
-      allowed: true,
-      executionInput: useNormalizedHookModifiedInput ? normalizedHookModifiedInput : executionInput,
-      permissionWaitMs,
-    };
+  const approvedInput =
+    resolvedPermission.decision === "modify"
+      ? useNormalizedHookModifiedInput
+        ? normalizedHookModifiedInput
+        : normalizeToolExecutionInput({
+            entry,
+            input: resolvedPermission.modifiedInput ?? executionInput,
+            logger: deps.logger,
+            source: "permission",
+          })
+      : useNormalizedHookModifiedInput
+        ? normalizedHookModifiedInput
+        : executionInput;
+  if (resolvedPermission.decision === "modify") {
+    const modifiedInputValidation = validateInput(approvedInput, entry);
+    if (modifiedInputValidation) {
+      return {
+        allowed: false,
+        result: createErrorResult(toolCall, modifiedInputValidation),
+      };
+    }
   }
-
-  const modifiedInput = useNormalizedHookModifiedInput
-    ? normalizedHookModifiedInput
-    : normalizeToolExecutionInput({
-        entry,
-        input: resolvedPermission.modifiedInput ?? executionInput,
-        logger: deps.logger,
-        source: "permission",
-      });
-  const modifiedInputValidation = validateInput(modifiedInput, entry);
-  if (modifiedInputValidation) {
-    return {
-      allowed: false,
-      result: createErrorResult(toolCall, modifiedInputValidation),
-    };
-  }
-  return { allowed: true, executionInput: modifiedInput, permissionWaitMs };
+  // 用户在确认窗里改过的设置（docs/dynamic-workflow/launch.md「Adjusting the settings in the
+  // window」）：调整属于「用户批准了什么」，所以落在批准之后、handler 之前。工具没声明这一步
+  // （绝大多数工具）就原样放行。
+  const adjusted = applyPermissionInputAdjustments({
+    adjustments: resolvedPermission.inputAdjustments,
+    deps,
+    entry,
+    executionInput: approvedInput,
+    toolCall,
+    traceContext,
+  });
+  if (!adjusted.ok) return { allowed: false, result: adjusted.result };
+  return {
+    allowed: true,
+    executionInput: adjusted.executionInput,
+    permissionWaitMs,
+    ...(adjusted.applied === undefined ? {} : { inputAdjustments: adjusted.applied }),
+  };
 }

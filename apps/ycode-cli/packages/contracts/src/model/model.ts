@@ -7,6 +7,7 @@ import type {
   ModelTextResult,
   ModelToolContract,
 } from "./index.js";
+import type { ToolSearchCapability } from "../tools/tool-search.js";
 import { modelSelectionSchema, type ModelSelection } from "@ycode/shared/model-selection";
 import type { ModelPropertiesData, ModelOptionSpecsData } from "@ycode/shared/model-config";
 
@@ -29,6 +30,7 @@ export interface ModelOptions {
 }
 
 export interface ModelRequest {
+  toolSearchEnabled?: boolean;
   messages: ModelInputMessage[];
   tools?: ModelToolContract[];
   responseJsonSchema?: JsonSchema;
@@ -48,6 +50,8 @@ export interface Model {
   readonly properties: ModelProperties;
   readonly optionSpecs: ModelOptionSpecs;
   readonly options: ModelOptions;
+  /** Provider 协议能力事实；Local 不依赖它，Native 按它决定协议与默认模式。 */
+  readonly requestCapabilities?: { readonly toolSearch?: ToolSearchCapability };
 
   bind(options?: ModelOptions): Model;
   generateText(request: ModelRequest): Promise<ModelResult>;

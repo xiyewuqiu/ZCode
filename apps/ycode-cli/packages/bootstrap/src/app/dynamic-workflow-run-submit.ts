@@ -22,8 +22,12 @@ import {
   collectSites,
   collectWorldRunCommands,
   createWorkflowProgram,
+  collectPhaseNames,
+  collectSitePhases,
   deriveActorSubmitProfilesFor,
+  interpret,
   lowerWorkflow,
+  projectControlFlow,
   synthesizeAskSchemas,
   type Caps,
   type CompileDiagnostic,
@@ -31,6 +35,12 @@ import {
   type RunSettlement,
   type WorkflowProgram,
 } from "@ycode/dynamic-workflow";
+import {
+  compiledHolesOf,
+  openHoleIndexes,
+  phaseNamesFromEvents,
+  readRunHoleEvents,
+} from "./dynamic-workflow-run-holes.js";
 import { formatModelPickerValue } from "@ycode/shared/model-selection";
 import type { ModelSelection } from "@ycode/shared/model-selection";
 import {
@@ -44,6 +54,7 @@ import {
 } from "./dynamic-workflow-run-launch.js";
 import {
   readRunLaunchAnchor,
+  readRunModelBindings,
   readRunScriptPath,
   readRunSubagentModel,
   resolveLaunchAnchor,
@@ -52,6 +63,7 @@ import {
 import { isResumableRecord, type RunRegistryEntry } from "./dynamic-workflow-run-observation.js";
 import type { DynamicWorkflowRunServiceDeps } from "./dynamic-workflow-run-service.js";
 import type { WorkflowEscalationRegistry } from "./workflow-escalation-registry.js";
+import { createWorkflowRunControl } from "./workflow-run-control.js";
 
 /**
  * 两条入口要用的 service 内部状态。全是**引用**而不是副本：注册表与停驻表是 service 的那一份，
@@ -64,7 +76,8 @@ export interface DynamicWorkflowRunEntryContext {
   escalations: WorkflowEscalationRegistry;
   /**
    * 本次启动的 caps。入参是**请求的**并发上界（`CreateWorkflow` / `AmendWorkflow` 的
-   * `max_concurrency`，已由工具层归一成一个数或缺席）：缺席即天花板，给了就钳到 [1, 天花板]。
+   * `max_concurrency`，已由工具层归一成一个数或缺席）：缺席即默认并发，给了就归一成
+   * `max(1, floor(n))`，没有上限。
    */
   caps: (requestedMaxConcurrency?: number) => Caps;
   trackSettlement: (
@@ -91,6 +104,7 @@ export async function submitDynamicWorkflowRun(
     ...(request.phaseNames === undefined ? {} : { phaseNames: request.phaseNames }),
     ...(request.maxConcurrency === undefined ? {} : { maxConcurrency: request.maxConcurrency }),
     ...(request.subagentModel === undefined ? {} : { subagentModel: request.subagentModel }),
+    ...(request.modelBindings === undefined ? {} : { modelBindings: request.modelBindings }),
     // 脚本文件与子代理模型同车：原样下传，
     // 端口不做任何推断——写没写下草稿是工具侧的事实，缺席就是真的没有文件。
     ...(request.scriptPath === undefined ? {} : { scriptPath: request.scriptPath }),
@@ -193,6 +207,9 @@ export async function amendDynamicWorkflowRun(
     // 的三态，`AmendWorkflow` 的 resolveInput 已经把它归一成这里的一条选择或缺席（缺席 = 回到
     // 会话模型）。端口若再继承一次，「回到会话模型」（`null`）就永远到不了这里。
     ...(request.subagentModel === undefined ? {} : { subagentModel: request.subagentModel }),
+    // 脚本点名的模型同样不由端口从前驱继承：「同名沿用前驱的绑定」是工具面的规则，AmendWorkflow 的
+    // resolveInput 已经把它归一成这里的一张表。
+    ...(request.modelBindings === undefined ? {} : { modelBindings: request.modelBindings }),
     // 脚本文件**绝不从前驱继承**：修订记的是这一次修订的脚本来自哪个文件（`path` 提交就是
     // 那个文件，内联提交就是刚写下的草稿）。沿用前驱的路径等于让模型下次去编辑旧脚本。
     ...(request.scriptPath === undefined ? {} : { scriptPath: request.scriptPath }),
@@ -221,6 +238,8 @@ interface StartNewRunInput {
    * 结构化选择进来，落库前归一成 picker 字符串——见 startNewRun 里的注释。
    */
   subagentModel?: ModelSelection;
+  /** 脚本点名的模型（名字 → 结构化选择）；落库前与子代理模型一起归一成规范串。缺席即没点名。 */
+  modelBindings?: Record<string, ModelSelection>;
   /**
    * 本 run 脚本文件的绝对路径。缺席即这个
    * run 没有可编辑的脚本文件。纯模型面元数据：不参与执行，也不参与 resume 校验。
@@ -253,6 +272,8 @@ function startNewRun(ctx: DynamicWorkflowRunEntryContext, input: StartNewRunInpu
   // 事件、两条读面与进度载荷要的都是一个字符串——在这里归一一次，下游全程搬运。
   const subagentModel =
     input.subagentModel === undefined ? undefined : formatModelPickerValue(input.subagentModel);
+  // 绑定表同一个归一点：结构化选择 → 规范串，记进 `run-launched` 与条目的是同一张表。
+  const modelBindings = formatModelBindings(input.modelBindings);
 
   // 发起锚点：修订沿用前驱、直接启动用显式值、聊天用活动轮，
   // 都没有就铸一个。引擎在建 run 那一世把它记成 run-launched。
@@ -276,18 +297,30 @@ function startNewRun(ctx: DynamicWorkflowRunEntryContext, input: StartNewRunInpu
     // 子代理模型与阶段表并列同车（同样不进 resolveLaunchAnchor：修订绝不继承前驱的模型）。
     // 零 SQL——它活在这条事件里，`dwf_run` 上没有对应的列（刻意不做迁移）。
     ...(subagentModel === undefined ? {} : { subagentModel }),
+    // 脚本点名的模型与子代理模型并列同车（同样不进 resolveLaunchAnchor）。零 SQL。
+    ...(modelBindings === undefined ? {} : { modelBindings }),
     // 脚本文件与子代理模型并列同车（同样不进 resolveLaunchAnchor：修订记的是新脚本的文件）。
     // 零 SQL——它活在这条事件里，`dwf_run` 上没有对应的列。
     ...(input.scriptPath === undefined ? {} : { scriptPath: input.scriptPath }),
     ...(input.phaseAlongside === undefined ? {} : { phaseAlongside: input.phaseAlongside }),
+    // 阶段表里哪些站是开放的留白：留白按名字站在提交方给的声明表里，按编译产物的开放留白名对出下标。
+    ...(() => {
+      const holes = openHoleIndexes(input.phaseNames, compiled.holes);
+      return holes === undefined ? {} : { holes };
+    })(),
   };
 
   // 注册必须先于启动：取消可能在 submit 返回后的任意时刻到达，而后台追踪器也会
   // 立刻开始轮询快照——注册表是「run 已存在」的唯一同步事实（journal 的 dwf_run 行
   // 要等引擎构造，晚若干个微任务）。
   const controller = new AbortController();
+  // 活体控制面与 AbortController 同时造、同时进条目：「停下这个 run」与「改这个 run 的一项设置」
+  // 是同一刻就该可用的两条通道，而两者都要在 launch 之前存在——retune 可能在 submit 返回后的
+  // 任意一个微任务里到达。
+  const control = createWorkflowRunControl();
   const entry: RunRegistryEntry = {
     controller,
+    control,
     startedAt: new Date(),
     ...(input.toolCallId === undefined ? {} : { toolCallId: input.toolCallId }),
     ...(input.parentSessionId === undefined ? {} : { parentSessionId: input.parentSessionId }),
@@ -302,9 +335,14 @@ function startNewRun(ctx: DynamicWorkflowRunEntryContext, input: StartNewRunInpu
     // 「结构化选择 → 规范字符串」的**唯一**归一点：记进 `run-launched` 的是它，两条读面与
     // `run-started` 载荷读到的也是它，所以格式不可能在三处之间分叉。
     ...(subagentModel === undefined ? {} : { subagentModel }),
+    // 绑定表的间隙副本，与子代理模型同规（见 RunRegistryEntry.modelBindings）。
+    ...(modelBindings === undefined ? {} : { modelBindings }),
     // 脚本文件的间隙副本，与子代理模型同规（见 RunRegistryEntry.scriptPath）。
     ...(input.scriptPath === undefined ? {} : { scriptPath: input.scriptPath }),
     ...(imported === undefined ? {} : { resumedFrom: imported.resumedFrom }),
+    // 留白事实表与阶段表：一次补全会把两者换成有效脚本的。
+    holes: compiled.holes,
+    ...(input.phaseNames === undefined ? {} : { phaseNames: input.phaseNames }),
     // 用量起点的间隙副本，与并发上界同规：journal 行落下之前，两条读面只能从条目读到用量，
     // 而修订一个刚起步的 run 恰好落在那几个微任务里——报 0 会让详情面说「这条 lineage 没花钱」。
     ...(input.inheritedTokens === undefined ? {} : { inheritedTokens: input.inheritedTokens }),
@@ -331,6 +369,7 @@ function startNewRun(ctx: DynamicWorkflowRunEntryContext, input: StartNewRunInpu
       ...(input.args === undefined ? {} : { args: input.args }),
       ...(entry.parentSessionId === undefined ? {} : { parentSessionId: entry.parentSessionId }),
       escalationRegistry: escalations,
+      control,
       runId,
       scriptText: input.scriptText,
       signal: controller.signal,
@@ -427,11 +466,22 @@ export async function resumeDynamicWorkflowRun(
   // 替换注册表条目：同 runId、新 AbortController、新结算 promise——cancel 从此恢复可用。
   // 必须先于 launch（文件头不变式 5：条目是 watcher 的前提）。
   const resumedSubagentModel = readRunSubagentModel(deps.journal, runId);
+  const resumedModelBindings = readRunModelBindings(deps.journal, runId);
   const resumedScriptPath = readRunScriptPath(deps.journal, runId);
+  // 阶段表从事件读回（补全过的 run 是 `hole-filled` 的那张）；留白事实表来自这次编译。
+  const resumedPhaseNames = phaseNamesFromEvents(readRunHoleEvents(deps.journal, runId));
   const controller = new AbortController();
+  // 与 submit 路同规：新条目 = 新 AbortController + 新控制面。上一世的句柄绑的是已经结算的那个
+  // 引擎，留着它会让 retune 对一个死引擎说话。
+  const control = createWorkflowRunControl();
   const entry: RunRegistryEntry = {
     controller,
+    control,
     startedAt: new Date(),
+    // 本 run 生效的并发上界：**resume 路以 journal 行为准**（一次就地 retune 已经把新值写进
+    // `caps_max_concurrency`，所以行里那个就是这一世要跑的上界）。抄进条目是为了让
+    // `retuneConcurrency` 与两条读面只剩一条规则——有条目就读条目。
+    maxConcurrency: record.caps.maxConcurrency,
     ...(record.toolCallId === undefined ? {} : { toolCallId: record.toolCallId }),
     ...(record.parentSessionId === undefined ? {} : { parentSessionId: record.parentSessionId }),
     // 枚举面的间隙元数据（见 RunRegistryEntry）：resume 的权威在 journal 记录里，
@@ -443,9 +493,13 @@ export async function resumeDynamicWorkflowRun(
     // 就写死在 `run-launched` 上、本 run 余生不变，所以抄下来不会与事件分叉；抄了之后两条读面
     // 只剩一条规则——有条目就读条目，只有冷行才去扫事件。
     ...(resumedSubagentModel === undefined ? {} : { subagentModel: resumedSubagentModel }),
+    // 绑定表：与子代理模型同一条读、同一条论证。
+    ...(resumedModelBindings === undefined ? {} : { modelBindings: resumedModelBindings }),
     // 脚本文件：与子代理模型同一条读、同一条论证（建 run 那一世写死、余生不变，抄下来不会
     // 与事件分叉）。resume 之后两条读面因此照旧「有条目就读条目」。
     ...(resumedScriptPath === undefined ? {} : { scriptPath: resumedScriptPath }),
+    holes: compiled.holes,
+    ...(resumedPhaseNames === undefined ? {} : { phaseNames: resumedPhaseNames }),
     settlement: Promise.resolve<RunSettlement>({ status: "stopped", reason: "user" }),
   };
   runs.set(runId, entry);
@@ -472,6 +526,8 @@ export async function resumeDynamicWorkflowRun(
       ...(record.parentSessionId === undefined ? {} : { parentSessionId: record.parentSessionId }),
       // 两条入口共用同一张停驻表（见上面的字段注释）。
       escalationRegistry: escalations,
+      // 控制面与停驻表不同：**每条入口各造一个**（它绑的是这一世的引擎与这一世的座位闸门）。
+      control,
       runId,
       scriptText: record.scriptText,
       signal: controller.signal,
@@ -521,9 +577,10 @@ function boundedResumeDiagnostics(runId: string, diagnostics: CompileDiagnostic[
  * compileOnce 的后半段：对**已建好的** Program 做站点表 / schema 合成 / lowering。resume 先用同一个
  * Program 取诊断再交到这里，仍是「编译一次」（Program 缓存自己的诊断，重读不重算）。
  */
-function compileProgram(
+export function compileProgram(
   scriptText: string,
   workflow: WorkflowProgram,
+  collected?: ReturnType<typeof collectSites>,
 ): CompiledDynamicWorkflowScript {
   const diagnostics = [
     ...workflow.program.getSyntacticDiagnostics(),
@@ -535,7 +592,7 @@ function compileProgram(
     );
   }
 
-  const table = collectSites(workflow);
+  const table = collected ?? collectSites(workflow);
   const { diagnostics: schemaDiagnostics, schemas } = synthesizeAskSchemas(workflow, table);
   if (schemaDiagnostics.length > 0) {
     throw new Error(
@@ -557,6 +614,8 @@ function compileProgram(
   // 用 schemas 的键去构造会让 untyped 站点整个缺席，而引擎把缺席当接线错误硬失败。
   const askSpecs = buildAskSpecs(table, schemas);
 
+  const core = interpret(workflow, table);
+  const lowered = lowerWorkflow(workflow, table);
   return {
     askSpecs,
     // 每个 actor 站点的 submit profile：在**同一个**
@@ -564,7 +623,11 @@ function compileProgram(
     // 跑过这两步），仍是「编译一次」。resume 用同一函数对 byte-identical 文本重算，确定性成立。
     actorSubmitProfiles: deriveActorSubmitProfilesFor(workflow, table, askSpecs),
     declaredRunCommands: new Set(worldRun.commands),
-    lowered: lowerWorkflow(workflow, table).code,
+    sitePhases: collectSitePhases(core),
+    holeBodies: lowered.holeBodies,
+    holes: compiledHolesOf(table),
+    phases: collectPhaseNames(projectControlFlow(core)),
+    lowered: lowered.code,
     // scriptHash 的所有权在**这里**，不在 harness。harness 同时收 scriptText 与 lowered，
     // 且刻意不校验两者是否自洽——校验等于把编译再跑一遍，正是「编译一次」要省掉的那次
     // （harness.ts 把这条写成了调用方的不变式）。所以哈希必须算在作者原文上：
@@ -581,4 +644,16 @@ function compileProgram(
  */
 function mintRunId(): string {
   return `dwfrun-${randomUUID()}`;
+}
+
+/** 绑定表的唯一归一点：结构化选择 → 规范 picker 串。空表与缺席同义（不造空壳键）。 */
+function formatModelBindings(
+  bindings: Record<string, ModelSelection> | undefined,
+): Record<string, string> | undefined {
+  if (bindings === undefined) return undefined;
+  const entries = Object.entries(bindings);
+  if (entries.length === 0) return undefined;
+  return Object.fromEntries(
+    entries.map(([name, selection]) => [name, formatModelPickerValue(selection)]),
+  );
 }

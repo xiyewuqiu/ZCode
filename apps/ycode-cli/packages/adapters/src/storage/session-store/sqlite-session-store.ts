@@ -90,6 +90,10 @@ import type {
   SqliteSessionStoreOptions,
 } from "./options.js";
 import { ensureParentDir, getDefaultSessionDbPath } from "./paths.js";
+import {
+  optimizeSessionDatabase,
+  readSessionDatabaseStats,
+} from "./session-database-maintenance.js";
 import { maybeThrowStorageFsFault } from "../fs-fault-injection.js";
 import * as debugRepository from "./repositories/debug.js";
 import { createDwfJournalStore } from "./repositories/dwf-journal.js";
@@ -307,6 +311,18 @@ export class SqliteSessionStore
     if (!this.storageMaintenance) throw new Error("session_storage_root_unavailable");
     this.throwBeforeWrite();
     return this.storageMaintenance.purge(params);
+  }
+
+  /** 只读统计；不打开第二连接，也不改变连接级 PRAGMA。 */
+  async getSessionDatabaseStats() {
+    return readSessionDatabaseStats(this.db, this.dbPath);
+  }
+
+  async optimizeSessionDatabase(
+    params: Parameters<NonNullable<SessionStorePort["optimizeSessionDatabase"]>>[0],
+  ) {
+    this.throwBeforeWrite();
+    return optimizeSessionDatabase(this.db, this.dbPath, params);
   }
 
   close(): void {
@@ -595,6 +611,11 @@ export class SqliteSessionStore
   async updateSession(input: UpdateSessionInput): Promise<SessionInfo> {
     this.throwBeforeWrite();
     return sessionRepository.updateSession(this.db, input);
+  }
+
+  async softDeleteSession(sessionID: SessionId, timeDeleted = Date.now()): Promise<void> {
+    this.throwBeforeWrite();
+    sessionRepository.softDeleteSession(this.db, sessionID, timeDeleted);
   }
 
   async getSession(sessionID: SessionId): Promise<SessionInfo | null> {

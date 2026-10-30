@@ -116,6 +116,8 @@ export function collectArtifactDeclarations(
     workflow.toScriptLoc(node.getStart(workflow.scriptFile));
 
   const body = findWorkflowBody(workflow.scriptFile);
+  /** 已补全留白的函数体：不是回调，提升诊断看穿它们（见 {@link hoistingContextOf}）。 */
+  const holeBodies = new Set<ts.Node>(table.holes.flatMap((hole) => hole.body ?? []));
   /** id → 第一个用它的站点（种类冲突时用来指认前一处）。 */
   const claimed = new Map<string, ArtifactSite>();
   /** 第一个写了字面量 `primary: true` 的站点；第二个不同 id 再写就是 9009。 */
@@ -190,7 +192,7 @@ export function collectArtifactDeclarations(
     // 提升诊断（预置族专属）：内容成员反而**常常**该出现在循环 / 条件里（每轮发布一版、
     // 失败时补一版），所以这条子句绝不能扩到那一族。
     if (isArtifactPresetOp(site.op)) {
-      const context = hoistingContextOf(site.call, body);
+      const context = hoistingContextOf(site.call, body, holeBodies);
       if (context !== undefined) {
         push(ARTIFACT_HOISTING_CODE, site.loc, HOISTING_MESSAGE[context]);
       }
@@ -289,10 +291,18 @@ function sortDeclared(declared: readonly DeclaredArtifact[]): DeclaredArtifact[]
  * 循环调用」这一形状漏报——那是漏报方向，与本模块的保守取向一致（引擎的
  * `ArtifactRedeclared` 仍然兜底）。
  */
-function hoistingContextOf(call: ts.CallExpression, body: ts.Block): HoistingContext | undefined {
+function hoistingContextOf(
+  call: ts.CallExpression,
+  body: ts.Block,
+  holeBodies: ReadonlySet<ts.Node>,
+): HoistingContext | undefined {
   let child: ts.Node = call;
   for (let node: ts.Node | undefined = call.parent; node !== undefined; node = node.parent) {
     if (node === body) return undefined;
+    if (holeBodies.has(node)) {
+      child = node;
+      continue;
+    }
     if (ts.isArrowFunction(node) || ts.isFunctionExpression(node) || ts.isMethodDeclaration(node)) {
       return "callback";
     }

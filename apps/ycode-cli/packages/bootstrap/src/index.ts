@@ -68,6 +68,7 @@ export { runYCodeProtocolAgent } from "./ycode-protocol-entrypoint.js";
 // Exposed for the CLI's --output-format stream-json: it needs the same event
 // shape the protocol server emits, rather than inventing a second one.
 export { mapSessionEvent } from "./ycode-protocol/session-mapper.js";
+export * from "./ycode-protocol/mcp-ui/index.js";
 export type { SessionTranscriptMessage, SessionTranscriptPart } from "./session-transcript.js";
 export { listYCodeSessions, resolveLatestSession } from "./sessions.js";
 export { inspectYCodeSkill, listYCodeSkills } from "./skills.js";

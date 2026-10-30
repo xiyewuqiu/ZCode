@@ -381,13 +381,19 @@ export interface ModelResourceLinkContentBlock {
   title?: string;
 }
 
+export interface ModelToolReferenceContentBlock {
+  type: "tool_reference";
+  toolName: string;
+}
+
 export type ModelMessageContentBlock =
   | ModelTextContentBlock
   | ModelReasoningContentBlock
   | ModelImageContentBlock
   | ModelVideoContentBlock
   | ModelFileContentBlock
-  | ModelResourceLinkContentBlock;
+  | ModelResourceLinkContentBlock
+  | ModelToolReferenceContentBlock;
 
 export type ModelMessageContent = string | ModelMessageContentBlock[];
 
@@ -421,6 +427,8 @@ export function modelMessageContentBlockToText(block: ModelMessageContentBlock):
       return block.text;
     case "reasoning":
       return "";
+    case "tool_reference":
+      return block.toolName;
     case "image":
       return attachmentPlaceholder("Attached", block.mediaType, block.source?.placeholder);
     case "video":
@@ -458,6 +466,8 @@ export type ModelToolSideEffectScope =
   | "userInteraction";
 
 export interface ModelToolContract {
+  /** Native 协议字段：Native 请求发送 `defer_loading`，Local 投影会剥离。 */
+  deferLoading?: boolean;
   name: string;
   description?: string;
   capability?: string;
@@ -632,6 +642,7 @@ export interface ModelRequestSettings {
 }
 
 export interface ModelTextRequest extends ModelRequestSettings {
+  toolSearchEnabled?: boolean;
   messages: ModelInputMessage[];
   tools?: ModelToolContract[];
   toolChoice?: ModelToolChoice;
@@ -842,6 +853,15 @@ const attachmentRefJsonSchema = {
 
 const modelMessageContentBlockJsonSchema = {
   oneOf: [
+    {
+      type: "object",
+      required: ["type", "toolName"],
+      additionalProperties: false,
+      properties: {
+        type: { enum: ["tool_reference"] },
+        toolName: { type: "string", minLength: 1 },
+      },
+    },
     {
       type: "object",
       required: ["type", "text"],

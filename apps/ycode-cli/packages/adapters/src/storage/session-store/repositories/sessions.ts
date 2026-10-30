@@ -117,6 +117,7 @@ export async function updateSession(
         title = ?,
         title_source = ?,
         title_message_id = ?,
+        last_outcome = ?,
         share_url = ?,
         summary_additions = ?,
         summary_deletions = ?,
@@ -140,6 +141,7 @@ export async function updateSession(
       input.titleMessageID === undefined
         ? (current.titleMessageID ?? null)
         : input.titleMessageID,
+      input.lastOutcome === undefined ? (current.lastOutcome ?? null) : input.lastOutcome,
       input.shareURL === undefined ? (current.shareURL ?? null) : input.shareURL,
       summary === null ? null : (summary.additions ?? null),
       summary === null ? null : (summary.deletions ?? null),
@@ -159,6 +161,18 @@ export async function updateSession(
   return mustGetSession(db, input.id);
 }
 
+export function softDeleteSession(
+  db: DatabaseSync,
+  sessionID: SessionId,
+  timeDeleted: number,
+): void {
+  // 软删除保持幂等，并保留 message/part 及活动时间；旧 create/upsert 不能清除此字段。
+  db.prepare("update session set time_deleted = coalesce(time_deleted, ?) where id = ?").run(
+    timeDeleted,
+    sessionID,
+  );
+}
+
 export function getSession(
   db: DatabaseSync,
   sessionID: SessionId,
@@ -173,7 +187,7 @@ export async function listSessions(
   db: DatabaseSync,
   input: ListSessionsInput = {},
 ): Promise<SessionInfo[]> {
-  const clauses: string[] = [];
+  const clauses: string[] = ["time_deleted is null"];
   const values: SQLInputValue[] = [];
 
   if (input.projectID) {

@@ -151,6 +151,26 @@ export class SessionResidentPool {
     };
   }
 
+  /**
+   * 数据库整理只拒绝“有真实工作”的会话：运行中、排队输入、待交互或尚未持久化。
+   * 仅打开中的订阅者是读方，不阻止维护；真正的锁冲突仍由 WAL checkpoint 预检发现。
+   */
+  hasActiveWork(): boolean {
+    for (const sessionId of this.host.listSessionIds()) {
+      const facts = this.host.readResidencyFacts(sessionId);
+      if (!facts) continue;
+      if (
+        !facts.persisted ||
+        facts.hasResidencyBlockingWork ||
+        facts.hasPendingInteractions ||
+        facts.hasQueuedCommands
+      ) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   isStorageBlocked(sessionId: string): boolean {
     const facts = this.host.readResidencyFacts(sessionId);
     return Boolean(

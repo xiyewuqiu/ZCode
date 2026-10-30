@@ -151,19 +151,21 @@ async function renameSession(
 }
 
 /**
- * deleteSession：语义 = closeSession（关闭 + 清理运行时资源），非真删 record——
- * message 库无删除 API，与旧协议路径一致（旧协议的“删除”同样只是 close，历史仍在库里，
- * 只是不再出现在活跃注册表）。
- * 会话注册表仍归宿主，实际关闭走 host.closeSession 过渡钩子（归宿：v4 自持会话注册表，见 ../types.ts）。
+ * deleteSession：CLI 先持久化软删除，再关闭运行实例；正文保留，后续冷种子不会复活该会话。
+ * 旧宿主没有 deleteSession 能力时才退回 closeSession。
  */
 async function deleteSession(
   host: V4CommandCoreHost,
   envelope: CommandEnvelope,
 ): Promise<CommandResult | undefined> {
   const record = requireRecord(host, envelope.sessionId);
+  if (host.deleteSession) {
+    await host.deleteSession(record.app.sessionId);
+    return undefined;
+  }
   if (!host.closeSession) {
     // 关闭不能静默降级：钩子缺失说明 binder 接线不完整，直接失败（ACK failed）。
-    throw new Error("v4 deleteSession requires host.closeSession capability");
+    throw new Error("v4 deleteSession requires host.deleteSession or closeSession capability");
   }
   await host.closeSession(record.app.sessionId);
   return undefined;

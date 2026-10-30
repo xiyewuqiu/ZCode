@@ -24,6 +24,7 @@ import {
   writeWorkflowDraft,
 } from "../../tool/handlers/workflow-drafts.js";
 import { analyzeScript } from "../../tool/handlers/workflow-script-analysis.js";
+import { bindScriptModels } from "../../tool/handlers/workflow-script-models.js";
 import type { ExecutableToolCall } from "../../tool/types.js";
 import { createRuntimeCommandId } from "../command-queue.js";
 import { traceContextToLogContext } from "../deps.js";
@@ -116,12 +117,12 @@ export async function amendWorkflowRunSettings(
       ...(this.modelCatalogPort === undefined ? {} : { message: model.message }),
     };
   }
-  const ceiling = port.concurrencyCeiling?.();
-  const bound = resolveAmendMaxConcurrency(input.maxConcurrency, current.maxConcurrency, ceiling);
-  // 等于天花板的界就是「没有自己的界」：快照只在低于天花板时带 maxConcurrency，两边同一个读法，
-  // 「未改」的比较才成立（弹层把步进器推到顶也发 null，这里兜住直接给数的调用方）。
+  const defaultConcurrency = port.defaultConcurrency?.();
+  const bound = resolveAmendMaxConcurrency(input.maxConcurrency, current.maxConcurrency);
+  // 等于默认并发的界就是「没有自己的界」：快照只在不等于默认时带 maxConcurrency，两边同一个
+  // 读法，「未改」的比较才成立（弹层把步进器停在默认上也发 null，这里兜住直接给数的调用方）。
   const nextBound =
-    bound.max_concurrency === undefined || bound.max_concurrency === ceiling
+    bound.max_concurrency === undefined || bound.max_concurrency === defaultConcurrency
       ? undefined
       : bound.max_concurrency;
   const next: RunSettings = {
@@ -145,6 +146,21 @@ export async function amendWorkflowRunSettings(
       ),
     };
   }
+  // (8b) 脚本点名的模型：重跑的是这个 run 自己的脚本，每个名字在 launch 时都绑定过，照旧沿用那张表
+  // 并对着目录再解析一遍（docs/dynamic-workflow/launch.md「On the agent」）。沿用的模型没了就停在
+  // 这里——与「弹层选的模型解不出来」同一个原因码，旧 run 不动。
+  const models = bindScriptModels(analysis, this.modelCatalogPort, snapshot.modelBindings);
+  if (models.unbound.length > 0) {
+    return {
+      ok: false,
+      reason: "model_unavailable",
+      message: boundedCompileDiagnostics(
+        `The models named in the script of run ${input.runId} cannot be used now:`,
+        models.unbound,
+      ),
+    };
+  }
+  const modelSelections = models.selections;
 
   // —— 到此为止零副作用。——
 
@@ -185,6 +201,7 @@ export async function amendWorkflowRunSettings(
       ...(phaseAlongside === undefined ? {} : { phaseAlongside }),
       ...(next.maxConcurrency === undefined ? {} : { maxConcurrency: next.maxConcurrency }),
       ...(subagentModel === undefined ? {} : { subagentModel }),
+      ...(modelSelections === undefined ? {} : { modelBindings: modelSelections }),
       ...(scriptPath === undefined ? {} : { scriptPath }),
       // 重跑的是前驱自己的脚本，它读的正是前驱启动时的实参。
       inheritArgs: true,
@@ -215,7 +232,8 @@ export async function amendWorkflowRunSettings(
     ...(boundChanged
       ? { maxConcurrency: fromTo(current.maxConcurrency, next.maxConcurrency) }
       : {}),
-    ...(ceiling === undefined ? {} : { ceiling }),
+    // 线上键名 `ceiling` 早于「默认并发」这个概念，为兼容旧端保留，装的是默认并发 D。
+    ...(defaultConcurrency === undefined ? {} : { ceiling: defaultConcurrency }),
   };
 
   // (9)(10) 之后的失败只记日志不回滚：新 run 已在飞，可在侧板停下；撤回它反而制造孤儿。

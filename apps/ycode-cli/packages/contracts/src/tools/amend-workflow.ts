@@ -9,6 +9,10 @@
 import { z } from "zod";
 import { toToolJsonSchema } from "./json-schema.js";
 import {
+  WorkflowAdjustableSettingsSchema,
+  WorkflowModelBindingsSchema,
+} from "./workflow-settings.js";
+import {
   WORKFLOW_RUN_LIFECYCLE_STATUSES,
   WORKFLOW_RUN_STOP_REASONS,
 } from "./list-workflow-runs.js";
@@ -64,7 +68,8 @@ const AmendWorkflowModelInputSchema = z.object({
     .describe("Optional display label for the new run. Defaults to the predecessor's name."),
   /**
    * 三态：省略 = 沿用前驱的上界、
-   * `null` = 解除（回到天花板）、数 = 设定（钳到天花板之下）。三态只活到 `resolveInput`：那里把它
+   * `null` = 解除（回到默认并发）、数 = 设定（向下取整到至少 1，没有上限）。三态只活到
+   * `resolveInput`：那里把它
    * 归一成一个数或缺席，确认窗与 handler 读到的就是将要生效的值。运行时 schema 保留 `nullable`
    * 是因为 hook 改写后 call-runner 会二次校验模型的原始形状。
    */
@@ -75,7 +80,7 @@ const AmendWorkflowModelInputSchema = z.object({
     .nullable()
     .optional()
     .describe(
-      "Upper bound on how many subagents work at the same time in the new run. Three states: OMIT the field to keep the predecessor's limit; pass null to remove that limit (run at this machine's default); pass a number to set one. Set a number ONLY when the user asks to limit parallelism — never on your own initiative and never in response to provider rate limits or errors, which the runtime already adapts to. A value above what this machine allows is lowered to that maximum.",
+      "Upper bound on how many subagents work at the same time. Three states: OMIT to keep the predecessor's limit; null to remove it (run at the default parallelism); a number to set one. Passing ONLY run_id and max_concurrency against a running run changes its limit in place: the same run keeps running, nothing is stopped and no revision is started. Set a number ONLY when the user asks to limit parallelism — never on your own initiative and never in response to provider rate limits or errors, which the runtime already adapts to.",
     ),
   /**
    * 三态，与 `max_concurrency` 逐字同规：
@@ -113,10 +118,41 @@ export const AmendWorkflowPredecessorSchema = z
      * 被无条件覆盖，模型伪造无效。
      */
     script_inherited: z.literal(true).optional(),
+    /**
+     * 这次修订会让子代理用上的、前驱与会话都没用过的 provider（去重、按字母序），只在有新的时在场。
+     * 由 resolveInput 从会话模型、前驱 `run-launched` 上的模型与这次归一化后的模型算出，与整块一起
+     * 被无条件覆盖：模型既不能伪造它，也不能抹掉它。在场即退出本会话 run 的免确认
+     * （{@link isAmendWorkflowOwnedPredecessor}）：全称模型名只证明写法明确，不证明用户点过名。
+     */
+    introduces_providers: z.array(z.string().min(1)).nonempty().optional(),
   })
   .strict();
 
 export type AmendWorkflowPredecessor = z.infer<typeof AmendWorkflowPredecessorSchema>;
+
+/**
+ * 「这个前驱归本会话、且不是用户亲手停下的」——免确认的 owner 规则
+ * （docs/dynamic-workflow/launch.md「Amending this session's runs」）。
+ *
+ * 住在契约里而不是权限服务里，是因为它现在有**两个**读者，而两个读者必须一字不差地同意：
+ * 权限服务据它在 always-ask 分支里放行，就地调并发遇上 `not_live` 时 handler 据它判断这次落回
+ * 的修订本来要不要开窗（「When the port says `not_live`」）。两处各写一遍，总有一天会让一条
+ * 「什么都没批」的调用悄悄起一次新 run。
+ *
+ * 收 `unknown`：权限服务拿到的是还没解析的工具入参，handler 拿到的是解析好的事实块。
+ */
+export function isAmendWorkflowOwnedPredecessor(predecessor: unknown): boolean {
+  if (!predecessor || typeof predecessor !== "object") return false;
+  const facts = predecessor as Record<string, unknown>;
+  // 引入新 provider 的修订不在免确认之内：键在场即照常 ask（docs/dynamic-workflow/launch.md
+  // 「Amending this session's runs」）。Bugfix：原先只看归属，主代理写一个别家 provider 的全称
+  // 模型名，就能不经用户把子代理换到另一张账单上。
+  return (
+    facts.owned_by_this_session === true &&
+    facts.stop_reason !== "user" &&
+    facts.introduces_providers === undefined
+  );
+}
 
 /**
  * 运行时入参：模型面那些键 + 回填的 `predecessor` 与 `script_line_offset`。`.strict()`：
@@ -129,11 +165,15 @@ export const AmendWorkflowInputSchema = AmendWorkflowModelInputSchema.extend({
    * 同一个姿态：解析结果，不是可填的参数，模型的 JSON schema 不列它。
    */
   script_line_offset: z.number().int().nonnegative().optional(),
+  /** 确认窗可调的两项设置，与 CreateWorkflow 同一块、同一条回填规则（workflow-settings.ts）。 */
+  adjustable_settings: WorkflowAdjustableSettingsSchema.optional(),
+  /** 新脚本点名的模型解析成的绑定表，与 CreateWorkflow 同一块（同名沿用前驱的绑定，见 launch.md）。 */
+  model_bindings: WorkflowModelBindingsSchema.optional(),
 }).strict();
 
 export type AmendWorkflowInput = z.infer<typeof AmendWorkflowInputSchema>;
 
-/** 交给模型的 JSON schema：不含 `predecessor`，也不含 `script_line_offset`。 */
+/** 交给模型的 JSON schema：不含 `predecessor`、`script_line_offset`、`adjustable_settings` 与 `model_bindings`。 */
 export const AmendWorkflowInputJsonSchema = toToolJsonSchema(
   AmendWorkflowModelInputSchema.strict(),
 );

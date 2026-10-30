@@ -192,6 +192,7 @@ function renderPhase(phase: Phase): string {
   let line = `phase ${phase.id}`;
   if (phase.name !== undefined) line += ` "${phase.name}"`;
   if (phase.loc !== undefined) line += ` @${phase.loc.line}:${phase.loc.column}`;
+  if (phase.fill !== undefined) line += ` fill=${phase.fill}`;
   return line;
 }
 
@@ -238,6 +239,7 @@ function renderStep(step: Step): string {
   if (step.phase !== undefined) line += ` phase=${step.phase}`;
   line += ` region=${step.region} ${step.certainty}`;
   if (step.repeat !== undefined) line += ` ${step.repeat}`;
+  if (step.fill !== undefined) line += ` fill=${step.fill}`;
   return line;
 }
 
@@ -274,7 +276,14 @@ export function serializeControlFlow(flow: ControlFlowGraph): string {
     ...(flow.phases ?? []).map(
       (phase) =>
         `phase ${phase.id}${phase.name === undefined ? "" : ` ${quoteType(phase.name)}`}` +
-        (phase.alongside === undefined ? "" : ` alongside=${phase.alongside.join(",")}`),
+        (phase.alongside === undefined ? "" : ` alongside=${phase.alongside.join(",")}`) +
+        (phase.fill === undefined ? "" : ` fill=${phase.fill}`),
+    ),
+    ...(flow.holes ?? []).map(
+      (hole) =>
+        `hole ${hole.siteId} ${quoteType(hole.name)} type=${quoteType(hole.type)}` +
+        (hole.phase === undefined ? "" : ` phase=${hole.phase}`) +
+        (hole.tail ? " tail" : ""),
     ),
     ...flow.nodes.map(
       (node) =>

@@ -20,6 +20,7 @@ import { buildRuntimeProviderRequestMessages, throwIfTurnAborted } from "../help
 import { projectMessagesForModelMediaPolicy } from "../helpers/media-budget.js";
 import type { AgentRuntimeInternal } from "../internal.js";
 import { isRuntimeAttachmentEntry, type RuntimeMessageEntry } from "../../agent/message-history.js";
+import { generateAuxiliaryModelText } from "../../model/generate-auxiliary-text.js";
 import { createRefreshRuntimeHeadersBeforeModelAttempt } from "./model-runtime-headers.js";
 import { resolveModelRequestSessionTypeFromTaskType } from "./model-request-session-type.js";
 import { createRuntimeModel } from "./runtime-model.js";
@@ -263,15 +264,17 @@ async function verifyTargetCompletion(
       await this.pauseActiveTargetForCancellation(modelTraceContext);
       throw error;
     }
-    this.logger?.warn("Goal completion verification failed open", {
+    this.logger?.warn("Goal completion verification unavailable", {
       ...traceContextToLogContext(modelTraceContext),
       errorMessage: error instanceof Error ? error.message : String(error),
-      event: "target.completion_verification.failed_open",
+      event: "target.completion_verification.unavailable",
       module: "core.runtime",
       status: "failed",
       targetId: input.target.targetID,
     });
-    const verification = failOpenGoalCompletionVerification(
+    // verifier 自身没跑完时不能返回 passed=true：那会把网络/提供方故障伪装成
+    // “目标已验证完成”，并让自动续跑停止。保持 active 等待下一次触发重试。
+    const verification = failedGoalCompletionVerification(
       error instanceof Error
         ? `Completion verifier request failed: ${error.message}`
         : "The completion verifier could not confirm that every goal requirement is complete.",
@@ -319,54 +322,71 @@ async function generateTargetCompletionVerificationText(
   },
 ) {
   const maxAttempts = TARGET_VERIFIER_START_PLAN_BUSY_RETRY_DELAYS_MS.length + 1;
+  const request = {
+    abortSignal: input.abortSignal,
+    messages: input.messages,
+    // Verifier 继承已绑定的思考配置，不能套用低成本辅助调用的降档和封顶策略。
+    options: { maxOutputTokens: input.model.optionSpecs.maxOutputTokens.max },
+    tools: [],
+  };
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-    try {
-      const invocationContext = {
-        metadata: traceContextToLogContext(input.traceContext),
-        modelRequestSessionType: resolveModelRequestSessionTypeFromTaskType(this.config.taskType),
-        modelCall: {
-          operation: "goal_completion_verification" as const,
-        },
-        statusSink: this.createModelStatusSink(input.traceContext, input.events),
+    const invocationContext = {
+      metadata: traceContextToLogContext(input.traceContext),
+      modelRequestSessionType: resolveModelRequestSessionTypeFromTaskType(this.config.taskType),
+      modelCall: {
+        operation: "goal_completion_verification" as const,
+      },
+      statusSink: this.createModelStatusSink(input.traceContext, input.events),
+      traceContext: input.traceContext,
+      refreshRuntimeHeadersBeforeAttempt: createRefreshRuntimeHeadersBeforeModelAttempt(this, {
+        abortSignal: input.abortSignal,
+        model: input.model,
         traceContext: input.traceContext,
-        refreshRuntimeHeadersBeforeAttempt: createRefreshRuntimeHeadersBeforeModelAttempt(this, {
-          abortSignal: input.abortSignal,
-          model: input.model,
-          traceContext: input.traceContext,
-        }),
-      };
+      }),
+    };
+    try {
       return await runWithModelInvocationContext(invocationContext, () =>
-        input.model.generateText({
-          abortSignal: input.abortSignal,
-          messages: input.messages,
-          // Verifier 继承已绑定的思考配置，不能套用低成本辅助调用的降档和封顶策略。
-          options: { maxOutputTokens: input.model.optionSpecs.maxOutputTokens.max },
-          tools: [],
+        generateAuxiliaryModelText({
+          model: input.model,
+          onStreamingFallback: (error) => {
+            // 非流式 2xx 解析失败后改走 SSE；不把提供方兼容问题伪装成
+            // “目标已验证完成”，否则自动续跑会在这里静默停止。
+            this.logger?.warn("Goal completion verification retrying over streaming transport", {
+              ...traceContextToLogContext(input.traceContext),
+              attempt,
+              errorMessage: error instanceof Error ? error.message : String(error),
+              event: "target.completion_verification.retry_streaming_transport",
+              module: "core.runtime",
+              status: "waiting",
+            });
+          },
+          request,
         }),
       );
     } catch (error) {
       const retryDelayMs = TARGET_VERIFIER_START_PLAN_BUSY_RETRY_DELAYS_MS[attempt - 1];
       if (
-        input.abortSignal?.aborted ||
-        retryDelayMs === undefined ||
-        !isTargetVerifierStartPlanBusyFailure(error, input.model.providerId)
+        !input.abortSignal?.aborted &&
+        retryDelayMs !== undefined &&
+        isTargetVerifierStartPlanBusyFailure(error, input.model.providerId)
       ) {
-        throw error;
+        // 目标完成验证发生在用户已看到 assistant 迭代之后；Start Plan busy
+        // 是 admission 瞬时并发。先短暂重试，避免直接走 fail-open 把可恢复并发误当完成。
+        this.logger?.warn("Goal completion verification retrying after Start Plan busy", {
+          ...traceContextToLogContext(input.traceContext),
+          attempt,
+          event: "target.completion_verification.retry_start_plan_busy",
+          maxAttempts,
+          module: "core.runtime",
+          retryDelayMs,
+          status: "waiting",
+        });
+        await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+        throwIfTurnAborted(input.abortSignal);
+        continue;
       }
 
-      // 目标完成验证发生在用户已看到 assistant 迭代之后；Start Plan busy
-      // 是 admission 瞬时并发。先短暂重试，避免直接走 fail-open 把可恢复并发误当完成。
-      this.logger?.warn("Goal completion verification retrying after Start Plan busy", {
-        ...traceContextToLogContext(input.traceContext),
-        attempt,
-        event: "target.completion_verification.retry_start_plan_busy",
-        maxAttempts,
-        module: "core.runtime",
-        retryDelayMs,
-        status: "waiting",
-      });
-      await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
-      throwIfTurnAborted(input.abortSignal);
+      throw error;
     }
   }
 

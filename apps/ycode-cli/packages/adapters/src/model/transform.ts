@@ -25,6 +25,7 @@ import { dataUrlToDataContent, unsupportedInputMediaText } from "./media-transfo
 import { normalizeOpenAiCompatibleSystemMessages } from "./system-message-compat.js";
 
 export interface AiSdkMessageTransformOptions {
+  toolSearchEnabled?: boolean;
   apiFormat?: string;
   providerOptions?: Record<string, unknown>;
   providerKind?: "openai" | "anthropic" | "openai-compatible" | "gateway" | "custom";
@@ -168,15 +169,25 @@ function toAiSdkToolResultOutput(
 
   if (typeof content === "string") return { type: "text", value: content };
 
-  if (textifyStructuredContent) {
+  // 工具引用不是媒体：媒体降级不能把引用变成名字文本，否则服务端无法展开定义。
+  const hasToolReferences = content.some((block) => block.type === "tool_reference");
+  if (textifyStructuredContent && !hasToolReferences) {
     return { type: "text", value: toStructuredToolResultText(content, options) };
   }
 
-  if (options.stripMedia) {
+  if (options.stripMedia && !hasToolReferences) {
     return { type: "text", value: modelMessageContentToText(content) };
   }
 
-  const value = content.flatMap((block) => contentBlockToAiSdkToolResultParts(block, options));
+  const value = content.flatMap((block) => {
+    if (block.type !== "tool_reference" && (textifyStructuredContent || options.stripMedia)) {
+      const text = textifyStructuredContent
+        ? toStructuredToolResultText([block], options)
+        : modelMessageContentToText([block]);
+      return text ? [{ type: "text" as const, text }] : [];
+    }
+    return contentBlockToAiSdkToolResultParts(block, options);
+  });
   return value.length > 0
     ? { type: "content", value }
     : { type: "text", value: modelMessageContentToText(content) };
@@ -192,6 +203,19 @@ function contentBlockToAiSdkToolResultParts(
 
     case "reasoning":
       return [];
+
+    case "tool_reference":
+      if (options.providerKind === "anthropic" && options.toolSearchEnabled) {
+        return [
+          {
+            type: "custom",
+            providerOptions: { anthropic: { type: "tool-reference", toolName: block.toolName } },
+          },
+        ];
+      }
+      // 未启用 Native（含 Local compact 等辅助请求）仍按 Local 投影降级为名称文本；
+      // 只有 Native 激活时才发送 Anthropic tool_reference，避免无 beta 头的非法 wire。
+      return [{ type: "text", text: block.toolName }];
 
     case "image": {
       const unsupportedText = unsupportedInputMediaText(block, options.inputFormat);
@@ -294,6 +318,11 @@ function contentBlockToAiSdkAssistantParts(
   options: AiSdkAssistantTransformOptions,
 ): AiSdkAssistantContentPart[] {
   switch (block.type) {
+    case "tool_reference":
+      throw new AiSdkModelAdapterError(
+        ModelErrorCode.InvalidModelRequest,
+        "Tool references must appear inside tool results",
+      );
     case "text":
       return block.text.length > 0 ? [{ type: "text", text: block.text }] : [];
 
@@ -403,6 +432,11 @@ function contentBlockToAiSdkUserParts(
   options: AiSdkMessageTransformOptions,
 ): Extract<AiSdkUserContent, unknown[]> {
   switch (block.type) {
+    case "tool_reference":
+      throw new AiSdkModelAdapterError(
+        ModelErrorCode.InvalidModelRequest,
+        "Tool references must appear inside tool results",
+      );
     case "text":
       return block.text.length > 0 ? [{ type: "text", text: block.text }] : [];
 

@@ -95,6 +95,8 @@ import type { SessionTranscriptMessage } from "../session-transcript.js";
 import type { WorkspaceHookReviewCommandResult } from "./workspace-hook-review-controller.js";
 import type { AgentTelemetryRuntimeOwner, WorkspaceHookPolicy } from "@ycode/contracts";
 import type { ProviderRegistryModelSource } from "./provider-registry-model-runtime.js";
+import type { McpUiAgentAccess } from "../ycode-protocol/mcp-ui/agentAccess.js";
+import type { McpAppHostFacade } from "./mcp-app-host.js";
 
 export interface WorkspaceHookReviewHostContext {
   taskId: string;
@@ -286,7 +288,7 @@ export interface SetLocaleResult {
   traceId: TraceContext["traceId"];
 }
 
-export interface YCodeApp {
+export interface YCodeApp extends McpAppHostFacade {
   readonly sessionId: SessionId;
   readonly traceId: string;
   readonly runtime: AgentRuntime;
@@ -392,6 +394,11 @@ export interface YCodeApp {
   /** 当前 Session 的 AgentRuntime Skill 发现快照；冷恢复重建 runtime 后重新发现。 */
   getSkillCatalog(): Promise<SkillLoadOutcome>;
   listMcpServers(): Promise<Record<string, McpServerStatus>>;
+  /**
+   * MCP Apps 宿主访问面：本会话的 MCP 工具描述 / 调用 / 资源读取。
+   * MCP 未启用或该会话没有 mcpPort 时缺席——宿主据此 fail closed，不伪造空能力。
+   */
+  mcpUiAgentAccess?: () => McpUiAgentAccess | undefined;
   connectMcpServer(name: string): Promise<McpServerStatus>;
   readBackgroundBashOutput(workId: string, sessionId?: string): Promise<BackgroundBashOutputResult>;
   cancelBackgroundTask?(

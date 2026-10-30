@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- runtime 装配集中维护 deps、controller 与生命周期钩子，拆分需先稳定装配顺序。 */
 import { DEFAULT_YCODE_MODEL_CONTEXT_BUDGET_STRATEGY, resolveExecutionState } from "@ycode/shared";
 import type { BackgroundBashOutputResult } from "@ycode/shared";
 import {
@@ -73,6 +74,8 @@ import type {
   AmendWorkflowRunSettingsResult,
 } from "./methods/dynamic-workflow-run-settings.js";
 import { createRuntimeCommandQueue } from "./command-queue.js";
+import { createWorkflowBlockedReminder } from "./methods/dynamic-workflow-blocked-reminder.js";
+import type { WorkflowBlockedReminderClock } from "../runtime-task/workflow-blocked-reminder.js";
 import type { RuntimeCommandQueue } from "./command-queue.js";
 import type {
   ModelConnectivityTestInput,
@@ -119,10 +122,15 @@ import type {
   WorkspaceForkResult,
 } from "./types.js";
 import type { AgentRuntimeInternal } from "./internal.js";
+import { CompactionController } from "./methods/compaction-controller.js";
 import { InMemoryRuntimeTaskRegistry, type RuntimeTaskRegistry } from "../runtime-task/registry.js";
 import type { ChildClientPortsContext, ClientFacingPorts } from "./helpers/child-client-ports.js";
 import type { ProjectMemoryExtractionScheduler } from "./helpers/project-memory-extraction.js";
 import { projectPersistentAgentMemoryTools } from "../subagent/persistent-memory.js";
+import {
+  createAgentDefinitionsReader,
+  type GetAgentDefinitions,
+} from "../subagent/definitions.js";
 import { RuntimeTelemetryFacade } from "../telemetry/runtime-telemetry.js";
 import type { WorkspaceHookRuntimeAdmissionPort } from "../hooks/workspace-hook-runtime-admission.js";
 import { disposeNodeReplSession } from "../tool/handlers/node-repl.js";
@@ -173,10 +181,13 @@ export class AgentRuntime {
   private mcpInitialized = false;
   private mcpToolsRegistered = false;
   private subagentPort?: SubagentPort;
+  private getAgentDefinitions: GetAgentDefinitions;
   private dynamicWorkflowRunPort?: DynamicWorkflowRunPort;
   private modelCatalogPort?: ModelCatalogPort;
   private runtimeTaskRegistry: RuntimeTaskRegistry;
   private branchGeneration = 0;
+  private workflowBlockedReminder: WorkflowBlockedReminderClock;
+  private compactionController = new CompactionController();
   private artifactStore?: ToolArtifactStorePort;
   private executionPort?: ExecutionPort;
   private fileSystemPort?: FileSystemPort;
@@ -283,11 +294,20 @@ export class AgentRuntime {
     this.mcpPort = deps.mcpPort;
     this.runtimeTaskRegistry = deps.runtimeTaskRegistry ?? new InMemoryRuntimeTaskRegistry();
     this.runtimeTaskRegistry.setActiveBranchGeneration?.(this.branchGeneration);
+    this.workflowBlockedReminder = createWorkflowBlockedReminder(runtime);
     this.artifactStore = deps.artifactStore;
     this.executionPort = deps.executionPort;
     this.fileSystemPort = deps.fileSystemPort;
     this.imageProcessorPort = deps.imageProcessorPort;
     this.pdfDocumentPort = deps.pdfDocumentPort;
+    // Agent 目录提醒与 Agent 工具派发共用同一份 profile 事实：后者来自 runtime config，
+    // 宿主可在会话内提供动态快照覆盖；不另存一份目录状态。
+    // 必须先于 subagentPort 初始化，否则默认 subagent port 读不到插件/profile 定义。
+    this.getAgentDefinitions =
+      deps.getAgentDefinitions ??
+      createAgentDefinitionsReader(this.config.subagents?.profiles ?? [], {
+        builtInModelSelectionOverrides: this.config.subagents?.builtInModelSelectionOverrides,
+      });
     this.subagentPort = deps.subagentPort ?? runtime.createDefaultSubagentPort(deps);
     this.dynamicWorkflowRunPort = deps.dynamicWorkflowRunPort;
     // GUI「配置」解析子代理模型用的目录（与工具上下文拿的是同一个端口）。
@@ -325,9 +345,13 @@ export class AgentRuntime {
   }
 
   beginShutdown(): void {
+    // 会话在关，提醒钟不能再到点唤起一轮。
+    this.workflowBlockedReminder.stop();
     // ExecutionPort.close() 会把后台 Bash 收口为 cancelled；若允许
     // teardown terminal event 再唤醒模型，并与随后关闭的 session store 竞态。
     this.shuttingDown = true;
+    // 投机摘要属于会话后台工作，关闭时必须取消，不能在新请求上继续消耗 provider 配额。
+    this.compactionController.cancelSpeculative("shutdown");
     // 关闭单个 session 后进程仍存活，
     // 因此必须先终止该 runtime 的 Extraction，不能只在超时后放弃等待。
     this.memoryExtractionScheduler?.shutdown();

@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { createNodeContextSourceAdapter } from "@ycode/adapters/context";
 import { createNodeExecutionAdapter } from "@ycode/adapters/exec";
 import { createNodeFileSystemAdapter } from "@ycode/adapters/fs";
@@ -199,6 +200,7 @@ function createRuntimeDeps(
           caCertFile: deps.configResult.config.network.caCertFile,
         },
         outputRootDir: join(deps.storageRoot, "cli", "exec"),
+        bashOutputTempDir: tmpdir(),
         processEnv: deps.appOptions.env ?? process.env,
       }),
     fileSystemPort: deps.appOptions.fileSystemPort ?? createNodeFileSystemAdapter(),

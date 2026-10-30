@@ -31,6 +31,9 @@ export const parseGlobalArgs = (argv: string[]) =>
       "memory-bench": {
         type: "boolean",
       },
+      "enable-workflow": {
+        type: "boolean",
+      },
       attach: {
         multiple: true,
         type: "string",
@@ -60,6 +63,9 @@ export const parseGlobalArgs = (argv: string[]) =>
       },
       "force-mcs": {
         type: "boolean",
+      },
+      "toolsearch-mode": {
+        type: "string",
       },
       mode: {
         type: "string",

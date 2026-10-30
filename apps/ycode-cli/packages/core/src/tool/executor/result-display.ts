@@ -29,6 +29,13 @@ import { createWorkflowObservationDisplay } from "./workflow-observation-display
 export { createCreateWorkflowDisplay } from "./create-workflow-display.js";
 import { isRecord } from "./utils.js";
 import {
+  MCP_APPS_CONTENT_MAX_BYTES,
+  MCP_APPS_STRUCTURED_CONTENT_MAX_BYTES,
+  MCP_APPS_WIDGET_META_MAX_BYTES,
+  type McpToolDisplayUi,
+  type McpToolUiDescriptor,
+} from "@ycode/shared/mcp-apps";
+import {
   CUA_REQUEST_ACCESS_STATUS_META_KEY,
   cuaRequestAccessStatusSchema,
 } from "@ycode/ycode-cua/request-access-contract";
@@ -46,7 +53,9 @@ export function createMcpToolDisplay(
         serverName: string;
         toolName: string;
         description?: string;
-            }
+        pluginId?: string;
+        ui?: McpToolUiDescriptor;
+      }
     | undefined,
   output?: unknown,
 ): ToolResultDisplayPayload | undefined {
@@ -57,12 +66,84 @@ export function createMcpToolDisplay(
   const description = metadata.description
     ? boundMcpDisplayText(metadata.description, MCP_TOOL_DISPLAY_MAX_DESCRIPTION_CHARS)
     : undefined;
+  const ui = createMcpToolDisplayUi(metadata, output);
   return {
     kind: "mcp_tool",
     serverName,
     toolName,
     ...(description ? { description } : {}),
-    };
+    ...(ui ? { ui } : {}),
+  };
+}
+
+/**
+ * MCP App 元数据投影。任何 MCP server 的工具只要声明了 ui 资源就存在（归属看 serverName）；
+ * pluginId 只做展示 / 键位，非插件 server 用 serverName 顶替。structuredContent / _meta 以 JSON 文本
+ * 进入持久化 metadata，超限整个省略并置 truncated，UI 据此提示"结构化结果被截断"。
+ */
+function createMcpToolDisplayUi(
+  metadata: { pluginId?: string; serverName: string; ui?: McpToolUiDescriptor },
+  output: unknown,
+): McpToolDisplayUi | undefined {
+  if (!metadata.ui) return undefined;
+  const pluginId = boundMcpDisplayText(
+    metadata.pluginId ?? metadata.serverName,
+    MCP_TOOL_DISPLAY_MAX_NAME_CHARS,
+  );
+  if (!pluginId) return undefined;
+  const record = isRecord(output) ? output : undefined;
+  // 三个 JSON 字段都按 UTF-8 字节封顶；超限整个省略（不产生半截 JSON），记 truncatedBytes。
+  const structured = boundJsonText(
+    record?.structuredContent,
+    MCP_APPS_STRUCTURED_CONTENT_MAX_BYTES,
+  );
+  const meta = boundJsonText(record?._meta, MCP_APPS_WIDGET_META_MAX_BYTES);
+  const content = boundJsonText(
+    Array.isArray(record?.content) ? record.content : undefined,
+    MCP_APPS_CONTENT_MAX_BYTES,
+  );
+  const dropped = [structured, meta, content].filter(
+    (item): item is { truncated: true; bytes: number } => item?.truncated === true,
+  );
+  const truncatedBytes = dropped.reduce((sum, item) => sum + item.bytes, 0);
+  return {
+    pluginId,
+    resourceUri: metadata.ui.resourceUri,
+    ...(metadata.ui.preferredDisplayMode
+      ? { preferredDisplayMode: metadata.ui.preferredDisplayMode }
+      : {}),
+    ...(metadata.ui.prefersBorder !== undefined
+      ? { prefersBorder: metadata.ui.prefersBorder }
+      : {}),
+    ...(metadata.ui.csp ? { csp: metadata.ui.csp } : {}),
+    ...(structured && !structured.truncated ? { structuredContent: structured.text } : {}),
+    ...(meta && !meta.truncated ? { widgetMeta: meta.text } : {}),
+    ...(content && !content.truncated ? { content: content.text } : {}),
+    ...(dropped.length > 0 ? { truncated: true, truncatedBytes } : {}),
+    // MCP isError 的调用在 v4 行上仍是 success（模型视角已完成），页面与面板要靠这个字段区分。
+    ...(record?.isError === true ? { isError: true as const } : {}),
+    ...(metadata.ui.surface ? { surface: metadata.ui.surface } : {}),
+    // 只投影 true；false / 缺省都不占字段。
+    ...(metadata.ui.showInline === true ? { showInline: true as const } : {}),
+  };
+}
+
+/** JSON 文本按 UTF-8 字节封顶：≤ 上限返回文本，超限只返回字节数（不截断字符串）。 */
+function boundJsonText(
+  value: unknown,
+  maxBytes: number,
+): { text: string; truncated: false } | { truncated: true; bytes: number } | undefined {
+  if (value === undefined || value === null) return undefined;
+  let text: string;
+  try {
+    text = JSON.stringify(value);
+  } catch {
+    return undefined;
+  }
+  if (typeof text !== "string") return undefined;
+  const bytes = Buffer.byteLength(text, "utf8");
+  if (bytes <= maxBytes) return { text, truncated: false };
+  return { truncated: true, bytes };
 }
 
 /**
@@ -83,7 +164,9 @@ export function createToolResultDisplay(
       serverName: string;
       toolName: string;
       description?: string;
-        };
+      pluginId?: string;
+      ui?: McpToolUiDescriptor;
+    };
   },
 ): ToolResultDisplayPayload | undefined {
   if (toolName === "Bash") return createBashResultDisplay(output);

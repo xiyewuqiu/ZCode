@@ -12,9 +12,12 @@ import {
   AMEND_WORKFLOW_SOURCE_ERROR,
   AmendWorkflowInputSchema,
   type AmendWorkflowInput,
+  type AmendWorkflowPredecessor,
   type DynamicWorkflowRunPort,
+  type DynamicWorkflowRunSnapshot,
 } from "@ycode/contracts";
 import type { ToolHandlerFailure } from "../types.js";
+import { normalizeWorkflowMaxConcurrency } from "./create-workflow-source.js";
 import { readWorkflowScriptFile } from "./workflow-path-source.js";
 
 /**
@@ -29,6 +32,9 @@ export const AMEND_WORKFLOW_ERROR_CODE = {
   SCRIPT_UNCHANGED: 24,
   SCRIPT_FILE: 25,
   SCRIPT_UNAVAILABLE: 26,
+  RETUNE_UNCHANGED: 27,
+  RUN_SETTLED: 28,
+  NOT_RETUNABLE: 29,
 } as const;
 
 /** 入参级违规（两个来源都给了）的码，与 `CreateWorkflow` 的同一个 400。 */
@@ -208,5 +214,47 @@ export async function refuseUnchangedScript(options: {
     result: false,
     errorCode: AMEND_WORKFLOW_ERROR_CODE.SCRIPT_UNCHANGED,
     message: `workflow_script_unchanged: ${described ?? model.path} is byte-for-byte the script run ${model.run_id} was started with, so amending it would repeat that run exactly. Edit the file first, then call AmendWorkflow again with the same \`path\`; to change only the settings, pass them and omit \`path\`; to continue a stopped run under the same script, use ResumeWorkflowRun. Nothing was stopped or created.`,
+  };
+}
+
+/**
+ * 并发上界的三态归一：
+ *
+ *   - 数 → 向下取整到至少 1，没有上限（高于默认并发与低于它一样作数）；
+ *   - `null` → 解除，键整个消失（新 run 跑在默认并发上）；
+ *   - 省略 → 沿用前驱的上界，**原样**。快照**只在不等于默认时**带 `maxConcurrency`，所以「前驱
+ *     没设过」与「前驱跑在默认上」在这里是同一件事：也是键消失；一个被调高过的前驱把它的数
+ *     传下去。
+ *
+ * 三态只活到这里：确认窗与 handler 之后面对的只有「一个数或没有」。**唯一的例外是就地调并发**
+ * 那条路由（amend-workflow-retune.ts）：`retuneConcurrency` 自己收 `number | null`，默认并发那个数
+ * 只有端口知道，工具不该猜第二遍。
+ */
+export function resolveAmendMaxConcurrency(
+  requested: number | null | undefined,
+  inherited: number | undefined,
+): { max_concurrency?: number } {
+  if (requested === null) return {};
+  const resolved = requested ?? inherited;
+  if (resolved === undefined) return {};
+  return { max_concurrency: normalizeWorkflowMaxConcurrency(resolved) };
+}
+
+
+export function describePredecessor(
+  snapshot: DynamicWorkflowRunSnapshot,
+  sessionId: string | undefined,
+): AmendWorkflowPredecessor {
+  // 快照的 `status` 是追踪器的通用词（stopped 折成 cancelled …）；真实词在 `runStatus`，只在
+  // 终态在场——非终态一律读作 running（pending 在这里与 running 无分别：都会被 amend 停下）。
+  const status = snapshot.runStatus ?? "running";
+  return {
+    ...(snapshot.name === undefined ? {} : { name: snapshot.name }),
+    status,
+    ...(snapshot.stopReason === undefined ? {} : { stop_reason: snapshot.stopReason }),
+    owned_by_this_session:
+      sessionId !== undefined &&
+      snapshot.parentSessionId !== undefined &&
+      snapshot.parentSessionId === sessionId,
   };
 }

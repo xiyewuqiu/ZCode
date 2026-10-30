@@ -44,6 +44,8 @@ import type {
   RoutedTopicFrame,
   RoutedTopicWireFrame,
   SessionSummary,
+  SessionsIndexReconcileParams,
+  SessionsIndexReconcileResult,
   SessionsIndexTopicFrame,
   SubscribeAck,
   V4AttachmentBeginResult,
@@ -83,6 +85,8 @@ import {
   measureTopicNotificationEnvelopeBytes,
   parseConversationTopic,
   parseSessionsIndexTopic,
+  sessionsIndexReconcileParamsSchema,
+  sessionsIndexReconcileResultSchema,
   parseWorkspaceConfigTopic,
   v4AttachmentAbortParamsSchema,
   v4AttachmentBeginParamsSchema,
@@ -136,6 +140,7 @@ import type {
   SessionUsageSeed,
 } from "./product-projection.js";
 import type { ConversationRowTargetAction } from "./product-projection.js";
+import { SessionsIndexFanoutThrottle } from "./sessions-index-fanout-throttle.js";
 import { SessionsIndexPublisher } from "./sessions-index-publisher.js";
 import { SessionsIndexPublisherRegistry } from "./sessions-index-publisher-registry.js";
 import { WorkspaceConfigPublisher } from "./workspace-config-publisher.js";
@@ -235,8 +240,14 @@ export interface V4GatewayHost {
   getSessionIndexMeta?(sessionId: string): {
     createdAt: number;
     lastActivityAt: number;
+    lastOutcome?: SessionSummary["lastOutcome"];
     parentSessionId?: string;
   } | null;
+  /**
+   * 只读 CLI 持久事实；不恢复会话运行实例。snapshot 缺席时用于确认某 session
+   * 是否仍存在，不能用宿主时钟或列表缺席推断删除。
+   */
+  reconcileSessions?(params: SessionsIndexReconcileParams): Promise<SessionsIndexReconcileResult>;
   /**
    * config 种子：会话 runtime 的当前真值（模型选型/思考深度/协作模式）。
    * 投影初值不能写死空值——runtime 的启动默认模型、项目持久化 mode 偏好、历史会话
@@ -556,6 +567,10 @@ export class ConversationV4Gateway {
   private readonly publishers = new Map<string, ConversationTopicPublisher>();
   /** sessions-index：workspaceId → 列表 publisher（与 conversation 并列，独立 seq/logEpoch）。 */
   private readonly indexPublishers = new SessionsIndexPublisherRegistry();
+  /** 工作流进度等高频事件的 index fan-out 节流；终态仍在一个窗口内送达。 */
+  private readonly indexFanoutThrottle = new SessionsIndexFanoutThrottle({
+    publish: (sessionId) => this.publishCurrentSummaryToIndex(sessionId),
+  });
   /** workspace-config：workspaceId → 配置目录 publisher（conflated 整体替换态）。 */
   private readonly configPublishers = new Map<string, WorkspaceConfigPublisher>();
   /** 已完成首次 hydration 的 session（避免重复重建 / 双计，见 hydratePublisher）。 */
@@ -1049,6 +1064,12 @@ export class ConversationV4Gateway {
    */
   private fanOutToIndex(sessionId: string, event: SessionEvent): void {
     if (event.type === SessionEventType.ModelStreaming) return;
+    // 工作流进度同样是高频流（实测 8s 4000 条），但列表要继续动，所以不是丢弃而是
+    // leading + trailing 窗口节流：窗内合并为窗末一帧，终态仍在一个窗口内送达。
+    if (event.type === SessionEventType.DynamicWorkflowRunProgress) {
+      this.indexFanoutThrottle.request(sessionId);
+      return;
+    }
     this.publishCurrentSummaryToIndex(sessionId);
   }
 
@@ -1061,6 +1082,8 @@ export class ConversationV4Gateway {
    * task-index syncer 无法观察到 draft→visible，也就不会创建侧栏 task row。
    */
   private publishCurrentSummaryToIndex(sessionId: string): void {
+    // 这一次发布带的就是窗内合并后的当前摘要：待发的 trailing 到此被满足，不重复发帧。
+    this.indexFanoutThrottle.notePublished(sessionId);
     const getWorkspaceId = this.host.getSessionWorkspaceId;
     if (!getWorkspaceId) return;
     try {
@@ -1085,12 +1108,14 @@ export class ConversationV4Gateway {
   private resolveIndexMeta(sessionId: string): {
     createdAt: number;
     lastActivityAt: number;
+    lastOutcome?: SessionSummary["lastOutcome"];
     parentSessionId?: string;
   } {
     const meta = this.host.getSessionIndexMeta?.(sessionId);
     return {
       createdAt: meta?.createdAt ?? 0,
       lastActivityAt: meta?.lastActivityAt ?? this.now(),
+      ...(meta?.lastOutcome ? { lastOutcome: meta.lastOutcome } : {}),
       ...(meta?.parentSessionId ? { parentSessionId: meta.parentSessionId } : {}),
     };
   }
@@ -1128,6 +1153,16 @@ export class ConversationV4Gateway {
     const dispatch = await this.subscribeSessionsIndexReserved(rawParams);
     dispatch.commit();
     return dispatch;
+  }
+
+  /**
+   * sessions-index 对账：只把明确 sessionId 交给宿主读取 CLI 持久事实。
+   * 不创建 publisher、不恢复 runtime，也不改动列表基线。
+   */
+  async reconcileSessions(rawParams: unknown): Promise<SessionsIndexReconcileResult> {
+    const params = sessionsIndexReconcileParamsSchema.parse(rawParams);
+    if (!this.host.reconcileSessions) throw new Error("sessionsIndex/reconcile is unavailable");
+    return sessionsIndexReconcileResultSchema.parse(await this.host.reconcileSessions(params));
   }
 
   async subscribeSessionsIndexReserved(
@@ -1377,6 +1412,8 @@ export class ConversationV4Gateway {
       connectionId: params.connectionId,
       base: params.base,
       deliveryProfile: profileName,
+      // 桌面连续链路认得键级增量；手机/Web 的 replayable 链路按旧编码折成整键 patch。
+      workflowRunDeltas: params.clientMode === "desktop-continuous",
     });
     const routeKey = subscriptionRouteKey(
       params.topic,
@@ -2701,6 +2738,7 @@ export class ConversationV4Gateway {
         this.host.onError?.("v4.sessionsIndex.remove", error);
       }
     }
+    this.indexFanoutThrottle.clearSession(sessionId);
     for (const [routeKey, state] of this.flushStates) {
       if (state.sessionId !== sessionId) continue;
       if (state.timer) clearTimeout(state.timer);
@@ -2750,6 +2788,7 @@ export class ConversationV4Gateway {
       );
     }
     clearInterval(this.attachmentPruneTimer);
+    this.indexFanoutThrottle.clear();
     this.attachmentUploads.clear();
     this.binaryReadCache.clear();
     this.binaryReadCacheBytes = 0;

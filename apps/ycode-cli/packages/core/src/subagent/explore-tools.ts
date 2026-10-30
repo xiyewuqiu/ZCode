@@ -9,6 +9,8 @@ export const EXPLORE_AGENT_ALLOWED_TOOLS = [
   "WebFetch",
   "WebSearch",
   "TodoWrite",
+  "ToolSearch",
+  "DeferredToolCall",
 ] as const;
 
 export type ExploreAgentAllowedTool = (typeof EXPLORE_AGENT_ALLOWED_TOOLS)[number];
@@ -19,6 +21,8 @@ export const EXPLORE_AGENT_EMBEDDED_SEARCH_ALLOWED_TOOLS = [
   "WebFetch",
   "WebSearch",
   "TodoWrite",
+  "ToolSearch",
+  "DeferredToolCall",
 ] as const;
 
 const EXPLORE_AGENT_DESCRIPTION_TOOL_PRIORITY = [

@@ -44,7 +44,7 @@ type WorkflowScriptFileResult =
  * （`ToolInputResolutionContext`）刻意窄到只有 `workingDirectory`。两者在 `operation: "read"`
  * 上的行为本就相同——那个函数当前不硬拦工作区之外的路径，只做同一条 resolve/normalize。
  */
-function resolveWorkflowScriptFilePath(cwd: string, inputPath: string): string {
+export function resolveWorkflowScriptFilePath(cwd: string, inputPath: string): string {
   return path.isAbsolute(inputPath) ? path.normalize(inputPath) : path.resolve(cwd, inputPath);
 }
 

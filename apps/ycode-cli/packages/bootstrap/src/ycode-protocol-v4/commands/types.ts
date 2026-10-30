@@ -219,6 +219,11 @@ export interface V4CommandCoreHost {
    */
   closeSession?(sessionId: string): Promise<void>;
   /**
+   * CLI 软删除 + 关闭。存在时 deleteSession 优先用它，让“删除”成为持久事实；
+   * 旧宿主只有 closeSession 时保持旧语义。
+   */
+  deleteSession?(sessionId: string): Promise<void>;
+  /**
    * 会话记录创建（createSession 的执行面：record 建立/事件接线/模型 catalog 同步/
    * 失败清理，全部与旧协议宿主纠缠）。binder 实现调旧 createSession op；
    * v4 自持会话注册表后由原生实现取代本钩子。

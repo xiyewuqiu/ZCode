@@ -21,6 +21,7 @@ import {
 } from "./tool-allowlist.js";
 import { isStaleBranchRuntimeTaskEvent } from "../methods/runtime-command-generation.js";
 import { resolveEnabledProjectMemoryRoot } from "./project-memory.js";
+import { sessionHasLoadedSkill } from "../../agent/loaded-skills.js";
 
 const DEFAULT_SUBAGENT_BACKGROUND_BASH_MAX_MS = 3_600_000;
 const EMPTY_RUNTIME_HOOK_CONFIG = {
@@ -73,7 +74,6 @@ function registerRuntimeBuiltInTools(runtime: AgentRuntimeInternal, deps: AgentR
     includeNodeRepl: nodeReplEnabled,
     includeBrowserUse: browserUseEnabled,
     embeddedSearchEnabled: resolveRuntimeEmbeddedSearchEnabled(runtime),
-    agentProfiles: runtime.config.subagents?.profiles,
     allowedTools: resolveBuiltInToolAllowlist(runtime.config),
     // workflow_child 的结构性禁用（CreateWorkflow/SaveWorkflow 因 alwaysAsk 隐形挂起；
     // ResumeWorkflowRun 已免确认但因「child 内不得再编排」仍在列）在 helper
@@ -191,6 +191,19 @@ function createRuntimeToolExecutor(
     dynamicWorkflowRunPort: deps.dynamicWorkflowRunPort,
     dynamicWorkflowSnippetPort: deps.dynamicWorkflowSnippetPort,
     modelCatalogPort: deps.modelCatalogPort,
+    // 工作流创作工具的技能门（tool/handlers/workflow-skill-gate.ts）：按模型此刻看得见的历史回答
+    // 「读过技能没有」。只在会话真有 Skill 工具时给探针——没有 skillPort 的会话装不上那个技能，
+    // 门若仍然在场就成了一道谁也过不去的墙。
+    ...(deps.skillPort === undefined
+      ? {}
+      : {
+          hasLoadedSkill: (skillName: string) =>
+            isSkillAbsentFromSession(runtime, skillName) ||
+            sessionHasLoadedSkill(
+              runtime.messageHistory.borrowReadOnlyRuntimeEntries(),
+              skillName,
+            ),
+        }),
     runtimeTaskRegistry: runtime.runtimeTaskRegistry,
     readFileState: runtime.readFileState,
     subagentBackgroundBashMaxMs:
@@ -215,6 +228,19 @@ function createRuntimeToolExecutor(
     getMode: () => runtime.config.mode ?? "build",
     maxConcurrency: runtime.config.toolConcurrency?.maxConcurrency,
   });
+}
+
+/**
+ * 本会话的技能发现里根本没有这门技能时，技能门必须失效。
+ *
+ * 理由：门的前提是「模型去加载一次技能就能过关」。技能包缺失（不完整的分发资产）、技能
+ * 被视为 disabled、或 context 尚未完成发现时，这个前提不成立——门留在场上只会把「没有技能包」
+ * 变成「所有脚本提交都被拒」。技能在场时仍按历史判断，见 hasLoadedSkill 注入点。
+ */
+function isSkillAbsentFromSession(runtime: AgentRuntimeInternal, skillName: string): boolean {
+  const discovered = runtime.skillLoadOutcome?.skills;
+  if (discovered === undefined) return true;
+  return !discovered.some((skill) => skill.name === skillName);
 }
 
 function resolveRuntimeBrowserUseEnabled(

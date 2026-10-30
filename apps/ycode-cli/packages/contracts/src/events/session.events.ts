@@ -278,6 +278,24 @@ export type WorkflowNotificationMeta =
       context?: string;
       askedAt?: number;
     }
+  /**
+   * 留白（docs/dynamic-workflow/transcript-and-notifications.md「The payload」的 `hole` 种类）：run 走到一个
+   * 开着的 `hole<T>()`，那条分支停驻、主代理欠一段代码。`type` 是作者写的类型原文；`before`/`after`
+   * 是留白两侧的阶段名，`draftPath` / `line` 指向 run 草稿里的那一行。每个 `hole-reached` 恰好一条。
+   */
+  | {
+      kind: "hole";
+      siteId: string;
+      ordinal: number;
+      name: string;
+      type: string;
+      prompt?: string;
+      draftPath?: string;
+      line?: number;
+      before?: string;
+      after?: string;
+      reachedAt?: number;
+    }
   /** run 级停滞：每个 stall 段一条，不是终态。 */
   | {
       kind: "stall";
@@ -285,6 +303,17 @@ export type WorkflowNotificationMeta =
       reason?: string;
       cap?: number;
     };
+
+/**
+ * 主代理闲着、run 还欠着决定时的提醒载荷（docs/dynamic-workflow/transcript-and-notifications.md
+ * 「Reminding an idle main agent」）。**刻意不是** `WorkflowNotificationMeta` union 的成员：闭集多一个
+ * kind 会让不认识它的客户端拒掉整帧、打不开会话；不认识的键只是被剥掉。
+ */
+export interface WorkflowBlockedMeta {
+  questions: number;
+  holes: number;
+  sinceMs: number;
+}
 
 /** 独立后台结果轮的展示元信息；批量轮可复用代表任务身份并合成 title，不从通知文本反向解析。 */
 export interface BackgroundResultOriginMeta {
@@ -294,6 +323,8 @@ export interface BackgroundResultOriginMeta {
   title: string;
   /** 只在 backgroundSource === "workflow" 的单条通知轮上在场；manifest 渲染的唯一数据源。 */
   workflowNotification?: WorkflowNotificationMeta;
+  /** 空闲提醒的载荷；与 workflowNotification 至多在场一个。 */
+  workflowBlocked?: WorkflowBlockedMeta;
 }
 
 /**

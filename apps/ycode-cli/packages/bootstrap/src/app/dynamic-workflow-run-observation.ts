@@ -8,6 +8,7 @@ import type { DwfRunListItem, DwfRunSessionListItem } from "@ycode/adapters/stor
 import {
   boundDynamicWorkflowRunEventPayload,
   type DynamicWorkflowRunError,
+  type DynamicWorkflowRunHole,
   type DynamicWorkflowRunLogEntry,
   type DynamicWorkflowRunPendingQuestion,
   type DynamicWorkflowRunSessionSummary,
@@ -27,9 +28,15 @@ import type {
   WorkflowErrorJson,
 } from "@ycode/dynamic-workflow";
 import { artifactsOf } from "./dynamic-workflow-run-artifact-projection.js";
-import { readRunScriptPath, readRunSubagentModel } from "./dynamic-workflow-run-launch-anchor.js";
+import type { CompiledHole } from "./dynamic-workflow-run-holes.js";
+import {
+  readRunModelBindings,
+  readRunScriptPath,
+  readRunSubagentModel,
+} from "./dynamic-workflow-run-launch-anchor.js";
 import { resolveDynamicWorkflowRunLabel } from "./dynamic-workflow-run-label.js";
 import { lineageFields, supersededByOf } from "./dynamic-workflow-run-lineage.js";
+import type { WorkflowRunControl } from "./workflow-run-control.js";
 
 /**
  * 产物归并住在 dynamic-workflow-run-artifact-projection.ts（本文件顶到 oxlint 的 400 行上限）。
@@ -53,10 +60,26 @@ export interface RunRegistryEntry {
   name?: string;
   scriptText: string;
   /**
+   * **此刻有效脚本**的留白事实表：快照的 `type` / `line` 与进度载荷的 `type` 读它。三条建条目的路
+   * 都从编译产物落值；一次补全把它换成有效脚本的表。与 `scriptText` 同步换。
+   */
+  holes?: readonly CompiledHole[];
+  /** 此刻生效的阶段表（留白按名字占位）；补全后换成有效脚本的表。快照的 before / after 读它。 */
+  phaseNames?: readonly string[];
+  /**
    * 本 run 实际生效的并发上界（`dwf_run.caps_max_concurrency` 的内存副本，同一条间隙论证）。
-   * submit / amend 落值，**resume 不落**——那条路沿用 journal 记录里的 caps，而它的行早就在了。
+   * submit / amend 落值，resume 也落（沿用 journal 记录里的 caps）。retune 成功后就地改写。
    */
   maxConcurrency?: number;
+  /**
+   * 本 run 的活体控制面。与 {@link controller} 并列而非合并：那个是「停下这个 run」的唯一通道，
+   * 这个是「改这个 run 的一项设置」的唯一通道，两者的收件人（harness 的 signal / 引擎与座位闸门）
+   * 也不是同一个。
+   *
+   * 由 run service 在注册表条目建立时造好，launch 的两端各自接上；缺席即这次启动没有控制面
+   * （snippet 执行）——retune 对它答 `not_live`，调用方回落完整修订。
+   */
+  control?: WorkflowRunControl;
   /**
    * 本 run 的子代理模型（`run-launched` 事件上那个规范 picker 串
    * `providerId/modelId[$reasoningLevel]` 的内存副本）。
@@ -68,6 +91,13 @@ export interface RunRegistryEntry {
    * 有条目就读条目，只有冷行（本进程没有条目）才去扫事件。缺席即子代理跑在会话模型上。
    */
   subagentModel?: string;
+  /**
+   * 本 run 脚本点名的模型绑定表（`run-launched` 事件上 `modelBindings` 的内存副本；
+   * docs/dynamic-workflow/launch.md「Models the script names」）。与 {@link subagentModel} 逐条同规：
+   * 三条建条目的路都落值（submit / amend 用刚归一出来的那张表，resume 读一次事件头抄过来），
+   * 值在建 run 那一世写死、本 run 余生不变，所以副本与事件不可能分叉。缺席即脚本没点名模型。
+   */
+  modelBindings?: Record<string, string>;
   /**
    * 本 run 的脚本文件（`run-launched` 事件上那个绝对路径的内存副本）。与 {@link subagentModel} 逐条同规：
    * 三条建条目的路都落值（submit / amend 用入参给的那一个，resume 读一次事件头抄过来），
@@ -111,7 +141,7 @@ export const TERMINAL_RUN_STATUSES: ReadonlySet<RunStatus> = new Set<RunStatus>(
  * `pendingQuestions` 由调用方从**内存的**升级停驻表投影好再传进来（本文件的纪律是无 I/O、
  * 无状态）。传空数组即「此刻没有待答问题」，字段整个缺席——不发空数组。
  *
- * `concurrencyCeiling` 同理由调用方给（读它要探进程核数 = I/O）：缺席即「本次读不判天花板」，
+ * `defaultConcurrency` 同理由调用方给（读它要探进程核数 = I/O）：缺席即「本次读不判默认值」，
  * `maxConcurrency` 整字段不出——见 {@link runConcurrencyField}。
  */
 export function snapshotOf(
@@ -119,7 +149,12 @@ export function snapshotOf(
   runs: Map<string, RunRegistryEntry>,
   journal: JournalStorePort,
   pendingQuestions: readonly DynamicWorkflowRunPendingQuestion[] = [],
-  concurrencyCeiling?: number,
+  defaultConcurrency?: number,
+  /**
+   * 留白（docs/execution-engine.md「The run snapshot」），与 `pendingQuestions` 同规由调用方
+   * 投影好递进来（`waiting` 要读引擎的停驻表，那是 I/O 之外的活状态）；空即整字段缺席。
+   */
+  holes: readonly DynamicWorkflowRunHole[] = [],
 ): DynamicWorkflowRunSnapshot | undefined {
   const entry = runs.get(taskId);
   const record = journal.getRun(taskId);
@@ -161,7 +196,7 @@ export function snapshotOf(
     // 行还不存在，而 AmendWorkflow 的 resolveInput 恰好会在那时读这张快照。
     ...runConcurrencyField(
       entry?.maxConcurrency ?? record?.caps.maxConcurrency,
-      concurrencyCeiling,
+      defaultConcurrency,
     ),
     // 子代理模型：**有条目就读条目**（三条建条目的路都落值，见 RunRegistryEntry.subagentModel），
     // 只有冷行——本进程没有条目——才去扫一次事件头（八条的有界扫描，不是整条 journal）。
@@ -169,6 +204,10 @@ export function snapshotOf(
     // 的信息。缺席即跑在会话模型上。
     ...runSubagentModelField(
       entry === undefined ? readRunSubagentModel(journal, taskId) : entry.subagentModel,
+    ),
+    // 绑定表：与子代理模型逐条同规（有条目就读条目，只有冷行才扫一次事件头）。
+    ...runModelBindingsField(
+      entry === undefined ? readRunModelBindings(journal, taskId) : entry.modelBindings,
     ),
     // 脚本文件：与子代理模型逐条同规（有条目就读条目，只有冷行才扫一次事件头），同样
     // 「记过才在场」。终态通知据它把下一步说成「就地编辑那个文件」，所以快照必须带上它。
@@ -180,6 +219,7 @@ export function snapshotOf(
     ...(error === undefined ? {} : { error }),
     // 零条时整字段缺席（与 reports 同规）：读侧据此让整块 pending 区消失，不渲染空节。
     ...(pendingQuestions.length === 0 ? {} : { pendingQuestions }),
+    ...(holes.length === 0 ? {} : { holes }),
     ...reportsOf(nodes),
     // 用户面产物。⚠ 与紧邻的 `output`
     // （`entry.terminal.artifact` = 脚本顶层返回值，引擎内部也叫 artifact）是**两件不同的东西**：
@@ -198,17 +238,19 @@ export function snapshotOf(
 /**
  * 两条读面（`getTask` 快照与 `getRunDetail` 详情）上的 `maxConcurrency`
  *
- * **只在低于当前天花板时在场**：跑在天花板上的 run 没有可说的——它就是默认行为，而每一行都带
- * 一个等于默认值的数，只会让模型把「没设限」读成「设了个限」。天花板缺席（调用方没给）时同样
- * 整字段不出：判据都没有，报一个数就是在猜。
+ * **只在不等于默认并发时在场**（高于、低于都算）：跑在默认值上的 run 没有可说的——它就是默认
+ * 行为，而每一行都带一个等于默认值的数，只会让模型把「没设限」读成「设了个限」。默认值缺席
+ * （调用方没给）时同样整字段不出：判据都没有，报一个数就是在猜。
  *
  * 一处实现供两条读面共用：两处各判一次，「等于天花板算不算在场」迟早会在某一次调参时分叉。
  */
 export function runConcurrencyField(
   applied: number | undefined,
-  ceiling: number | undefined,
+  defaultConcurrency: number | undefined,
 ): { maxConcurrency?: number } {
-  if (applied === undefined || ceiling === undefined || applied >= ceiling) return {};
+  if (applied === undefined || defaultConcurrency === undefined || applied === defaultConcurrency) {
+    return {};
+  }
   return { maxConcurrency: applied };
 }
 
@@ -235,6 +277,15 @@ export function runSubagentModelField(subagentModel: string | undefined): {
  */
 export function runScriptPathField(scriptPath: string | undefined): { scriptPath?: string } {
   return scriptPath === undefined ? {} : { scriptPath };
+}
+
+/** 两条读面上的 `modelBindings`：与 {@link runScriptPathField} 同一条规则，记过（且非空）才在场。 */
+export function runModelBindingsField(modelBindings: Record<string, string> | undefined): {
+  modelBindings?: Record<string, string>;
+} {
+  return modelBindings === undefined || Object.keys(modelBindings).length === 0
+    ? {}
+    : { modelBindings };
 }
 
 /**

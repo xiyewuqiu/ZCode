@@ -75,6 +75,7 @@ export {
   type ControlFlowGraph,
   type FlowEdge,
   type FlowEdgeKind,
+  type FlowHole,
   type FlowNode,
   type FlowNodeKind,
   type FlowPhase,

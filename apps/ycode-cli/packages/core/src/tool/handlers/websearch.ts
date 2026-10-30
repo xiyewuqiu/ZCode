@@ -13,16 +13,13 @@ import {
   createCoreError,
   runWithModelInvocationContext,
   toWebSearchProviderNativeArgs,
-  type ModelStreamEvent,
-  type ModelTextResult,
-  type ModelToolCall,
-  type ModelUsage,
   type ModelToolContract,
   type WebSearchInput,
   type WebSearchOutput,
 } from "@ycode/contracts";
 import type { ToolEntry, ToolHandler } from "../types.js";
 import { auxiliaryModelOptions } from "../../model/auxiliary-model-options.js";
+import { collectModelStreamResult } from "../../model/collect-model-stream.js";
 import { buildWebSearchOutput, formatWebSearchModelContent } from "./websearch-results.js";
 import { webSearchTraceFromContext } from "./websearch-support.js";
 
@@ -103,25 +100,23 @@ const webSearchHandler: ToolHandler<WebSearchInput, WebSearchOutput> = async (in
   // BigModel Anthropic 兼容端点的非流式 JSON 会把 provider 内部
   // web_search 结果返回为 assistant-side 裸 tool_result，AI SDK 会在 schema
   // 校验阶段抛 Invalid JSON response。走流式可复用现有 SSE compat。
-  const result = await collectWebSearchStreamResult({
-    events: runWithModelInvocationContext(
-      {
-        metadata: {
-          traceId: context.traceId,
-          sessionId: context.sessionId,
-          turnId: context.turnId,
-          toolCallId: context.toolCallId,
-          toolName: WEBSEARCH_TOOL_NAME,
-          querySource: "web_search_tool",
-        },
-        modelRequestSessionType: "other",
-        modelCall: { operation: "web_search" },
-        // statusSink 不在这里设：执行器交出的 context.model 已带默认会话事件出口。
-        traceContext: webSearchTraceFromContext(context),
+  const result = await runWithModelInvocationContext(
+    {
+      metadata: {
+        traceId: context.traceId,
+        sessionId: context.sessionId,
+        turnId: context.turnId,
+        toolCallId: context.toolCallId,
+        toolName: WEBSEARCH_TOOL_NAME,
+        querySource: "web_search_tool",
       },
-      () => model.streamText(request),
-    ),
-  });
+      modelRequestSessionType: "other",
+      modelCall: { operation: "web_search" },
+      // statusSink 不在这里设：执行器交出的 context.model 已带默认会话事件出口。
+      traceContext: webSearchTraceFromContext(context),
+    },
+    () => collectModelStreamResult(model.streamText(request)),
+  );
 
   return buildWebSearchOutput(input, result, startedAt);
 };
@@ -131,6 +126,8 @@ export const webSearchToolEntry: ToolEntry = {
   providerNative: undefined,
   metadata: {
     name: WEBSEARCH_TOOL_NAME,
+    shouldDefer: true,
+    searchHint: "search the web for current information",
     // 写死月份会导致模型可见的 WebSearch 描述过期。
     // 每次读取时重新生成，避免长驻进程跨月后继续投递旧月份。
     get description() {
@@ -174,51 +171,4 @@ function createProviderNativeWebSearchContract(input: WebSearchInput): ModelTool
     },
     outputSchema: { type: "object" },
   };
-}
-
-async function collectWebSearchStreamResult(input: {
-  events: AsyncIterable<ModelStreamEvent>;
-}): Promise<ModelTextResult> {
-  let text = "";
-  let finishReason = "unknown";
-  let providerMetadata: Record<string, unknown> | undefined;
-  let usage: ModelUsage = {};
-  const toolCalls: ModelToolCall[] = [];
-
-  for await (const event of input.events) {
-    switch (event.type) {
-      case "text_delta":
-        text += event.text;
-        break;
-      case "tool_call":
-        toolCalls.push(event.toolCall);
-        break;
-      case "finish":
-        finishReason = event.finishReason;
-        usage = event.usage;
-        providerMetadata = event.providerMetadata;
-        break;
-      case "error":
-        throw normalizeStreamError(event.error);
-    }
-  }
-
-  return {
-    finishReason,
-    providerMetadata,
-    text,
-    toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
-    usage,
-  };
-}
-
-function normalizeStreamError(error: unknown): Error {
-  if (error instanceof Error) {
-    return error;
-  }
-
-  return createCoreError(CoreErrorType.ModelError, "WebSearch stream failed", {
-    context: { error },
-    recoverable: true,
-  });
 }

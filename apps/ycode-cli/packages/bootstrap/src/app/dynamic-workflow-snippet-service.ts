@@ -43,7 +43,7 @@ import {
 } from "@ycode/dynamic-workflow";
 import { runWorkflowScript } from "@ycode/dynamic-workflow-runtime";
 import { dynamicWorkflowChildSpawn } from "./dynamic-workflow-run-launch.js";
-import { resolveWorkflowConcurrencyCeiling } from "./workflow-concurrency-ceiling.js";
+import { resolveWorkflowDefaultConcurrency } from "./workflow-default-concurrency.js";
 import { executeWorldRead, type WorldReadDeps } from "./workflow-world-read.js";
 
 /** logs 的界（契约常量在 @ycode/contracts 的 eval-workflow-snippet.ts；这里避免反向依赖工具层）。 */
@@ -71,7 +71,7 @@ export function createDynamicWorkflowSnippetService(
   const caps = (): Caps => {
     return {
       // 并发上界与 run service / 治理器同一份实现。snippet 没有 ask，不接治理器。
-      maxConcurrency: resolveWorkflowConcurrencyCeiling(deps.availableParallelism),
+      maxConcurrency: resolveWorkflowDefaultConcurrency(deps.availableParallelism),
     };
   };
 

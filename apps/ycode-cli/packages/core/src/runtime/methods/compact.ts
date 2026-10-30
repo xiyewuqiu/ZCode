@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- auto/reactive/manual 压缩入口共享策略决策与失败计数，集中便于核对事件顺序。 */
 import {
   CompactPhase,
   CompactReason,
@@ -29,7 +30,6 @@ import {
 } from "../helpers/index.js";
 import type { TurnResult, RunModelTextRequestOptions } from "../types.js";
 import type { Model } from "../deps.js";
-import type { ProviderContextUsageSnapshot } from "../types.js";
 import type { AgentRuntimeInternal } from "../internal.js";
 import { autoCompactDecisionLogContext } from "./compact-log-context.js";
 import { resolveNormalRequestMaxOutputTokens } from "./model-token-limits.js";
@@ -40,6 +40,10 @@ import type {
   ReactiveCompactLoopContext,
 } from "./turn-loop-state.js";
 import { recordTurnUsageFact } from "./usage-observability.js";
+import {
+  maybeStartSpeculativeCompaction,
+  takeReadySpeculativeCompaction,
+} from "./compact-speculative.js";
 import { findLatestCommittedAssistantUsage } from "./turn-model-step-usage.js";
 
 export async function executeManualCompact(
@@ -214,6 +218,18 @@ export async function autoCompactIfNeeded(
   });
 
   if (!decision.shouldCompact) {
+    // 硬阈值前预热摘要；失败/取消不影响当前 turn。
+    if (decision.reason === "below_threshold") {
+      maybeStartSpeculativeCompaction.call(this, {
+        model: context.model,
+        decision,
+        entries: activeEntries,
+        turnTraceContext,
+        ...(config.maxOutputTokens !== undefined
+          ? { maxOutputTokens: config.maxOutputTokens }
+          : {}),
+      });
+    }
     this.logger?.debug("Auto compact skipped", {
       ...traceContextToLogContext(turnTraceContext),
       event: "compact.auto.skipped",
@@ -228,6 +244,7 @@ export async function autoCompactIfNeeded(
   }
 
   if (context.rapidRefill.shouldBlock) {
+    this.compactionController.cancelSpeculative("rapid_refill_blocked");
     this.logger?.warn("Autocompact rapid-refill breaker tripped", {
       ...traceContextToLogContext(turnTraceContext),
       event: "compact.rapid_refill_breaker",
@@ -244,6 +261,8 @@ export async function autoCompactIfNeeded(
     return "rapid_refill_blocked";
   }
 
+  // 跳过压缩时无需构建 listing 工具合同；读取失败仍向上抛出，不计入压缩失败。
+  const agentListingTools = context.getAgentListingTools?.();
   this.logger?.info("Auto compact started", {
     ...traceContextToLogContext(turnTraceContext),
     event: "compact.auto.started",
@@ -254,6 +273,10 @@ export async function autoCompactIfNeeded(
     ...autoCompactDecisionLogContext(decision),
   });
 
+  const speculativeResult = takeReadySpeculativeCompaction.call(this, {
+    model: context.model,
+    entries: context.turnRequestState.entries,
+  });
   try {
     const compactResult = await this.compactActiveConversation(
       undefined,
@@ -271,7 +294,10 @@ export async function autoCompactIfNeeded(
         compactReason: context.compactReason,
         phase: context.phase,
         trigger: CompactTrigger.Auto,
+        agentListingTools,
         activeEntries,
+        getCurrentEntries: () => context.turnRequestState.entries,
+        ...(speculativeResult ? { speculativeResult } : {}),
         ...(context.model ? { model: context.model } : {}),
       },
     );
@@ -426,7 +452,9 @@ export async function reactiveCompactAfterContextExceeded(
         initialPromptTooLongCause: originalError,
         phase: CompactPhase.Reactive,
         trigger: CompactTrigger.Reactive,
+        agentListingTools: context.agentListingTools,
         activeEntries,
+        getCurrentEntries: () => context.turnRequestState.entries,
         model: context.model,
       },
     );

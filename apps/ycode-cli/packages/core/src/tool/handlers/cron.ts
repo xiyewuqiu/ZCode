@@ -187,6 +187,8 @@ export const cronCreateToolEntry: ToolEntry = {
   capability: "Create a scheduled automation for the current workspace",
   metadata: {
     name: "CronCreate",
+    shouldDefer: true,
+    searchHint: "schedule a recurring or one-shot prompt",
     // 二阶调度要求应在工具 contract 中直接约束模型；自然语言不能靠关键词或正则可靠判定，
     // automation 执行轮的 mutation tool denylist 才是阻止递归修改任务定义的权限边界。
     description:
@@ -251,6 +253,8 @@ export const cronListToolEntry: ToolEntry = {
   capability: "List scheduled automations for the current workspace",
   metadata: {
     name: "CronList",
+    shouldDefer: true,
+    searchHint: "list active cron jobs",
     description: "List scheduled automations in the current workspace.",
     readOnly: true,
     destructive: false,
@@ -295,6 +299,8 @@ export const cronUpdateToolEntry: ToolEntry = {
   capability: "Update a scheduled automation in the current workspace",
   metadata: {
     name: "CronUpdate",
+    shouldDefer: true,
+    searchHint: "modify a scheduled cron job",
     description:
       "Update selected definition fields of an existing scheduled automation in the current workspace while preserving its id and run history.",
     modelInstructions: [
@@ -347,6 +353,8 @@ export const cronDeleteToolEntry: ToolEntry = {
   capability: "Delete a scheduled automation from the current workspace",
   metadata: {
     name: "CronDelete",
+    shouldDefer: true,
+    searchHint: "cancel a scheduled cron job",
     description: "Delete a scheduled automation from the current workspace by automation id.",
     readOnly: false,
     destructive: true,

@@ -8,6 +8,8 @@ import {
   formatWorkflowStallNotification,
 } from "../../runtime-task/notification.js";
 import type { AgentRuntimeInternal } from "../internal.js";
+import { noteWorkflowReminderRunEvent } from "./dynamic-workflow-blocked-reminder.js";
+import { notifyHoleReached } from "./dynamic-workflow-run-hole-notification.js";
 
 /**
  * 把一条 workflow run 进度事件追加到**父会话**（run 自己没有会话）。
@@ -35,8 +37,14 @@ export async function recordDynamicWorkflowRunProgress(
     ),
     traceContext,
   );
+  // 开集变了（提问 / 作答 / 到达留白 / 补全）：这个 run 的「欠着决定」提醒重新计数。先于下面的通知，
+  // 这样会话正闲着时空闲钟先归零，再被通知唤起的那一轮停掉。
+  noteWorkflowReminderRunEvent(this, payload);
   notifyEscalationRaised.call(this, payload, traceContext);
   notifyRunStalled.call(this, payload, traceContext);
+  // 留白（dynamic-workflow-run-hole-notification.ts）：要读一次快照补齐类型 / 草稿 / 前后阶段，所以是
+  // 三条里唯一异步的一条；事件已经落库，等它只是等通知入队。
+  await notifyHoleReached.call(this, payload, traceContext);
 }
 
 /** run 级停滞的事件种类（引擎的 `RunEvent.type`）。 */

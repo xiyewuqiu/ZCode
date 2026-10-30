@@ -5,6 +5,7 @@ import {
   SessionEventType,
   activeSessionMessages,
   createMessageId,
+  findActiveCompactHistoryGeneration,
   evaluateRewindTarget,
   hydrateMessageHistoryFromSession,
   hydrateReadFileStateFromSession,
@@ -717,6 +718,10 @@ async function rebuildConversationDerivedState(
     .reverse()
     .find((message) => message.info.role === "assistant");
   this.latestConversationMessageId = getLatestActiveSessionMessageId(timelineActiveMessages);
+  // rewind 后激活链可能回到压缩前；代数必须跟随恢复后的 boundary，而不是沿用旧值。
+  this.compactionController.restoreGeneration(
+    findActiveCompactHistoryGeneration(timelineActiveMessages),
+  );
   this.latestAssistantMessageId = latestAssistant?.info.id;
   this.latestAssistantTurnId = latestAssistant?.info.anchor?.turnId as TurnId | undefined;
   this.lastAssistantCompletedAtMs =

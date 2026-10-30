@@ -42,6 +42,7 @@ import {
   type ResolvedAiSdkModel,
 } from "./runner-runtime.js";
 import { createModel, type ModelExecutionRequest } from "./model.js";
+import { resolveToolSearchCapability } from "./tool-search.js";
 
 export type { AiSdkModelRetryOptions } from "./retry-policy.js";
 export type {
@@ -140,6 +141,7 @@ export class AiSdkModelAdapter {
       providerId: options.providerId,
       modelId: options.modelId,
       providerConfig: options.providerConfig,
+      apiFormat: options.modelConfig.apiFormat ?? undefined,
       supportsJsonSchemaOutput: options.modelConfig.properties.supportsJsonSchemaOutput,
       optionSpecs: options.modelConfig.optionSpecs,
     });
@@ -158,6 +160,7 @@ export class AiSdkModelAdapter {
       const shouldAttachReasoningTelemetry = request.options.reasoningLevel !== undefined;
       const selectedReasoningLevel = request.options.reasoningLevel;
       return {
+        toolSearchEnabled: request.toolSearchEnabled,
         messages: request.messages,
         tools: request.tools,
         responseJsonSchema: request.responseJsonSchema,
@@ -209,6 +212,12 @@ export class AiSdkModelAdapter {
           });
     };
     return createModel({
+      requestCapabilities: {
+        toolSearch: resolveToolSearchCapability(
+          options.providerConfig.api.type,
+          options.providerConfig.access,
+        ),
+      },
       providerId: resolved.providerId,
       modelId: resolved.modelId,
       displayName: options.displayName,

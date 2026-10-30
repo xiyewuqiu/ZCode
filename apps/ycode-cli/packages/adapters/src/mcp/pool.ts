@@ -165,6 +165,16 @@ export function createMcpConnectionPool(options: McpConnectionPoolOptions): McpC
     const sessionId = leaseOptions.sessionId?.trim() || undefined;
     const leased = new Map<string, string>();
     const configuredServers = new Map<string, McpServerConfig>();
+    // 连接代际的订阅者登记：adapter 换代时通知宿主撤销对应的 MCP App 实例。
+    const appListeners = new Map<string, Set<{ listener: () => void; off: () => void }>>();
+    const invalidateApps = (serverName: string) => {
+      const watchers = appListeners.get(serverName);
+      appListeners.delete(serverName);
+      for (const watcher of watchers ?? []) {
+        watcher.off();
+        watcher.listener();
+      }
+    };
     let leaseClosed = false;
     let sessionStartupReported = false;
 
@@ -179,6 +189,7 @@ export function createMcpConnectionPool(options: McpConnectionPoolOptions): McpC
       const key = leased.get(serverName);
       if (!key) return;
       leased.delete(serverName);
+      invalidateApps(serverName);
       const entry = entries.get(key);
       if (!entry) return;
       if (!entry.refs.delete(leaseId)) return;
@@ -258,6 +269,7 @@ export function createMcpConnectionPool(options: McpConnectionPoolOptions): McpC
         });
       }
       if (previousKey && previousKey !== key) {
+        invalidateApps(serverName);
         const previous = entries.get(previousKey);
         if (previous) {
           if (previous.refs.delete(leaseId)) {
@@ -333,6 +345,25 @@ export function createMcpConnectionPool(options: McpConnectionPoolOptions): McpC
     };
 
     return {
+      appConnectionSnapshot(serverName) {
+        const key = leased.get(serverName);
+        return key ? (entries.get(key)?.adapter.appConnectionSnapshot?.(serverName) ?? null) : null;
+      },
+      onAppConnectionInvalidated(serverName, listener) {
+        const entry = requireEntry(serverName);
+        const watchers = appListeners.get(serverName) ?? new Set();
+        const watcher = {
+          listener,
+          off: entry.adapter.onAppConnectionInvalidated?.(serverName, listener) ?? (() => {}),
+        };
+        watchers.add(watcher);
+        appListeners.set(serverName, watchers);
+        return () => {
+          watcher.off();
+          watchers.delete(watcher);
+          if (!watchers.size) appListeners.delete(serverName);
+        };
+      },
       async callTool(
         request: McpCallToolRequest,
         callOptions?: McpCallToolOptions,

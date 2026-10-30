@@ -31,6 +31,8 @@ type CompactSummaryModelRequest = {
   preserveProviderStreamBoundaries?: boolean;
   statusSink?: ModelInvocationContext["statusSink"];
   tools?: Parameters<Model["generateText"]>[0]["tools"];
+  // 与正常 Turn 相同的 ToolSearch 暴露结果；仅在 mode=native 时为 true。
+  toolSearchEnabled?: boolean;
   traceContext: TraceContext;
   refreshRuntimeHeadersBeforeAttempt?: ModelInvocationContext["refreshRuntimeHeadersBeforeAttempt"];
 };
@@ -312,6 +314,7 @@ function cleanRequest(request: CompactSummaryModelRequest) {
   return {
     messages: request.messages,
     tools: request.tools,
+    toolSearchEnabled: request.toolSearchEnabled,
     abortSignal: request.abortSignal,
     ...(request.maxOutputTokens !== undefined
       ? { options: { maxOutputTokens: request.maxOutputTokens } }

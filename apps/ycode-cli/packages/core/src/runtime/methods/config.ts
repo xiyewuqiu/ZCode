@@ -28,6 +28,7 @@ import { cloneModelSelection } from "../model-selection.js";
 import { applyRuntimeExecutionState } from "../execution-state.js";
 
 import { orderProviderVisibleToolContracts } from "../../tool/provider-visible-order.js";
+import { resolveToolSearchMode } from "../../tool/search/exposure.js";
 import { projectToolModelContract } from "../../tool/model-contract.js";
 import { rebuildContextPrefix } from "./context-refresh.js";
 import { filterEmbeddedSearchRuntimeVisibleTools } from "./embedded-search-branch.js";
@@ -138,6 +139,12 @@ export function getTools(this: AgentRuntimeInternal, model?: Model): ModelToolCo
     this.cachedTools = filterRuntimeVisibleTools.call(this, this.registry.toContracts());
   }
   return this.cachedTools
+    .filter(
+      (tool) =>
+        (tool.name !== "ToolSearch" && tool.name !== "DeferredToolCall") ||
+        !model ||
+        resolveToolSearchMode(model, this.config.toolSearch?.mode) !== "off",
+    )
     .filter((tool) => tool.name !== "WebSearch" || shouldExposeWebSearch.call(this, model))
     .map((tool) =>
       projectToolModelContract(tool, this.registry.get(tool.name), {

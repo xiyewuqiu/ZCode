@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- run 生命周期门面容纳 submit/stop/fail/观察入口与并发 retune 委托；命令本体已移至 engine-run-caps.ts，状态接缝拆分见 engine-state.ts。 */
 /**
  * 执行引擎的确定性状态机（Boundary A 的实现 + 向下驱动 Boundary B + 向上回报 sink）。
  *
@@ -27,6 +28,16 @@ import {
 } from "./engine-artifacts.js";
 import { publishReport } from "./engine-report.js";
 import { closeImportCache, readWorld, recoverImportClosure } from "./engine-world.js";
+import { setRunConcurrency } from "./engine-run-caps.js";
+import {
+  HoleRegistry,
+  fillHole as fillHoleBody,
+  reachHole,
+  type FilledHole,
+  type FillHoleResult,
+  type HoleFill,
+  type OpenHole,
+} from "./engine-holes.js";
 import { settleCompleted, settleFailed, settleStopped } from "./engine-settlement.js";
 import type {
   ActorId,
@@ -51,6 +62,7 @@ import type {
   WorkflowReportSink,
   WorldReadOp,
 } from "./types.js";
+import { normalizePersona } from "./persona.js";
 import { refToString, WorkflowError } from "./types.js";
 import { runLaunchedEvent, type RunLaunchConfig } from "./engine-launch.js";
 
@@ -123,6 +135,14 @@ export interface EngineConfig {
    * `{op,args}` 内容 + 出现序）比对。缺席即本次不是修订续跑。
    */
   importedCache?: ImportedRunCache;
+  /**
+   * 站点 → 出生阶段名的编译期表（`collectSitePhases`，docs/execution-engine.md「Identity: sites,
+   * ordinals, phases」）。铸造实例时**词法优先**：站点在表里就戳表里的阶段，不在表里（被两处调用的
+   * helper、首个标记之前的调用、老编译产物）才退回脚本最近经过的标记。缺席等于空表。
+   */
+  sitePhases?: ReadonlyMap<string, string>;
+  /** 时钟（epoch 毫秒），只给留白的 `since` / `filledAt` 用；缺席即 `Date.now`（合同与测试注入）。 */
+  now?: () => number;
 }
 
 /** run 的最终结算（定义随结算模块的接缝迁到 engine-state.ts，这里原地再导出）。 */
@@ -137,8 +157,17 @@ export class WorkflowEngine implements WorkflowHostApi, WorkflowReportSink {
   private readonly runId: string;
   private readonly driver: WorkflowDriver;
   private readonly journal: JournalStorePort;
-  private readonly caps: Caps;
-  private readonly askSpecs: ReadonlyMap<string, AskSpec>;
+  /**
+   * 本 run 的并发上界。**可变**（见 {@link setMaxConcurrency}）：一次只改 `max_concurrency`
+   * 的修订就地作用在活着的 run 上。整份替换而不是原地改字段——已记进事件与 journal 的那几份
+   * caps 必须保持它们被记下时的样子（调用方递进来的那个对象同理不被回写）。
+   */
+  private caps: Caps;
+  /**
+   * 每 ask 站点的静态规格。**可变**（见 {@link fillHole}）：一次补全把它整份换成有效脚本的表
+   * （原表的超集）。整份替换而不是原地改，与 caps 同一条纪律。
+   */
+  private askSpecs: ReadonlyMap<string, AskSpec>;
   private readonly validate: ValidateFn;
   private readonly scheduler: AskScheduler;
 
@@ -155,6 +184,10 @@ export class WorkflowEngine implements WorkflowHostApi, WorkflowReportSink {
    * 读取——见 {@link nextOrdinal}。
    */
   private currentPhase: string | undefined;
+  /** 站点 → 词法出生阶段（见 {@link EngineConfig.sitePhases}）。可变，与 `askSpecs` 同一条路换表。 */
+  private sitePhases: ReadonlyMap<string, string>;
+  /** 留白的停驻表与本世的补全记忆（engine-holes.ts）。 */
+  private readonly holes: HoleRegistry;
   /**
    * 实例（`siteId@ordinal`）→ 它**出生时**的阶段名。写在铸造点、读在 {@link record} 的打戳漏斗：静态因果图按阶段拷贝
    * 站点，运行时实例必须带同一个坐标，否则一条车道上的实例会被那个站点的每一份阶段拷贝
@@ -210,9 +243,12 @@ export class WorkflowEngine implements WorkflowHostApi, WorkflowReportSink {
     this.runId = config.runId;
     this.driver = config.driver;
     this.journal = config.driver.journal;
-    this.caps = config.caps;
+    // 自己留一份：调用方（harness / run service）手里的那个对象不该因为一次 retune 而被改写。
+    this.caps = { maxConcurrency: config.caps.maxConcurrency };
     this.askSpecs = config.askSpecs;
     this.validate = config.validate;
+    this.sitePhases = config.sitePhases ?? new Map();
+    this.holes = new HoleRegistry(config.now ?? Date.now);
     this.importedCache = config.importedCache;
     this.importedWorld = new ImportedWorldQueue(config.importedCache?.world ?? new Map());
 
@@ -231,6 +267,11 @@ export class WorkflowEngine implements WorkflowHostApi, WorkflowReportSink {
       importedWorld: this.importedWorld,
       isRunSettled: () => this.runSettled,
       runError: () => this.runError(),
+      caps: () => this.caps,
+      setCaps: (caps) => {
+        this.caps = caps;
+      },
+      pumpAll: () => this.scheduler.pumpAll(),
       failRun: (error) => this.failRun(error),
       record: (event) => this.record(event),
       nextOrdinal: (siteId) => this.nextOrdinal(siteId),
@@ -246,13 +287,20 @@ export class WorkflowEngine implements WorkflowHostApi, WorkflowReportSink {
         this.runSettled = true;
         if (failure !== undefined) this.runFailure = failure;
       },
-      abortInFlight: (error, emitCancelled) => this.scheduler.abortInFlight(error, emitCancelled),
+      abortInFlight: (error, emitCancelled) => {
+        this.scheduler.abortInFlight(error, emitCancelled);
+        // 停在留白上的分支与在飞 ask 同一笔拒绝：结算之后没有什么可以再补全它。
+        this.holes.rejectAll(error);
+      },
       resolveSettled: (settlement) => this.settledDeferred.resolve(settlement),
     };
 
+    // caps 对调度器是**现读**：setMaxConcurrency 整份换掉 this.caps，而派发判据必须看见新值。
     const host: SchedulerHost = {
       runId: this.runId,
-      caps: this.caps,
+      get caps(): Caps {
+        return this.caps;
+      },
       driver: this.driver,
       validate: this.validate,
       nextOrdinal: (siteId) => this.nextOrdinal(siteId),
@@ -469,6 +517,33 @@ export class WorkflowEngine implements WorkflowHostApi, WorkflowReportSink {
     this.record({ type: "phase-entered", name: trimmed, ordinal });
   }
 
+  /** 脚本到达一处未补全的留白（Boundary A 的 `hole`）：方法体在 engine-holes.ts 的 reachHole。 */
+  hole(siteId: string, name: string, prompt?: string): Promise<{ code: string }> {
+    return reachHole(this.state, this.holes, siteId, name, prompt);
+  }
+
+  /**
+   * 主代理补全一处留白（docs/execution-engine.md「The engine's part」）：一个同步步骤里换掉规格表
+   * 与阶段表、写回有效脚本、记 `hole-filled`、记住代码、放行停驻的每一个分支。方法体在
+   * engine-holes.ts 的 fillHole；两条 no-op（`not_waiting` / `settled`）不写不发。
+   */
+  fillHole(fill: HoleFill): FillHoleResult {
+    return fillHoleBody(this.state, this.holes, fill, (askSpecs, sitePhases) => {
+      this.askSpecs = askSpecs;
+      this.sitePhases = sitePhases;
+    });
+  }
+
+  /** 仍在等的留白（快照投影：事件之外还要问引擎，进程死过之后没有 promise 在等）。 */
+  openHoles(): OpenHole[] {
+    return this.holes.open();
+  }
+
+  /** 本世已补全的留白。 */
+  filledHoles(): FilledHole[] {
+    return this.holes.filledList();
+  }
+
   /** 发布一条中间结果（Boundary A 的 `report`）：方法体在 engine-report.ts 的 publishReport。 */
   report(siteId: string, item: unknown, artifactId?: string): void {
     publishReport(this.state, siteId, item, artifactId);
@@ -518,6 +593,15 @@ export class WorkflowEngine implements WorkflowHostApi, WorkflowReportSink {
   fail(error: WorkflowError): void {
     this.failRun(error);
   }
+
+  /**
+   * 就地改本 run **自己**的并发上界（实现体在 engine-run-caps.ts）。返回这次是否真的改了：
+   * `false` 即 run 已结算或值没变，什么都没写、什么都没发。
+   */
+  setMaxConcurrency(maxConcurrency: number): boolean {
+    return setRunConcurrency(this.state, maxConcurrency);
+  }
+
 
   // ——————————————————————————— Boundary B（向上回报）———————————————————————————
 
@@ -614,8 +698,10 @@ export class WorkflowEngine implements WorkflowHostApi, WorkflowReportSink {
   private nextOrdinal(siteId: string): number {
     const next = (this.ordinals.get(siteId) ?? 0) + 1;
     this.ordinals.set(siteId, next);
-    if (this.currentPhase !== undefined)
-      this.instancePhases.set(refToString({ siteId, ordinal: next }), this.currentPhase);
+    // 词法优先、动态兜底：并发的两个 future 各带自己的标记时，「最近经过的标记」是谁家的全凭
+    // 时序；编译期表里的阶段才是确认图上用户看到的那个（docs/execution-engine.md）。
+    const phase = this.sitePhases.get(siteId) ?? this.currentPhase;
+    if (phase !== undefined) this.instancePhases.set(refToString({ siteId, ordinal: next }), phase);
     return next;
   }
 
@@ -664,16 +750,6 @@ export class WorkflowEngine implements WorkflowHostApi, WorkflowReportSink {
     }
     return event;
   }
-}
-
-/** persona 规范化：字符串视为 system prompt；display name 落到 persona.name。 */ function normalizePersona(
-  name: string | undefined,
-  persona: string | PersonaSpec | undefined,
-): PersonaSpec {
-  const base: PersonaSpec =
-    typeof persona === "string" ? { system: persona } : persona ? { ...persona } : {};
-  if (base.name === undefined && name !== undefined) base.name = name;
-  return base;
 }
 
 /**

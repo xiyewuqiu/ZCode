@@ -149,8 +149,12 @@ export function isArtifactPresetOp(op: string): op is ArtifactPresetOp {
  */
 const ASK_MEMBER = { container: "Agent", member: "ask" } as const;
 
-/** 顶层 facade 函数中产生站点的那些（无容器）。`log` 不产生站点，故不在此。 */
-const SITE_PRODUCING_FUNCTIONS = ["agent", "report"] as const;
+/**
+ * 顶层 facade 函数中产生站点的那些（无容器）。`log` 不产生站点，故不在此。`hole` 在此：留白
+ * 有站点 id（名字键 `hole#<hash>`）与 host 调用（docs/dynamic-workflow/authoring.md「Holes」），身份同样按
+ * **声明文件**判定——脚本自己的 `hole` 函数是别人的函数。
+ */
+const SITE_PRODUCING_FUNCTIONS = ["agent", "report", "hole"] as const;
 
 /**
  * 顶层产生站点的 facade 函数名。`sites.ts` 的裸 callee 分支按它分派，所以"哪个顶层函数
@@ -199,6 +203,28 @@ export function markerFunctionOfSymbol(symbol: ts.Symbol | undefined): MarkerFun
   const member = facadeMemberOf(symbol);
   if (member === undefined || member.container !== undefined) return undefined;
   return MARKER_FUNCTIONS.find((name) => name === member.member);
+}
+
+/**
+ * 顶层 facade 函数中**纯值构造**的那些：有 facade 身份，但不产生站点、不过 host。目前只有
+ * `model`（docs/dynamic-workflow/authoring.md「Choosing a model per subagent」）。
+ *
+ * `ModelRef` 只活在类型系统里：运行期它就是模型名字符串本身，所以 lowering 把 `model("x")`
+ * 抹成实参 `"x"`，沙箱里既没有 `__host.model`，也没有 journal 行。与 `phase` 分列的理由同
+ * {@link MARKER_FUNCTIONS}：它不产生站点，混进产生站点的清单会让 facade-misuse 的 pass 2 拒绝
+ * 每一次合法调用；它仍是 facade 函数声明，所以别名逃逸（`const m = model`）照旧被 pass 1 拒绝，
+ * lowering 因此可以放心按节点身份抹除。
+ */
+const VALUE_FUNCTIONS = ["model"] as const;
+
+/** 顶层纯值 facade 函数名。由 {@link VALUE_FUNCTIONS} 推导。 */
+type ValueFunction = (typeof VALUE_FUNCTIONS)[number];
+
+/** 某 facade symbol 解析到的纯值顶层函数（按声明判定：容器必须缺席），否则 undefined。 */
+export function valueFunctionOfSymbol(symbol: ts.Symbol | undefined): ValueFunction | undefined {
+  const member = facadeMemberOf(symbol);
+  if (member === undefined || member.container !== undefined) return undefined;
+  return VALUE_FUNCTIONS.find((name) => name === member.member);
 }
 
 /**
@@ -266,7 +292,7 @@ export function facadeContainerOf(declaration: ts.Node | undefined): string | un
  * 一个 facade symbol 的 (容器, 成员) 身份。symbol 的任一声明落在 facade `.d.ts` 内即算命中；
  * 容器由该声明向上解析（顶层 facade 函数无容器）。非 facade symbol → undefined。
  */
-function facadeMemberOf(
+export function facadeMemberOf(
   symbol: ts.Symbol | undefined,
 ): { container: string | undefined; member: string } | undefined {
   const declaration = symbol?.declarations?.find(

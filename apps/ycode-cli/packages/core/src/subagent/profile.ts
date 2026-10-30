@@ -138,17 +138,22 @@ export function formatAgentProfilesForPrompt(
 
   return [
     "Available agent types and the tools they have access to:",
-    ...active.map((profile) => {
-      const tools = isBuiltInExploreAgentProfile(profile)
-        ? formatExploreAllowedToolsForAgentDescription(options)
-        : profile.tools
-          ? filterSubagentChildToolNames(profile.tools, profile.disallowedTools)
-          : undefined;
-      const toolText = typeof tools === "string" ? tools : tools?.join(", ");
-      const suffix = toolText ? ` (Tools: ${toolText})` : "";
-      return `- ${profile.name}: ${profile.description}${suffix}`;
-    }),
+    ...active.map((profile) => formatAgentProfileForPrompt(profile, options)),
   ].join("\n");
+}
+
+/** Agent 目录（系统提醒）与兼容描述共用的一行 profile 渲染。 */
+export function formatAgentProfileForPrompt(
+  profile: Readonly<AgentProfile>,
+  options: { embeddedSearchEnabled?: boolean } = {},
+): string {
+  const tools = isBuiltInExploreAgentProfile(profile)
+    ? formatExploreAllowedToolsForAgentDescription(options)
+    : profile.tools
+      ? filterSubagentChildToolNames(profile.tools, profile.disallowedTools)
+      : undefined;
+  const toolText = typeof tools === "string" ? tools : tools?.join(", ");
+  return `- ${profile.name}: ${profile.description}${toolText ? ` (Tools: ${toolText})` : ""}`;
 }
 
 export function parseAgentProfileFromMarkdown(input: {

@@ -99,7 +99,7 @@ function toRegisteredMcpToolName(
   return toMcpToolName(descriptor);
 }
 
-function createMcpToolEntry(
+export function createMcpToolEntry(
   name: string,
   descriptor: McpToolDescriptor,
   mcpPort: McpPort,
@@ -179,6 +179,8 @@ function createMcpToolEntry(
         ...(descriptor.description ? { description: descriptor.description } : {}),
         // 只有官方 MCP 的结果才允许携带被客户端信任的结构化标识（额度耗尽 / 无套餐）。
         ...(descriptor.official ? { official: true } : {}),
+        // MCP App：归属看 serverName；非插件 server 用 serverName 顶替 pluginId 仅做展示。
+        ...(descriptor.ui ? { pluginId: descriptor.serverName, ui: descriptor.ui } : {}),
       },
       needsApproval,
       readOnly,
@@ -366,7 +368,7 @@ function hasInformativeStructuredContent(value: unknown): boolean {
   return true;
 }
 
-function formatMcpToolResult(output: unknown): ModelMessageContent {
+export function formatMcpToolResult(output: unknown): ModelMessageContent {
   if (!isMcpToolCallResult(output)) {
     return stringify(output);
   }

@@ -5,6 +5,7 @@
 import {
   AMEND_WORKFLOW_TOOL_NAME,
   CREATE_WORKFLOW_TOOL_NAME,
+  FILL_WORKFLOW_HOLE_TOOL_NAME,
   EVAL_WORKFLOW_SNIPPET_TOOL_NAME,
   GET_WORKFLOW_RUN_TOOL_NAME,
   LIST_MODELS_TOOL_NAME,
@@ -17,10 +18,10 @@ import {
   type JsonSchema,
 } from "@ycode/contracts";
 import type { ToolEntry } from "../types.js";
-import type { AgentProfile } from "../../subagent/profile.js";
 import { readToolEntry } from "./read.js";
 import { writeToolEntry } from "./write.js";
 import { editToolEntry } from "./edit.js";
+import { applyPatchToolEntry } from "./apply-patch.js";
 import { bashToolEntry, createBashToolEntry } from "./bash.js";
 import type { BashTimeoutPolicy } from "../bash-timeout-policy.js";
 import { createJsToolEntry, jsToolEntry } from "./node-repl.js";
@@ -59,6 +60,7 @@ import { taskStopToolEntry } from "./task-stop.js";
 import { readSessionContextToolEntry } from "./read-session-context.js";
 import { amendWorkflowToolEntry } from "./amend-workflow.js";
 import { createWorkflowToolEntry } from "./create-workflow.js";
+import { fillWorkflowHoleToolEntry } from "./fill-workflow-hole.js";
 import { saveWorkflowToolEntry } from "./save-workflow.js";
 import { listSavedWorkflowsToolEntry } from "./list-saved-workflows.js";
 import { listModelsToolEntry } from "./list-models.js";
@@ -66,6 +68,8 @@ import { evalWorkflowSnippetToolEntry } from "./eval-workflow-snippet.js";
 import { listWorkflowRunsToolEntry } from "./list-workflow-runs.js";
 import { getWorkflowRunToolEntry } from "./get-workflow-run.js";
 import { resumeWorkflowRunToolEntry } from "./resume-workflow-run.js";
+import { toolSearchToolEntry } from "./tool-search.js";
+import { deferredToolCallEntry } from "./deferred-tool-call.js";
 // import { workflowToolEntry } from "./workflow.js";
 import { createToolRuleNameSet } from "../tool-visibility.js";
 
@@ -76,7 +80,7 @@ export const builtInTools: ToolEntry[] = [
   readToolEntry,
   writeToolEntry,
   editToolEntry,
-  // applyPatchToolEntry,
+  applyPatchToolEntry,
   bashToolEntry,
   globToolEntry,
   grepToolEntry,
@@ -108,6 +112,7 @@ export const builtInTools: ToolEntry[] = [
   jsToolEntry,
   createWorkflowToolEntry,
   amendWorkflowToolEntry,
+  fillWorkflowHoleToolEntry,
   // 保存的定义：写侧 gate 与 CreateWorkflow 同档（alwaysAsk），读侧无 gate。
   saveWorkflowToolEntry,
   // workflow 创作的实验通道：同步、只读（v1）、完全瞬态。
@@ -130,6 +135,9 @@ export const builtInTools: ToolEntry[] = [
   // `subagent_model`。不进 WORKFLOW_CHILD_DISALLOWED_TOOLS
   // ——那条禁令的理由是 alwaysAsk 在 child 里无窗可弹，只读查询不适用。
   listModelsToolEntry,
+  // ToolSearch Local 控制入口：仅在 runtime 启用本地搜索时由请求投影保留。
+  toolSearchToolEntry,
+  deferredToolCallEntry,
   // workflowToolEntry,
 ];
 
@@ -143,6 +151,7 @@ export const builtInTools: ToolEntry[] = [
 const DYNAMIC_WORKFLOW_TOOL_NAMES: ReadonlySet<string> = new Set([
   CREATE_WORKFLOW_TOOL_NAME,
   AMEND_WORKFLOW_TOOL_NAME,
+  FILL_WORKFLOW_HOLE_TOOL_NAME,
   SAVE_WORKFLOW_TOOL_NAME,
   LIST_SAVED_WORKFLOWS_TOOL_NAME,
   LIST_MODELS_TOOL_NAME,
@@ -181,7 +190,6 @@ interface RegisterBuiltInToolsOptions {
   /** browser-use 说明和 agent.browsers 注入由官方 browser-use 插件 + 宿主 browser bridge 共同启用。 */
   includeBrowserUse?: boolean;
   embeddedSearchEnabled?: boolean;
-  agentProfiles?: readonly AgentProfile[];
   allowedTools?: readonly string[];
   disallowedTools?: readonly string[];
   silentDuplicateWarnings?: boolean;
@@ -275,15 +283,11 @@ function resolveBuiltInToolEntryForBranch(
   // options.includeDynamicWorkflow，所以首次装配与分支刷新产出的描述必然一致。
   if (entry.metadata.name === "Agent") {
     return createAgentToolEntry({
-      embeddedSearchEnabled: options.embeddedSearchEnabled,
-      profiles: options.agentProfiles,
       dynamicWorkflowEnabled: options.includeDynamicWorkflow !== false,
     });
   }
   if (entry.metadata.name === "Task") {
     return createTaskToolEntry({
-      embeddedSearchEnabled: options.embeddedSearchEnabled,
-      profiles: options.agentProfiles,
       dynamicWorkflowEnabled: options.includeDynamicWorkflow !== false,
     });
   }

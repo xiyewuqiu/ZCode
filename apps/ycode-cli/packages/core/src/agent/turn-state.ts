@@ -4,16 +4,19 @@
 
 import type {
   ModelMessageContent,
+  ModelCallWrapper,
+  ModelToolCall,
   PendingTurnInput,
   SessionId,
   ToolCallId,
   TraceId,
   TurnId,
 } from "@ycode/contracts";
-import type { ModelToolCall as ToolCall } from "@ycode/contracts";
 
-// Re-export ToolCall for consumers of this module
-export type { ModelToolCall as ToolCall } from "@ycode/contracts";
+/** 内部调用使用目标名称；marker 只用于模型投影还原 DeferredToolCall。 */
+export interface ToolCall extends ModelToolCall {
+  modelCallWrapper?: ModelCallWrapper;
+}
 
 // Note: ModelMessage is defined locally to avoid conflicts with contracts' ModelMessage
 // which uses ToolCallPayload[] instead of ModelToolCall[]

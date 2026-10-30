@@ -1,4 +1,5 @@
 import { extractDisallowedToolsArgs, parseGlobalArgs } from "./arguments.js";
+import { ToolSearchModeSchema, type ToolSearchMode } from "@ycode/contracts";
 import { createNodeLoggerFactory } from "@ycode/adapters";
 import { getRuntimeInfo, type PresentationSurface } from "@ycode/core";
 import { color, formatJson, supportsColor } from "@ycode/core";
@@ -40,6 +41,8 @@ const version = typeof __CLI_VERSION__ === "string" ? __CLI_VERSION__ : "0.0.0";
 const EMPTY_TARGET_ERROR = "--target requires non-empty text.";
 const DEFAULT_HEADLESS_PROMPT_MODE: CliPermissionMode = "yolo";
 const FORCE_MCS_SCOPE_ERROR = "--force-mcs can only be used with --prompt, --target, or tui.";
+const TOOLSEARCH_MODE_SCOPE_ERROR =
+  "--toolsearch-mode can only be used with --prompt, --target, or tui.";
 const TARGET_REPLACE_REQUIRES_TARGET_ERROR = "--target-replace requires --target.";
 const TARGET_CONFLICTS_WITH_PROMPT_ERROR =
   '--target cannot be used with --prompt. Use either --target <objective> or --prompt "/goal <objective>".';
@@ -50,6 +53,8 @@ const BROWSER_USE_SCOPE_ERROR =
 const SURFACE_SCOPE_ERROR =
   "--surface can only be used with --prompt, --target, app-server, or agent-server.";
 const MEMORY_BENCH_SCOPE_ERROR = "--memory-bench can only be used with -p/--prompt.";
+const ENABLE_WORKFLOW_SCOPE_ERROR =
+  "--enable-workflow can only be used with -p/--prompt or --target.";
 
 const pluginsCommandFlags = (
   values: ReturnType<typeof parseGlobalArgs>["values"],
@@ -98,6 +103,7 @@ const globalOptions = (
     browserExecutable,
     browserUse,
     detectedLocale,
+    ...(values["enable-workflow"] === true ? { enableWorkflow: true } : {}),
     force: values.force === true,
     json: values.json === true,
     locale,
@@ -388,6 +394,15 @@ export const run = async (ctx: RunContext, deps: RunDependencies = {}): Promise<
     outputFormat,
   );
   const forceMcs = parsed.values["force-mcs"] === true;
+  let toolsearchMode: ToolSearchMode = "off";
+  if (parsed.values["toolsearch-mode"] !== undefined) {
+    const parsedMode = ToolSearchModeSchema.safeParse(parsed.values["toolsearch-mode"]);
+    if (!parsedMode.success) {
+      ctx.stderr.write("--toolsearch-mode must be one of auto, native, local, off.\n");
+      return 1;
+    }
+    toolsearchMode = parsedMode.data;
+  }
   let targetRequest: CliTargetRequest | undefined;
   try {
     targetRequest = normalizeTargetRequest(parsed.values);
@@ -433,6 +448,15 @@ export const run = async (ctx: RunContext, deps: RunDependencies = {}): Promise<
   }
 
   if (
+    options.enableWorkflow &&
+    (parsed.positionals.length > 0 ||
+      (typeof parsed.values.prompt !== "string" && targetRequest === undefined))
+  ) {
+    ctx.stderr.write(`${ENABLE_WORKFLOW_SCOPE_ERROR}\n`);
+    return 1;
+  }
+
+  if (
     browserUse === "headless" &&
     !isForceMcsSupportedInvocation({
       positionals: parsed.positionals,
@@ -453,6 +477,18 @@ export const run = async (ctx: RunContext, deps: RunDependencies = {}): Promise<
     })
   ) {
     ctx.stderr.write(`${FORCE_MCS_SCOPE_ERROR}\n`);
+    return 1;
+  }
+
+  if (
+    parsed.values["toolsearch-mode"] !== undefined &&
+    !isForceMcsSupportedInvocation({
+      positionals: parsed.positionals,
+      prompt: parsed.values.prompt as string | undefined,
+      targetRequest,
+    })
+  ) {
+    ctx.stderr.write(`${TOOLSEARCH_MODE_SCOPE_ERROR}\n`);
     return 1;
   }
 
@@ -495,6 +531,7 @@ export const run = async (ctx: RunContext, deps: RunDependencies = {}): Promise<
       toolDisallowlist,
       forceMcs,
       presentationSurface,
+      toolsearchMode,
     );
   }
 
@@ -511,6 +548,7 @@ export const run = async (ctx: RunContext, deps: RunDependencies = {}): Promise<
       toolDisallowlist,
       forceMcs,
       presentationSurface,
+      toolsearchMode,
     );
   }
 
@@ -555,6 +593,7 @@ export const run = async (ctx: RunContext, deps: RunDependencies = {}): Promise<
         resumeRequest,
         toolDisallowlist,
         forceMcs,
+        toolsearchMode,
       );
     default:
       ctx.stderr.write(`Unknown command: ${commandName(parsed.positionals)}\n\n`);

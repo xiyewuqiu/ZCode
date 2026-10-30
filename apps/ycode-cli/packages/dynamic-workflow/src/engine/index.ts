@@ -5,6 +5,13 @@
 export { WorkflowEngine, type EngineConfig, type RunSettlement } from "./engine.js";
 export { InMemoryJournalStore } from "./journal-memory.js";
 export {
+  HOLE_PROMPT_MAX_CHARS,
+  type FilledHole,
+  type FillHoleResult,
+  type HoleFill,
+  type OpenHole,
+} from "./engine-holes.js";
+export {
   ConcurrencyController,
   CONCURRENCY_DECREASE_FACTOR,
   CONCURRENCY_FLOOR,

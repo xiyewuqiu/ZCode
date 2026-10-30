@@ -12,9 +12,13 @@
  * 单个换行开头结尾，段间拼接自然形成原有的空行分隔。
  */
 
+import { FACADE_MODEL_DECLARATIONS } from "./dts-model.js";
+import { FACADE_STREAM_SEGMENT } from "./dts-stream.js";
+import { FACADE_HOLE_SEGMENT } from "./dts-hole.js";
+
 export const FACADE_FILE_NAME = "workflow-facade.d.ts";
 
-/** actor 族：Node / AgentPersona / Agent / agent()。snippet 刻意不含。 */
+/** actor 族：Node / ModelRef / model() / AgentPersona / Agent / agent()。snippet 刻意不含。 */
 const FACADE_ACTOR_SEGMENT = String.raw`
 /**
  * A node: one task assigned to an actor, producing a typed result.
@@ -22,6 +26,7 @@ const FACADE_ACTOR_SEGMENT = String.raw`
  */
 declare interface Node<T> extends PromiseLike<T> {}
 
+${FACADE_MODEL_DECLARATIONS}
 /**
  * Persona of an actor: identity, fixed at creation (frozen for the actor's lifetime). Every
  * actor has the regular working tools (reading, searching, editing, running commands); what
@@ -30,6 +35,8 @@ declare interface Node<T> extends PromiseLike<T> {}
 declare interface AgentPersona {
   /** System prompt describing the actor's role. */
   system?: string;
+  /** Model id literal or ModelRef; omitted = the run's subagent model. */
+  model?: ModelRef | string;
 }
 
 /**
@@ -431,8 +438,10 @@ export const FACADE_DTS =
   FACADE_REPORT_SEGMENT +
   FACADE_ARTIFACT_SEGMENT +
   FACADE_PHASE_SEGMENT +
+  FACADE_HOLE_SEGMENT +
   FACADE_WORLD_SEGMENT +
-  FACADE_WORLD_RUN_SEGMENT;
+  FACADE_WORLD_RUN_SEGMENT +
+  FACADE_STREAM_SEGMENT;
 
 /**
  * snippet（EvalWorkflowSnippet）的 scratch facade：生产 facade 减去 actor 族 / report /
@@ -446,4 +455,9 @@ export const FACADE_DTS =
  * snippet 编译通过却什么都不做。
  */
 export const SNIPPET_FACADE_DTS =
-  FACADE_ARGS_SEGMENT + FACADE_LOG_SEGMENT + FACADE_WORLD_SEGMENT + FACADE_WORLD_RUN_SEGMENT;
+  FACADE_ARGS_SEGMENT +
+  FACADE_LOG_SEGMENT +
+  FACADE_WORLD_SEGMENT +
+  FACADE_WORLD_RUN_SEGMENT +
+  // channel / future 保留：流水线的纯逻辑正是片段要排练的东西（docs/dynamic-workflow/authoring.md「Streams」）。
+  FACADE_STREAM_SEGMENT;

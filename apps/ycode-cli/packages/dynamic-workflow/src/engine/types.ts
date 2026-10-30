@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- 领域类型集中导出 RunEvent/RunRecord/JournalStorePort 等跨模块契约，拆分会让导入路径与事件词表漂移。 */
 /**
  * 执行引擎的边界类型（boundary types）。
  *
@@ -60,10 +61,18 @@ export function refToString(ref: InstanceRef | ActorRef): string {
  * 子代理一律跑在父会话当前模型上、拿完整工作工具集减去会悬挂/越权的交互工具。
  * 是否注册 submit_result 由 driver 结合站点图判定（全 untyped 的 actor 不注册），
  * 不在这里表达——保持 persona 只描述身份。
+ *
+ * 2026-09-26 追记：persona 可以点名一个**具体**模型（`model`，docs/dynamic-workflow/authoring.md
+ * 「Choosing a model per subagent」）。那不是退场的档位回来了：档位要宿主给出一个它没有的映射，
+ * 而这里是脚本逐字写下的模型名，launch 时已对着宿主的模型目录解析成绑定表（run-launched 的
+ * `modelBindings`）。引擎只记这个名字、从不解读它——查表与建会话都是宿主的事（bootstrap 的
+ * workflow-actor-model.ts）。它**不是**缓存身份的一部分（imported-cache.ts 的 matchImportedActor）。
  */
 export interface PersonaSpec {
   name?: string;
   system?: string;
+  /** 脚本逐字写下的模型名（`ModelRef` 在 lowering 里已抹成它的名字）；缺席 = 跑 run 的子代理模型。 */
+  model?: string;
 }
 
 /**
@@ -108,8 +117,11 @@ export interface AskSpec {
 export type ImportCloseCause = "mutating-tool" | "world-run";
 
 /**
- * run 级别的容量上限，submit 时固定并存入 dwf_run；当前只有并发上界，
- * 取消是唯一的控制面。
+ * run 级别的容量上限，submit 时定下并存入 dwf_run。保存并发上界；取消是唯一的控制面。
+ *
+ * 值**在 run 存活期间可以变一次以上**：一次只改 `max_concurrency` 的修订作用在活着的 run 上
+ * （{@link WorkflowEngine.setMaxConcurrency}）。引擎因此整份替换自己持有的 caps 而不是原地改
+ * 字段——已记进 `run-started` / `run-caps-changed` 事件的那几份必须保持它们被记下时的样子。
  */
 export interface Caps {
   maxConcurrency: number;
@@ -375,6 +387,18 @@ export interface WorkflowHostApi {
    */
   enterPhase(name: string): void;
   /**
+   * 脚本到达一处**未补全的留白**（docs/execution-engine.md「Holes」）。Boundary A 的调用，与 ask
+   * 同姿态、少一个 driver：引擎铸序号、盖出生阶段、记 `hole-reached`、把 promise 停在站点下，
+   * 直到主代理经 {@link import("./engine.js").WorkflowEngine.fillHole} 送来有效脚本里这处留白的
+   * 体（`{code}`，lowering 的 `holeBodies[siteId]`）。**不落 journal 行**：留白不是会自己结算的
+   * 节点，补全产出的东西已经以有效脚本的身份在 run 行上了。
+   *
+   * 已补全的站点（cell 的 fill 表命中、或引擎本世已记住代码）不该再走到这里；引擎仍以记住的
+   * 代码立刻作答、不停驻、不记事件，作为防御。`prompt` 记录前被截到
+   * {@link import("./engine-holes.js").HOLE_PROMPT_MAX_CHARS}。
+   */
+  hole(siteId: string, name: string, prompt?: string): Promise<{ code: string }>;
+  /**
    * 发布一个**内容产物**（`artifact.file` / `artifact.markdown`）。效应：经 driver 把字节拷进
    * store，落一行 journal，成功兑现 {@link ArtifactRef}、失败**可 catch 地拒绝**。
    *
@@ -479,7 +503,11 @@ export type ConcurrencyChangeReason =
   | "rate_limited"
   | "provider_overloaded"
   | "recovered"
-  | "idle_reset";
+  | "idle_reset"
+  /** 在飞 run 的上界登记变小，增长上限随之压低，cap 被当场拉到新上界。 */
+  | "limit_lowered"
+  /** 用户把一个 run 的上界调高，cap 直接起跳到该上界（不是每 K 次成功爬一级）。 */
+  | "seeded";
 
 /**
  * 治理器对某 provider key 的 cap 调整，扇出给每个有该 key 在飞或等待 ask 的 run
@@ -627,8 +655,20 @@ export type RunEvent =
       parentSessionId?: string;
       phaseNames?: string[];
       subagentModel?: string;
+      /**
+       * 脚本里点名的每个模型名（逐字）→ 规范串 `providerId/modelId[$level]`
+       * （docs/dynamic-workflow/launch.md「Models the script names」）。与 `subagentModel` 同一条路：
+       * 提交方给出、建 run 那一世记一次、引擎从不读。脚本没点名任何模型时缺席。
+       */
+      modelBindings?: Record<string, string>;
       scriptPath?: string;
       phaseAlongside?: number[][];
+      /**
+       * `phaseNames` 里哪些下标是**未补全的留白**（docs/execution-engine.md「Holes」）：留白按名字
+       * 占它在阶段表里的位置，侧栏据此把那一站画成虚线。与 `phaseAlongside` 同规对齐、同车同规
+       * （提交方给出、引擎不读）；脚本没有留白时缺席。
+       */
+      holes?: number[];
     }
   /**
    * `phaseName` 记录实例出生时最近一次 `enterPhase` 指定的阶段名。
@@ -676,6 +716,7 @@ export type RunEvent =
   | ({ type: "node-waiting"; instance: InstanceRef } & AskWaitInfo)
   | { type: "node-executing"; instance: InstanceRef }
   | ({ type: "concurrency-changed" } & ConcurrencyChange)
+  | { type: "run-caps-changed"; runId: string; caps: Caps; previous: Caps }
   | {
       type: "node-settled";
       instance: InstanceRef;
@@ -709,6 +750,39 @@ export type RunEvent =
    * 回边。resume 时脚本重跑会把前缀再发一遍（没有 journal 行可去重），消费者单调归约即免疫。
    */
   | { type: "phase-entered"; name: string; ordinal: number }
+  /**
+   * 脚本到达一处未补全的留白（docs/execution-engine.md「Holes」）。`instance` 是
+   * `<留白 id>@ordinal`——序号与节点同族铸造，但**没有 journal 行**；`phaseName` 是出生阶段，
+   * 与 `node-queued` 同一张表打戳。`prompt` 已截到 4000 字符。resume 后一个仍在等的留白会被
+   * 脚本重新到达、再记一条（没有行、没有序号可撞）。
+   */
+  | {
+      type: "hole-reached";
+      instance: InstanceRef;
+      name: string;
+      prompt?: string;
+      phaseName?: string;
+    }
+  /**
+   * `fillHole`：有效脚本已写回 run 行、停驻的分支已放行。`phaseNames` 是有效脚本的阶段表
+   * （留白按名字占位），`holes` 是其中仍未补全的留白下标（与 `run-launched.holes` 同规对齐），
+   * 侧栏据此重画站点而不必等展示载荷；`filledBy` 是补全它的会话。
+   */
+  | {
+      type: "hole-filled";
+      siteId: string;
+      filledAt: number;
+      filledBy?: string;
+      phaseNames: string[];
+      holes?: number[];
+      /**
+       * 这次补全给一个原本没有草稿的 run 铸下的草稿（docs/dynamic-workflow/launch.md「The draft
+       * after a fill」）。`run-launched.scriptPath` 只在建 run 那一世写一次，冷读面若只看它，重启后
+       * 就找不到补全铸的那份——所以后铸的路径随这条事件落 journal，冷读取最后一条在场的。
+       * 原本就有草稿的补全（就地改写、路径不变）不带它。
+       */
+      scriptPath?: string;
+    }
   /**
    * 一条被发布的中间结果，每个**未被跳过**的 report 调用恰好一次（replay 命中即静默跳过，
    * 不重发）。走与其他 run 事件完全相同的路线（进度汇 → 有界会话事件 → 投影 reducer），
@@ -971,10 +1045,26 @@ export interface JournalStorePort {
   getRun(runId: string): RunRecord | undefined;
   updateRunStatus(runId: string, status: RunStatus, settlement?: RunSettlementRecord): void;
   /**
+   * 单独改写本 run 的并发上界（`dwf_run.caps_max_concurrency`）。
+   *
+   * **只碰这一列**——状态、用量与结算袋都不在这条写入的范围里，与 {@link updateRunUsage} 同族。
+   * 它是那一列的**第二个写入者**（第一个是 {@link createRun}）：一次只改 `max_concurrency` 的
+   * 修订就地作用在活着的 run 上，而 resume 沿用行里的 caps——不落库，恢复出来的就还是旧上界。
+   */
+  updateRunCaps(runId: string, caps: Caps): void;
+  /**
    * 单独持久化累计 token 用量（run 结算之外的高频小写入）。未知 runId 必须抛错；
    * 绝不触碰 status / failure——用量更新与 run 结算是两条独立的写入路径。
    */
   updateRunUsage(runId: string, spentTokens: number): void;
+  /**
+   * 一次留白补全把 run 的**有效脚本**写回 run 行（`script_text` 与 `script_hash` 两列同一笔）。
+   *
+   * 不变量：只有 `FillWorkflowHole` 的补全步骤调用它，且只在那次补全已通过编译与站点稳定性检查
+   * 之后——写下去的文本是下一次 resume 要逐字重放的那一份，写一半的脚本会让崩溃恢复重放一个
+   * 不存在的程序。与 {@link updateRunUsage} 同族：未知 runId 必须抛错，其余一切不碰。
+   */
+  updateRunScript(runId: string, scriptText: string, scriptHash: string): void;
 
   putActor(record: ActorRecord): void;
   getActor(runId: string, siteId: string, ordinal: number): ActorRecord | undefined;

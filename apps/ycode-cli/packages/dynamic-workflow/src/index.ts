@@ -1,4 +1,10 @@
 export { FACADE_DTS, FACADE_FILE_NAME, SNIPPET_FACADE_DTS } from "./facade/dts.js";
+export {
+  HOLE_SITE_ID_PATTERN,
+  holePrefixOf,
+  holeSiteId,
+  isHoleSiteId,
+} from "./analysis/hole-id.js";
 export { WORLD_READ_CAPS } from "./facade/world-read-caps.js";
 export { REPORT_CAPS } from "./facade/report-caps.js";
 // 用户面产物：上限常量、注册表词汇、编译期清单与诊断。
@@ -32,6 +38,25 @@ export {
   type WorkflowProgram,
 } from "./compiler/compile.js";
 export { analyzeWorkflowScript, type AnalyzeResult } from "./analysis/analyze.js";
+export {
+  MODEL_REFERENCE_CODE,
+  MODEL_UNRESOLVED_CODE,
+  type ModelReference,
+} from "./analysis/actor-models.js";
+export { interpret } from "./analysis/interpret.js";
+export { collectPhaseNames, collectSitePhases } from "./analysis/site-phases.js";
+// 留白（docs/dynamic-workflow/authoring.md「Holes」）：规则 9012、站点类型、补全服务的拼接与
+// 稳定性复核。
+export { collectHoleDiagnostics, HOLE_CODE, HOLE_NAME_MAX_CHARS } from "./analysis/hole-sites.js";
+export type { HoleSite } from "./analysis/sites.js";
+export {
+  checkSiteStability,
+  spliceHoleBody,
+  type SiteStability,
+  type SplicedHoleBody,
+} from "./analysis/hole-splice.js";
+export type { FlowHole } from "./analysis/flow-graph.js";
+export type { CoreHoleSite } from "./analysis/core.js";
 export { collectSites, type SiteTable } from "./analysis/sites.js";
 export {
   collectWorldRunCommands,
@@ -240,4 +265,12 @@ export {
   CONCURRENCY_INCREASE_STEP,
   type ConcurrencyControllerSnapshot,
   type ConcurrencyThrottleReason,
+} from "./engine/index.js";
+
+export {
+  HOLE_PROMPT_MAX_CHARS,
+  type FilledHole,
+  type FillHoleResult,
+  type HoleFill,
+  type OpenHole,
 } from "./engine/index.js";

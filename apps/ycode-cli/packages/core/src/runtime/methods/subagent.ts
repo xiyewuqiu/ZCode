@@ -69,7 +69,8 @@ export function createDefaultSubagentPort(
     inactivityTimeoutMs: this.config.subagents?.inactivityTimeoutMs,
     autoBackgroundMs: this.config.subagents?.autoBackgroundMs,
     outputRootDir: this.config.subagents?.outputRootDir,
-    profiles: this.config.subagents?.profiles,
+    // 派发与 Agent 目录提醒共用同一份定义快照，避免新增 profile 只出现在提醒里。
+    getAgentDefinitions: this.getAgentDefinitions,
     builtInModelSelectionOverrides: this.config.subagents?.builtInModelSelectionOverrides,
     runtimeTaskRegistry: this.runtimeTaskRegistry,
     emitParentEvent: async (event, traceContext) => {
@@ -259,6 +260,9 @@ export function createDefaultSubagentPort(
           modelStreaming: this.config.modelStreaming,
           bashTimeoutPolicy: this.config.bashTimeoutPolicy,
           midConversationSystem: this.config.midConversationSystem,
+          // 子 Agent 必须继承父 Runtime 的 ToolSearch 模式，避免父已声明延迟目录、
+          // child 却发送全量 schema；能力校验仍按 child 实际模型重算。
+          toolSearch: this.config.toolSearch,
           bashShellSelection,
           // child 只复用父 runtime 已解析的 instructions snapshot；Project Context 仍不继承。
           currentDate: this.contextSourceSnapshot?.currentDate ?? this.config.currentDate,

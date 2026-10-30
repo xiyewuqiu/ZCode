@@ -1,12 +1,12 @@
 import { createPartId, traceContextToLogContext, TurnMachineImpl } from "../deps.js";
 import type {
   MessageId,
-  ModelToolCall,
   ToolCallId,
   TraceContext,
   ToolCall,
   ToolExecutionResult,
 } from "../deps.js";
+import type { ToolSearchExecutionContext } from "@ycode/contracts";
 import {
   createStreamRecoveryAnchorId,
   emitStreamRecoveryAnchor,
@@ -26,7 +26,7 @@ import {
   projectToolNameForNonEmptyBoundary,
 } from "./tool-part-persistence.js";
 import { persistToolModelStepFinish } from "./turn-step-finish.js";
-import { completedToolPartMetadata, mcpToolPartMetadata } from "./tool-part-metadata.js";
+import { completedToolPartMetadata, mcpToolPartMetadata, toolPartCallMetadata } from "./tool-part-metadata.js";
 import { drainInlineGuideForNextRequest } from "./turn-guide-drain.js";
 import { handleToolCallAnomalyWarnings } from "./turn-tool-warnings.js";
 import { emitNestedModelUsageEvents } from "./turn-nested-model-usage.js";
@@ -37,18 +37,19 @@ import {
 } from "./turn-loop-state.js";
 import { recordToolUsageFromResult } from "./turn-tool-usage.js";
 import { recordBrowserTurnToolResult } from "../../repl/browser-turn-state.js";
-import { createRuntimeToolResultEntry } from "../../agent/message-history.js";
+import { createRuntimeToolResultEntry, type ToolCallInput } from "../../agent/message-history.js";
 import { commitTurnRequestEntries } from "./turn-output-token-continuation.js";
 export async function executeToolCallsForModelStep(
   this: AgentRuntimeInternal,
   state: RegularTurnLoopState,
   options: {
+    toolSearch?: ToolSearchExecutionContext;
     assistantCreatedAt: number;
     assistantMessageId: MessageId;
     modelTraceContext: TraceContext;
     result: RuntimeModelTextResult;
     streamedToolResults?: StreamedToolExecutionResult[];
-    toolCalls: ModelToolCall[];
+    toolCalls: ToolCallInput[];
   },
 ): Promise<"continue" | "break"> {
   const model = state.model;
@@ -62,6 +63,7 @@ export async function executeToolCallsForModelStep(
     // 让 executor 强制走 registry miss，而不是把 storage 占位值当成真实工具。
     name: tc.name,
     input: tc.input,
+    ...(tc.modelCallWrapper ? { modelCallWrapper: tc.modelCallWrapper } : {}),
   }));
   const streamedResultsById = new Map(
     (options.streamedToolResults ?? []).map((entry) => [entry.toolCallId, entry]),
@@ -94,7 +96,10 @@ export async function executeToolCallsForModelStep(
           toolCall,
           traceContext: options.modelTraceContext,
           model,
-          metadata: mcpToolPartMetadata(this.registry.getMetadata(toolCall.name)?.mcpPresentation),
+          metadata: toolPartCallMetadata(
+            this.registry.getMetadata(toolCall.name)?.mcpPresentation,
+            toolCall.modelCallWrapper,
+          ),
         });
         await emitStreamingToolLedgerUpdate(this, state.events, options.modelTraceContext, {
           assistantMessageId: options.assistantMessageId,
@@ -128,7 +133,10 @@ export async function executeToolCallsForModelStep(
       toolCall,
       traceContext: options.modelTraceContext,
       model,
-      metadata: mcpToolPartMetadata(this.registry.getMetadata(toolCall.name)?.mcpPresentation),
+      metadata: toolPartCallMetadata(
+        this.registry.getMetadata(toolCall.name)?.mcpPresentation,
+        toolCall.modelCallWrapper,
+      ),
     });
     await emitStreamingToolLedgerUpdate(this, state.events, options.modelTraceContext, {
       assistantMessageId: options.assistantMessageId,
@@ -182,6 +190,7 @@ export async function executeToolCallsForModelStep(
       traceContext: options.modelTraceContext,
       subagentModelOverride: state.subagentModelOverride,
       model: state.model,
+      toolSearch: options.toolSearch,
       onBatchStart: async (toolCallIds) => {
         // 已取消的 batch 仍由 executor 返回 cancelled results，但不能把从未进入
         // handler 的 tool parts 误标记为 running。
@@ -202,7 +211,12 @@ export async function executeToolCallsForModelStep(
               callID: toolCall.id,
               declarationIndex: persisted.declarationIndex,
               tool: projectedToolName.toolName,
-              metadata: projectedToolName.metadata,
+              metadata: {
+                ...projectedToolName.metadata,
+                ...(toolCall.modelCallWrapper
+                  ? { modelCallWrapper: toolCall.modelCallWrapper }
+                  : {}),
+              },
               state: {
                 status: "running",
                 input: persisted.input,
@@ -306,7 +320,12 @@ export async function executeToolCallsForModelStep(
           callID: result.toolCallId,
           declarationIndex: persisted.declarationIndex,
           tool: projectedResultToolName.toolName,
-          metadata: projectedResultToolName.metadata,
+          metadata: {
+            ...projectedResultToolName.metadata,
+            ...(toolCallById.get(result.toolCallId)?.modelCallWrapper
+              ? { modelCallWrapper: toolCallById.get(result.toolCallId)?.modelCallWrapper }
+              : {}),
+          },
           state: result.success
             ? {
                 status: "completed",
@@ -360,6 +379,7 @@ export async function executeToolCallsForModelStep(
         result.toolName,
         modelContentForToolResult(result),
         isError,
+        toolCallById.get(result.toolCallId)?.modelCallWrapper,
       ),
     ]);
     try {

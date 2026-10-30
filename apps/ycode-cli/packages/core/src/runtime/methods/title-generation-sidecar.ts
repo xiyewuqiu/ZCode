@@ -18,6 +18,7 @@ import { recordModelUsageFact } from "./usage-observability.js";
 import { createRuntimeModel } from "./runtime-model.js";
 import { cloneModelSelection } from "../model-selection.js";
 import { auxiliaryModelOptions } from "../../model/auxiliary-model-options.js";
+import { generateAuxiliaryModelText } from "../../model/generate-auxiliary-text.js";
 
 export const SESSION_TITLE_QUERY_SOURCE = "session_title";
 export const GOAL_SUMMARY_TITLE_QUERY_SOURCE = "goal_summary_title";
@@ -148,10 +149,23 @@ async function generateTitleCandidateImpl(
   };
 
   const resultPromise = runWithModelInvocationContext(invocationContext, () =>
-    model.generateText({
-      abortSignal: titleAbortSignal,
-      messages,
-      tools: [],
+    generateAuxiliaryModelText({
+      model,
+      onStreamingFallback: (error) => {
+        this.logger?.warn("Title generation retrying over streaming transport", {
+          ...traceContextToLogContext(modelTraceContext),
+          errorMessage: error instanceof Error ? error.message : String(error),
+          event: "title_generation.retry_streaming_transport",
+          module: "core.runtime",
+          querySource: options.querySource,
+          status: "waiting",
+        });
+      },
+      request: {
+        abortSignal: titleAbortSignal,
+        messages,
+        tools: [],
+      },
     }),
   );
   const result = await resultPromise.catch(async (error: unknown) => {

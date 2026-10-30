@@ -4,6 +4,9 @@
 
 import {
   AMEND_WORKFLOW_TOOL_NAME,
+  FILL_WORKFLOW_HOLE_TOOL_NAME,
+  isAmendWorkflowOwnedPredecessor,
+  isFillWorkflowHoleOwnedRun,
   PermissionCapabilityGroup,
   type PermissionCapabilityGroup as PermissionCapabilityGroupType,
   type PermissionRuleValue,
@@ -54,6 +57,11 @@ export interface PermissionToolCapability {
   needsApproval?: boolean;
   permissionCapabilityGroup?: PermissionCapabilityGroupType;
   permission?: ToolPermissionSpec;
+  /**
+   * 工具按本次入参给出的具体解释；只在 ask/deny 时追加到通用理由后，
+   * 不改变判定结果，也不影响未提供该字段的工具。
+   */
+  reasonDetail?: string;
 }
 
 export type PermissionBehavior = "allow" | "ask" | "deny";
@@ -383,6 +391,17 @@ export class PermissionService {
         `Tool ${context.toolName} amends a run this session started`,
       );
     }
+    // 补全免确认：FillWorkflowHole 回填的 `hole` 说这个 run 归本会话、且不是用户亲手停下的。
+    // 与 AmendWorkflow 同一条论证（归属才是钥匙，不是字段在场）。
+    if (isFillWorkflowHoleOwnedRun((context.input as Record<string, unknown> | undefined)?.hole) &&
+        context.toolName === FILL_WORKFLOW_HOLE_TOOL_NAME) {
+      return this.allow(
+        context,
+        capability,
+        "rule.session.workflowOwner",
+        `Tool ${context.toolName} fills a hole of a run this session started`,
+      );
+    }
     return this.ask(
       context,
       capability,
@@ -391,14 +410,14 @@ export class PermissionService {
     );
   }
 
-  /** AmendWorkflow 且回填的 `predecessor` 说「本会话的 run、非用户停下」。 */
+  /**
+   * AmendWorkflow 且回填的 `predecessor` 说「本会话的 run、非用户停下、且不引入新 provider」。
+   * 谓词本体住在契约里：就地调并发落回修订时读的必须是同一条规则，不能各写一遍。
+   */
   private isOwnedWorkflowAmend(context: PermissionContext): boolean {
     if (context.toolName !== AMEND_WORKFLOW_TOOL_NAME) return false;
     if (!context.input || typeof context.input !== "object") return false;
-    const predecessor = (context.input as Record<string, unknown>).predecessor;
-    if (!predecessor || typeof predecessor !== "object") return false;
-    const facts = predecessor as Record<string, unknown>;
-    return facts.owned_by_this_session === true && facts.stop_reason !== "user";
+    return isAmendWorkflowOwnedPredecessor((context.input as Record<string, unknown>).predecessor);
   }
 
   private checkPlanMode(
@@ -607,6 +626,7 @@ export class PermissionService {
         !this.isReadOnlyTool(context.toolName),
       permissionCapabilityGroup: toolCapability?.permissionCapabilityGroup,
       permissionName: toolCapability?.permission?.permission,
+      reasonDetail: toolCapability?.reasonDetail,
     };
   }
 
@@ -649,12 +669,27 @@ export class PermissionService {
       allowed: decision === "allow",
       escalated: decision === "ask",
       mode: context.mode,
-      reason,
+      reason: this.decorateReason(decision, reason, capability.reasonDetail),
       riskLevel: capability.riskLevel,
       ruleId,
       sideEffectScope: capability.sideEffectScope,
       ...(capability.alwaysAsk ? { alwaysAsk: true } : {}),
     };
+  }
+
+  /**
+   * 工具提供的具体解释只装饰 ask/deny 的理由，不参与判定，也不覆盖硬拒绝原因。
+   * allow 分支不展示理由，保持原样。
+   */
+  private decorateReason(
+    decision: PermissionBehavior,
+    reason: string | undefined,
+    reasonDetail: string | undefined,
+  ): string | undefined {
+    if (decision === "allow" || !reasonDetail) return reason;
+    if (!reason) return reasonDetail;
+    if (reason.includes(reasonDetail)) return reason;
+    return `${reason}: ${reasonDetail}`;
   }
 }
 
@@ -669,6 +704,7 @@ interface ResolvedPermissionCapability {
   needsApproval: boolean;
   permissionCapabilityGroup?: PermissionCapabilityGroupType;
   permissionName?: string;
+  reasonDetail?: string;
 }
 
 // -----------------------------------------------

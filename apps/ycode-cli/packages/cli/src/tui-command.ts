@@ -1,4 +1,5 @@
 import type { RunContext, GlobalOptions } from "@ycode/shared-types";
+import type { ToolSearchMode } from "@ycode/contracts";
 import { resolveYCodeRuntimeEnv } from "@ycode/shared";
 import { createNodeClipboardImageReader } from "./clipboard-image.js";
 import { createNodeClipboardTextWriter } from "./clipboard-text.js";
@@ -22,6 +23,7 @@ export const runTuiCommand = async (
   resumeRequest?: CliResumeRequest,
   toolDisallowlist?: readonly string[],
   forceMcs = false,
+  toolsearchMode: ToolSearchMode = "off",
 ): Promise<number> => {
   try {
     const modeState = createCliModeState(mode);
@@ -46,6 +48,7 @@ export const runTuiCommand = async (
       forceMcs,
       options.browserUse,
       options.browserExecutable,
+      toolsearchMode,
     );
     const unregisterShutdownHandlers = registerCliShutdownHandlers({
       cleanup: async () => {

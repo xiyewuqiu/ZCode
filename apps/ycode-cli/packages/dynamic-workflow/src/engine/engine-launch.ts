@@ -10,16 +10,20 @@ import type { RunEvent } from "./types.js";
 /**
  * 发起 run 那一轮随 `run-launched` 同车的宿主元数据（EngineConfig.launch）：锚点 `inputId`、
  * 脚本声明的阶段表 `phaseNames`、与之按位置对齐的 `phaseAlongside`、本 run 子代理的选型
- * `subagentModel`、脚本来自哪个文件 `scriptPath`。五者引擎都不读——字段语义见 types.ts 里
- * `run-launched` 的注释。
+ * `subagentModel`、脚本点名的模型绑定表 `modelBindings`、脚本来自哪个文件 `scriptPath`。
+ * 引擎都不读——字段语义见 types.ts 里 `run-launched` 的注释。
  */
 export interface RunLaunchConfig {
   inputId: string;
   phaseNames?: string[];
   subagentModel?: string;
+  /** 脚本点名的模型名（逐字）→ 规范串（docs/dynamic-workflow/launch.md「Models the script names」）。 */
+  modelBindings?: Record<string, string>;
   /** 本 run 脚本文件的绝对路径。 */
   scriptPath?: string;
   phaseAlongside?: number[][];
+  /** `phaseNames` 里未补全留白的下标（docs/execution-engine.md「Holes」），同车同规。 */
+  holes?: number[];
 }
 
 /**
@@ -30,7 +34,8 @@ export function runLaunchedEvent(
   launch: RunLaunchConfig,
   origin: { toolCallId?: string | undefined; parentSessionId?: string | undefined },
 ): RunEvent {
-  const { inputId, phaseNames, subagentModel, scriptPath, phaseAlongside } = launch;
+  const { inputId, phaseNames, subagentModel, modelBindings, scriptPath, phaseAlongside, holes } =
+    launch;
   return {
     type: "run-launched",
     inputId,
@@ -38,7 +43,9 @@ export function runLaunchedEvent(
     ...(origin.parentSessionId === undefined ? {} : { parentSessionId: origin.parentSessionId }),
     ...(phaseNames === undefined ? {} : { phaseNames }),
     ...(subagentModel === undefined ? {} : { subagentModel }),
+    ...(modelBindings === undefined ? {} : { modelBindings }),
     ...(scriptPath === undefined ? {} : { scriptPath }),
     ...(phaseAlongside === undefined ? {} : { phaseAlongside }),
+    ...(holes === undefined ? {} : { holes }),
   };
 }

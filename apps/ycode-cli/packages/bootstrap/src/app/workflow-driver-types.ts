@@ -33,6 +33,7 @@ import type { ActorTranscriptStore } from "./workflow-actor-transcript.js";
 import type { WorkflowConcurrencyPort } from "./workflow-concurrency-governor.js";
 import type { ActorModelActivity, WorkflowClock } from "./workflow-driver-concurrency.js";
 import type { WorkflowEscalationRegistry } from "./workflow-escalation-registry.js";
+import type { WorkflowRunSeatGate } from "./workflow-seat-gate.js";
 
 /** 一个可外部结算的 promise。 */
 export interface Deferred<T> {
@@ -153,6 +154,16 @@ export interface AgentRuntimeWorkflowDriverDeps {
    * （v1 的 `acquireSlot` 已删）。
    */
   concurrency?: WorkflowConcurrencyPort;
+  /**
+   * 本 run 的座位闸门：本 run **自己**的并发上界中途被改低时，超出的子代理在下一个 turn step
+   * 前停住。在场时 driver 做两件事——把每个 actor 的准入端口包进闸门，以及把 ask 的起止喂给它
+   * （startAsk 与引擎的 `node-settled`，见 workflow-driver.ts）。
+   *
+   * 可选：缺席即这个 run 的上界从不中途变动（如 snippet 装配），准入端口与从前逐字相同。
+   * **在场也不改变从未被改低过的 run 的行为**：上界之上的请求原地通过，闸门不发任何事件、不持
+   * 任何票。
+   */
+  seatGate?: WorkflowRunSeatGate;
   /**
    * actor 会话的转录存取面（生产是 session store 本身）。两个用途共用它，且**必须**是同一个：
    * ask 边界记账的计数，与种子截断的复制（见 workflow-actor-transcript.ts 的模块说明）。

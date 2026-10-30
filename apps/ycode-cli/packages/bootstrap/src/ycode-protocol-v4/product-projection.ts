@@ -115,6 +115,7 @@ import {
   applyConversationDeltas,
   applyConversationDeltasMutable,
   createMutableConversationSnapshotAccumulator,
+  diffWorkflowRunsState,
   reduceWorkflowRunsState,
   workspaceHookReviewRequestPayloadSchema,
 } from "@ycode/shared/ycode-protocol-v4";
@@ -3859,6 +3860,10 @@ export class ProductProjection {
             return true;
           }
           break;
+        // 非行 op：只动 workflowRuns 状态键，与 subagent 行投影的输入没有交集。
+        case "workflowRun.updated":
+        case "workflowRun.removed":
+          break;
         default: {
           const exhaustiveDelta: never = delta;
           return exhaustiveDelta;
@@ -4002,6 +4007,9 @@ export class ProductProjection {
       switch (delta.op) {
         case "row.appended":
         case "state.updated":
+        // 非行 op：改不了这一行的 prospective 形态。
+        case "workflowRun.updated":
+        case "workflowRun.removed":
           break;
         case "row.upserted":
           if (delta.row.rowId === prospective.rowId) prospective = delta.row;
@@ -4311,10 +4319,13 @@ export class ProductProjection {
     // 的编译期闸（shared 不得反向依赖 contracts，所以入参类型只能结构化定义）。
     const envelope: WorkflowRunProgressEnvelope =
       event.payload as DynamicWorkflowRunProgressPayload;
-    const workflowRuns = reduceWorkflowRunsState(this.snapshot.workflowRuns, envelope);
+    const prior = this.snapshot.workflowRuns;
+    const workflowRuns = reduceWorkflowRunsState(prior, envelope);
     // null = 语义无变化（无效事件或同一条事件重放）：不产 delta，revision 不抬。
     if (workflowRuns === null) return [];
-    return [{ op: "state.updated", patch: { workflowRuns } }];
+    // 发**差**而不是整键：一条引擎事件只动一个节点，整键重发是每事件 O(N) 字节、一条 run
+    // 全程 O(N²)。`applyAll(prior, diff(prior, next))` 与 next 逐字节一致是被 property 测试钉住的契约。
+    return diffWorkflowRunsState(prior, workflowRuns);
   }
 
   private removeQueueItems(ids: readonly string[]): ConversationDelta[] {

@@ -108,6 +108,8 @@ export const enterPlanModeToolEntry: ToolEntry = {
   requiresUserInteraction: false,
   metadata: {
     name: ENTER_PLAN_MODE_TOOL_NAME,
+    shouldDefer: true,
+    searchHint: "switch to plan mode to design an approach before coding",
     description: ENTER_PLAN_MODE_PROVIDER_DESCRIPTION,
     readOnly: false,
     destructive: false,
@@ -155,6 +157,8 @@ export const exitPlanModeToolEntry: ToolEntry = {
   requiresUserInteraction: true,
   metadata: {
     name: EXIT_PLAN_MODE_TOOL_NAME,
+    shouldDefer: true,
+    searchHint: "present plan for approval and start coding (plan mode only)",
     description: EXIT_PLAN_MODE_DESCRIPTION,
     readOnly: false,
     destructive: false,

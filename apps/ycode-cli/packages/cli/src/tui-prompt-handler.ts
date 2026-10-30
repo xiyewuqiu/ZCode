@@ -1,5 +1,5 @@
 import { getDefaultConfigPath, updateUiLocaleInFileConfig } from "@ycode/adapters/config";
-import type { SessionEvent } from "@ycode/contracts";
+import type { SessionEvent, ToolSearchMode } from "@ycode/contracts";
 import type { YCodeAppOptions } from "@ycode/bootstrap";
 import { DEFAULT_LOCALE, type SupportedLocale } from "@ycode/i18n";
 import type { TuiRequestPermission } from "@ycode/tui";
@@ -53,6 +53,7 @@ export function createTuiSubmitPrompt(
   forceMcs = false,
   browserUse?: GlobalOptions["browserUse"],
   browserExecutable?: GlobalOptions["browserExecutable"],
+  toolsearchMode: ToolSearchMode = "off",
 ): TuiPromptHandler {
   let app: Awaited<ReturnType<NonNullable<RunDependencies["createYCodeApp"]>>> | undefined;
   let activeUiLocale = uiLocale;
@@ -148,6 +149,7 @@ export function createTuiSubmitPrompt(
         runtimeConfig: {
           ...(modeState.override ? { mode: modeState.override } : {}),
           ...(toolDisallowlist ? { toolDisallowlist } : {}),
+          toolSearch: { mode: toolsearchMode },
           ...(forceMcs ? { midConversationSystem: { mode: "force" as const } } : {}),
           modelStreaming: "on",
           titleGeneration: TUI_TITLE_GENERATION_CONFIG,

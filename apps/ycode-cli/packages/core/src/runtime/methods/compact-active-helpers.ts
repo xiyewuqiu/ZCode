@@ -1,9 +1,12 @@
 import {
   COMPACT_PROMPT_TOO_LONG_USER_MESSAGE,
   CoreErrorType,
+  MAX_OUTPUT_TOKENS_FOR_SUMMARY,
   createCoreError,
   formatCompactSummary,
 } from "../deps.js";
+import type { Model } from "../deps.js";
+import { resolveNormalRequestMaxOutputTokens } from "./model-token-limits.js";
 import type {
   CompactTimelinePayload,
   SessionEvent,
@@ -80,13 +83,19 @@ export async function persistCompactTimelineEvent(
 export function buildCompactSummaryRequestMessages(
   entriesForSummary: readonly RuntimeMessageEntry[],
   compactPrompt: string,
-  options: { useMidConversationSystem?: boolean } = {},
+  options: {
+    useMidConversationSystem?: boolean;
+    // 与正常 Turn 共用 ToolSearch 成功提示投影；recordable 重渲染必须复用同一批
+    // 成功 tool call，避免提示遗漏或重复。
+    loadedToolCallIds?: ReadonlySet<string>;
+  } = {},
 ): RunModelTextRequestOptions["messages"] {
   return buildProviderRequestMessages({
     entries: [...entriesForSummary, { message: { role: "user" as const, content: compactPrompt } }],
     applyCacheControl: true,
     skipCacheWrite: true,
     useMidConversationSystem: options.useMidConversationSystem,
+    loadedToolCallIds: options.loadedToolCallIds,
   }).messages;
 }
 
@@ -118,4 +127,36 @@ export function formatCompactSummaryOrThrow(
     });
   }
   return summary;
+}
+
+/** 压缩结果必须严格小于提交时上下文；失败时不触碰历史，由调用方直接抛出。 */
+export function assertCompactionShrink(input: {
+  preservedGroups: number;
+  preCompactTokenCount: number;
+  postCompactTokenCount: number;
+}): void {
+  if (input.postCompactTokenCount < input.preCompactTokenCount) return;
+  throw createCoreError(
+    CoreErrorType.InvalidStateTransition,
+    `Compaction did not reduce context (${input.preCompactTokenCount} -> ${input.postCompactTokenCount})`,
+    {
+      context: {
+        preservedGroups: input.preservedGroups,
+        preCompactTokenCount: input.preCompactTokenCount,
+        postCompactTokenCount: input.postCompactTokenCount,
+      },
+      recoverable: true,
+    },
+  );
+}
+
+export function capCompactSummaryMaxOutputTokens(model: Model): number {
+  // Compact 是独立执行链，在这里显式选择模型上限与 summary 20K 上限中的较小值。
+  const desired = Math.min(
+    resolveNormalRequestMaxOutputTokens({
+      modelMaxOutputTokens: model.optionSpecs.maxOutputTokens.max,
+    }),
+    MAX_OUTPUT_TOKENS_FOR_SUMMARY,
+  );
+  return Math.min(desired, model.optionSpecs.maxOutputTokens.max);
 }

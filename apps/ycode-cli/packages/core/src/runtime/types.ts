@@ -1,4 +1,4 @@
-import type { RuntimeInputPresentation } from "@ycode/contracts";
+import type { RuntimeInputPresentation, ToolSearchExecutionContext, ToolSearchMode } from "@ycode/contracts";
 /* eslint-disable max-lines -- Runtime 类型集中承载 core/runtime 对外结构，拆分需要单独迁移。 */
 import { PermissionService, ToolScheduler } from "./deps.js";
 import type {
@@ -105,6 +105,7 @@ import type {
   OutputStylePromptConfig,
 } from "./deps.js";
 import type { AgentProfile } from "../subagent/profile.js";
+import type { GetAgentDefinitions } from "../subagent/definitions.js";
 import type { RuntimeTaskRegistry } from "../runtime-task/registry.js";
 import type { BashTimeoutPolicy } from "../tool/bash-timeout-policy.js";
 import type { PresentationSurface } from "../context/types.js";
@@ -115,6 +116,8 @@ import type { WorkspaceHookRuntimeAdmissionPort } from "../hooks/workspace-hook-
 // -----------------------------------------------
 
 export interface AgentRuntimeConfig {
+  /** ToolSearch 模式；缺省 off，本切片只解析 local/off。 */
+  toolSearch?: { mode?: ToolSearchMode };
   /** shared-host CUA request routing metadata; desktop is the safe default. */
   clientMode?: "desktop-continuous" | "web-remote-replayable";
   deliveryKind?: "desktop-continuous" | "web-remote-replayable";
@@ -336,6 +339,11 @@ export interface AgentRuntimeDeps {
   skillPort?: SkillPort;
   mcpPort?: McpPort;
   subagentPort?: SubagentPort;
+  /**
+   * 宿主可注入的动态 Agent 定义快照；Agent 目录提醒与派发共用同一来源。
+   * 缺席时直接读取 `config.subagents.profiles`（经 normalizeAgentProfiles 补齐内置 profile）。
+   */
+  getAgentDefinitions?: GetAgentDefinitions;
   coordinatorResponsePort?: CoordinatorResponsePort;
   /** 工作流 actor 提交终态结果的端口；存在即作为 submit_result 工具的注册门。 */
   workflowSubmitPort?: WorkflowSubmitPort;
@@ -730,6 +738,8 @@ export interface ExecuteToolsOptions {
   /** 仅透传给当前 turn 同步等待的 Agent child。 */
   subagentModelOverride?: import("@ycode/contracts").SubagentRunOptions["modelOverride"];
   model?: Model;
+  /** 本次请求的 ToolSearch 目录与发现事实；DeferredToolCall 解包依赖它。 */
+  toolSearch?: ToolSearchExecutionContext;
   onBatchStart?: (toolCallIds: string[]) => Promise<void>;
 }
 
@@ -810,6 +820,7 @@ export interface ProviderContextUsageSnapshot {
 }
 
 export interface RunModelTextRequestOptions {
+  toolSearchEnabled?: boolean;
   abortSignal?: AbortSignal;
   assistantMessageId: MessageId;
   events: SessionEvent[];

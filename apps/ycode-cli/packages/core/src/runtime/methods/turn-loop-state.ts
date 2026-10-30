@@ -39,6 +39,8 @@ export type CompactAttemptOutcome = "skipped" | "compacted" | "failed";
 export type AutoCompactOutcome = CompactAttemptOutcome | "rapid_refill_blocked";
 
 export interface AutoCompactLoopContext {
+  /** 压缩成功后重建 Agent 目录所需的当前工具面；只有真正压缩时才求值。 */
+  getAgentListingTools?: () => readonly { name: string }[];
   compactReason: CompactReason;
   modelStepIndex: number;
   phase: CompactPhase;
@@ -48,6 +50,8 @@ export interface AutoCompactLoopContext {
 }
 
 export interface ReactiveCompactLoopContext {
+  /** 压缩成功后重建 Agent 目录所需的当前工具面。 */
+  agentListingTools?: readonly { name: string }[];
   activeEntries?: readonly RuntimeMessageEntry[];
   modelStepIndex: number;
   model: Model;

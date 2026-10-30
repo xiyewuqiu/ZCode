@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- resume 需要按顺序恢复 history、read-state、generation 与 runtime 锚点，集中保持恢复顺序。 */
 import { restorePermissionGrantMarker } from "../helpers/permission-grant-resume.js";
 import { executionStateSchema, resolveExecutionState } from "@ycode/shared";
 import { SESSION_ENTRY_EXECUTION_STATE } from "@ycode/contracts";
@@ -9,6 +10,7 @@ import {
   traceContextToLogContext,
   formatGoalStateForModel,
   activeSessionMessages,
+  findActiveCompactHistoryGeneration,
   hydrateReadFileStateFromSession,
   hydrateMessageHistoryFromSession,
   MessageHistoryImpl,
@@ -181,6 +183,10 @@ export async function resumeFromStore(
     .reverse()
     .find((message) => message.info.role === "assistant");
   this.latestConversationMessageId = getLatestActiveSessionMessageId(timelineActiveMessages);
+  // 压缩代数跟随激活链上的最后一个 boundary；旧数据按 0。
+  this.compactionController.restoreGeneration(
+    findActiveCompactHistoryGeneration(timelineActiveMessages),
+  );
   this.latestAssistantMessageId = latestAssistant?.info.id;
   this.latestAssistantTurnId = latestAssistant?.info.anchor?.turnId as TurnId | undefined;
   this.lastAssistantCompletedAtMs =

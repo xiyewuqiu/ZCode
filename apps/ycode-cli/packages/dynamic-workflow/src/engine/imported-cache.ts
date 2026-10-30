@@ -10,6 +10,7 @@
  */
 
 import { canonicalJson } from "./hash.js";
+import { personaIdentity } from "./persona.js";
 import type {
   ActorRef,
   ActorSessionSeed,
@@ -160,7 +161,9 @@ export function matchImportedActor(
   if (name === undefined || name === "") return undefined;
   const candidate = cache.actors.get(name);
   if (candidate === undefined) return undefined;
-  if (canonicalJson(spec) !== canonicalJson(candidate.persona)) return undefined;
+  if (canonicalJson(personaIdentity(spec)) !== canonicalJson(personaIdentity(candidate.persona))) {
+    return undefined;
+  }
   return new ImportedActorState(candidate);
 }
 

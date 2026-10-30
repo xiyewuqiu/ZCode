@@ -14,7 +14,7 @@ import {
 import type { PrepareUserExecutionBoundary } from "./types.js";
 import { readWorkflowScriptDocument, stableHash } from "./script-workflow-meta.js";
 import { prepareScriptWorkflowRun } from "./script-workflow-prepare.js";
-import { resolveWorkflowConcurrencyCeiling } from "./workflow-concurrency-ceiling.js";
+import { resolveWorkflowDefaultConcurrency } from "./workflow-default-concurrency.js";
 import {
   runScriptWorkflowChild,
   type ScriptWorkflowChildRequest,
@@ -55,7 +55,7 @@ type ScriptWorkflowRunOptions = {
 
 export class ScriptWorkflowRuntime {
   // 与 workflow run service / 进程级治理器同一份天花板实现；legacy 工具仍只有本地 limiter，不接治理器。
-  private readonly concurrency = resolveWorkflowConcurrencyCeiling();
+  private readonly concurrency = resolveWorkflowDefaultConcurrency();
   private readonly limiter = new WorkflowLimiter(this.concurrency);
   private callIndex = 0;
 

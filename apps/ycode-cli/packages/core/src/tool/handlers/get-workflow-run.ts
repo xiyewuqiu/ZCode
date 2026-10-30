@@ -16,6 +16,7 @@
 // 刻意**不做** wait/block 语义：等待是 TaskOutput 的活，这里是即时快照。
 
 import {
+  GET_WORKFLOW_RUN_MAX_HOLES,
   GET_WORKFLOW_RUN_TOOL_NAME,
   GetWorkflowRunInputJsonSchema,
   GetWorkflowRunInputSchema,
@@ -93,6 +94,8 @@ const getWorkflowRunHandler: ToolHandler = async (input, context) => {
     // 同规「无则缺席」：跑在会话模型上的 run 没有可说的。一次省略 `subagent_model` 的
     // AmendWorkflow 沿用的就是这个字符串，所以它必须在模型面上可读。
     ...(detail.subagentModel === undefined ? {} : { subagentModel: detail.subagentModel }),
+    // 同规「无则缺席」：脚本没点名模型的 run 没有可说的。修订里同名的模型沿用的就是这些绑定。
+    ...(detail.modelBindings === undefined ? {} : { modelBindings: detail.modelBindings }),
     // 同规「无则缺席」：没有脚本文件的 run 没有可说的。端口给的是绝对路径（run 身份的一部分），
     // 模型面给工作区相对写法——它接下来要 Edit 这个文件，而那是它在别处用的那一种路径。
     ...(detail.scriptPath === undefined
@@ -154,6 +157,22 @@ const getWorkflowRunHandler: ToolHandler = async (input, context) => {
             askedAt: pending.askedAt,
           })),
         }),
+    // 留白（docs/dynamic-workflow/launch.md「The `FillWorkflowHole` tool」）：与 pendingQuestions 同规，
+    // 零条时整字段缺席；上界 32 与 display 契约的留白上界同值。
+    ...(detail.holes === undefined || detail.holes.length === 0
+      ? {}
+      : {
+          holes: detail.holes.slice(0, GET_WORKFLOW_RUN_MAX_HOLES).map((hole) => ({
+            siteId: hole.siteId,
+            ordinal: hole.ordinal,
+            name: hole.name,
+            type: hole.type,
+            state: hole.state,
+            ...(hole.since === undefined ? {} : { since: hole.since }),
+            ...(hole.filledAt === undefined ? {} : { filledAt: hole.filledAt }),
+            ...(hole.filledBy === undefined ? {} : { filledBy: hole.filledBy }),
+          })),
+        }),
     // 用户面产物。零件时整字段缺席；上界 32 与
     // `ARTIFACT_CAPS.maxArtifactsPerRun` 同值——端口本身也不会给出更多，这里只是把界写死在
     // 模型面上。`bytes` 在端口上只挂在版本项里，取最新版那一条（清单描述的就是最新版）。
@@ -192,6 +211,8 @@ export const getWorkflowRunToolEntry: ToolEntry = {
   maxModelChars: GET_WORKFLOW_RUN_PERSIST_THRESHOLD_CHARS,
   metadata: {
     name: GET_WORKFLOW_RUN_TOOL_NAME,
+    shouldDefer: true,
+    searchHint: "read details of a workflow run",
     description: GET_WORKFLOW_RUN_DESCRIPTION,
     readOnly: true,
     destructive: false,

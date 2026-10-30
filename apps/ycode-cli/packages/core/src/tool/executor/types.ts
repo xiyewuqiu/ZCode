@@ -33,6 +33,7 @@ import type {
   WorkflowEscalatePort,
   WorkflowSubmitPort,
 } from "@ycode/contracts";
+import type { ToolSearchExecutionContext } from "@ycode/contracts";
 import type { HookRunner } from "../../hooks/index.js";
 import type { PermissionService } from "../../permission/service.js";
 import type { RuntimeTaskRegistry } from "../../runtime-task/registry.js";
@@ -43,6 +44,7 @@ import type {
   ReadFileStateMap,
   ToolBatchEvent,
   BackgroundTaskControlPort,
+  ToolEntry,
   ToolExecutionResult,
   ToolRuntimeScope,
 } from "../types.js";
@@ -112,6 +114,11 @@ export interface ToolExecutorOptions {
   dynamicWorkflowSnippetPort?: DynamicWorkflowSnippetPort;
   /** 模型目录端口；缺席则 ListModels 报能力缺席，CreateWorkflow 的 subagent_model 被拒。 */
   modelCatalogPort?: ModelCatalogPort;
+  /**
+   * 工作流技能门的探针；由 runtime 依据 provider 可见历史提供。
+   * 缺席（无 skillPort 或本会话技能发现里没有 dynamic-workflows）即不设门。
+   */
+  hasLoadedSkill?: (skillName: string) => boolean;
   runtimeTaskRegistry?: RuntimeTaskRegistry;
   readFileState?: ReadFileStateMap;
   subagentBackgroundBashMaxMs?: number;
@@ -137,6 +144,16 @@ export interface ToolExecutorOptions {
 
 export interface ToolExecutor {
   execute(toolCall: ExecutableToolCall, options?: ToolExecuteOptions): Promise<ToolExecutionResult>;
+  /**
+   * 页面发起的 MCP App 工具调用授权：只跑「校验 → PreToolUse → 权限 / 审批」链，
+   * 不执行 handler。返回最终执行入参；拒绝时抛错。与模型调用共用同一套规则，
+   * 因此不能绕过 deny 规则、hook 或 permission broker。
+   */
+  authorizeAppTool(
+    toolCall: ExecutableToolCall,
+    entry: ToolEntry,
+    options?: ToolExecuteOptions,
+  ): Promise<unknown>;
   executeBatch(
     toolCalls: ExecutableToolCall[],
     options?: ToolBatchExecuteOptions,
@@ -162,6 +179,8 @@ export interface ToolExecutor {
 }
 
 export interface ToolExecuteOptions {
+  /** ToolSearch Local 决策；DeferredToolCall 在调度前按同一目录解包。 */
+  toolSearch?: ToolSearchExecutionContext;
   automationTurn?: boolean;
   signal?: AbortSignal;
   traceContext?: TraceContext;
@@ -214,6 +233,8 @@ export interface ToolExecutorDeps {
   dynamicWorkflowSnippetPort?: DynamicWorkflowSnippetPort;
   /** 模型目录端口；缺席则 ListModels 报能力缺席，CreateWorkflow 的 subagent_model 被拒。 */
   modelCatalogPort?: ModelCatalogPort;
+  /** 工作流技能门的探针；缺席即不设门（见 handlers/workflow-skill-gate.ts）。 */
+  hasLoadedSkill?: (skillName: string) => boolean;
   runtimeTaskRegistry?: RuntimeTaskRegistry;
   readFileState: ReadFileStateMap;
   subagentBackgroundBashMaxMs?: number;

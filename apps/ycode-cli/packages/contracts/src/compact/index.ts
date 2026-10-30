@@ -206,6 +206,8 @@ export const compactBoundaryPayloadSchema = z
     preCompactTokenCount: z.number().int().nonnegative(),
     postCompactTokenCount: z.number().int().nonnegative().optional(),
     truePostCompactTokenCount: z.number().int().nonnegative().optional(),
+    // 每次成功提交压缩替换后单调递增；用于 resume 恢复与 stale 结果拒绝。
+    historyGeneration: z.number().int().nonnegative().optional(),
     autoCompactThreshold: z.number().int().nonnegative().optional(),
     willRetriggerNextTurn: z.boolean().optional(),
     summarizedMessageCount: z.number().int().nonnegative(),

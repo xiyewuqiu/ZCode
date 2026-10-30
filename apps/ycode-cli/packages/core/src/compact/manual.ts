@@ -34,8 +34,11 @@ export interface TokenUsageLike {
 }
 
 export interface BuildManualCompactBoundaryInput {
+  /** Local ToolSearch：compact 前已加载的工具名，用于跨 compact 提升。 */
+  preCompactDiscoveredTools?: string[];
   autoCompactThreshold?: number;
   boundaryId: string;
+  historyGeneration?: number;
   compactReason?: CompactReason;
   customInstructions?: string;
   keptMessageCount?: number;
@@ -79,6 +82,12 @@ export function buildManualCompactBoundary(
 ): CompactBoundaryPayload {
   return {
     boundaryId: input.boundaryId,
+    ...(input.historyGeneration !== undefined
+      ? { historyGeneration: input.historyGeneration }
+      : {}),
+    ...(input.preCompactDiscoveredTools
+      ? { preCompactDiscoveredTools: input.preCompactDiscoveredTools }
+      : {}),
     trigger: input.trigger ?? CompactTrigger.Manual,
     phase: input.phase,
     compactReason: input.compactReason,
