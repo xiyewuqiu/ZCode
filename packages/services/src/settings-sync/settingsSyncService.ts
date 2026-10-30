@@ -412,7 +412,6 @@ const SUPPORTED_MCP_AGENT_SOURCES: ExternalAgentMcpPathSource[] = [
 ];
 
 const YCODE_PLUGIN_MANIFEST_PATH = [".ycode-plugin", "plugin.json"] as const;
-const LEGACY_PLUGIN_MANIFEST_PATH = [".ycode-plugin", "plugin.json"] as const;
 const CLAUDE_PLUGIN_MANIFEST_PATH = [".claude-plugin", "plugin.json"] as const;
 const CODEX_PLUGIN_MANIFEST_PATH = [".codex-plugin", "plugin.json"] as const;
 const INLINE_PLUGIN_MARKETPLACE = "inline";

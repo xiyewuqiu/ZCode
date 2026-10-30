@@ -1,5 +1,4 @@
 import {
-  ProviderConfig,
   ProviderConfigMap,
   ProviderTemplateMap,
   type ModelConfigRules,

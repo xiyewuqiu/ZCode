@@ -143,23 +143,19 @@ export function BrowserSettingsSection({
 
   const handleBrowserEnabledChange = useCallback(
     async (enabled: boolean) => {
-      try {
-        await setPluginEnabled(OFFICIAL_BROWSER_USE_PLUGIN_ID, enabled, pluginManagementService);
-        const refreshedPlugin = usePluginManagementStore
-          .getState()
-          .plugins.find((plugin) => plugin.id === OFFICIAL_BROWSER_USE_PLUGIN_ID);
-        if (refreshedPlugin?.enabled === enabled) {
-          await refreshAfterPluginChange();
-          toast(
-            intl.formatMessage({
-              id: enabled
-                ? "settings.browser.control.enabledToast"
-                : "settings.browser.control.disabledToast",
-            }),
-          );
-        }
-      } catch (error) {
-        throw error;
+      await setPluginEnabled(OFFICIAL_BROWSER_USE_PLUGIN_ID, enabled, pluginManagementService);
+      const refreshedPlugin = usePluginManagementStore
+        .getState()
+        .plugins.find((plugin) => plugin.id === OFFICIAL_BROWSER_USE_PLUGIN_ID);
+      if (refreshedPlugin?.enabled === enabled) {
+        await refreshAfterPluginChange();
+        toast(
+          intl.formatMessage({
+            id: enabled
+              ? "settings.browser.control.enabledToast"
+              : "settings.browser.control.disabledToast",
+          }),
+        );
       }
     },
     [intl, pluginManagementService, refreshAfterPluginChange, setPluginEnabled],

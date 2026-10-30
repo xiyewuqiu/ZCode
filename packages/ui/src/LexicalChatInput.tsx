@@ -849,13 +849,10 @@ function TextContentPlugin({
     }
 
     return editor.registerUpdateListener(
-      ({ dirtyElements, dirtyLeaves, editorState, prevEditorState, tags }) => {
+      ({ dirtyElements, dirtyLeaves, editorState, prevEditorState }) => {
         if (dirtyElements.size === 0 && dirtyLeaves.size === 0) {
           return;
         }
-
-        // 输入卡顿计时:包住「全量序列化 + onChange 同步重渲染」这段处理热点。
-        const startedAt = performance.now();
 
         const nextText = getEditorMarkdown(editorState);
         const previousText = getEditorMarkdown(prevEditorState);
@@ -864,9 +861,6 @@ function TextContentPlugin({
         }
 
         onChange(nextText);
-
-        const lagMs = performance.now() - startedAt;
-        // 程序化改写与 IME 组合态不算打字卡顿(判定在 recordInputLag 内统一短路)。
       },
     );
   }, [editor, onChange, taskId]);

@@ -196,6 +196,16 @@ export const resolveBuildAliases = ({
     rootDirectory,
     "../../packages/shared/src/ycodeEndpoint.ts",
   ),
+  // MCP Apps / SQLite migration 是 shared 的独立入口；未精确声明会被通用
+  // "@ycode/shared" 前缀拼成 `src/index.ts/mcp-apps` 或 `src/index.ts/sqlite-migrations`。
+  "@ycode/shared/mcp-apps": resolve(
+    rootDirectory,
+    "../../packages/shared/src/mcp-apps/index.ts",
+  ),
+  "@ycode/shared/sqlite-migrations": resolve(
+    rootDirectory,
+    "../../packages/shared/src/sqlite-migrations/index.ts",
+  ),
   "@ycode/shared/node": resolve(rootDirectory, "../../packages/shared/src/node.ts"),
   "@ycode/shared": resolve(rootDirectory, "../../packages/shared/src/index.ts"),
   "@ycode/core": resolve(cliDirectory, "../core/dist/index.js"),

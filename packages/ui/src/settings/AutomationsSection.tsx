@@ -3,7 +3,6 @@ import { AUTOMATIONS_TOAST_ANCHOR_ID } from "./automationsToastAnchor.js";
 import {
   useCallback,
   useEffect,
-  useMemo,
   useState,
   type ComponentType,
   type SVGProps,
@@ -801,7 +800,7 @@ export function AutomationsSection({
   );
 
   const handleDelete = useCallback(
-    async (automation: YCodeAutomation, source: "list" | "editor" = "list") => {
+    async (automation: YCodeAutomation, _source: "list" | "editor" = "list") => {
       const confirmed = await confirmDialog({
         presentation: "automation-confirmation",
         title: intl.formatMessage({ id: "automations.delete.title" }),

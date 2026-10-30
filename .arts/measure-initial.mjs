@@ -1,5 +1,5 @@
 // 列出首屏闭包中最大的 15 个 chunk（按字节）。
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 const assetsDir = "packages/desktop/out/renderer/assets";

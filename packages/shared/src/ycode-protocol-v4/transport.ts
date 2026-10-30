@@ -306,6 +306,9 @@ export const V4_METHODS = {
   conversationSubscribe: "v4/conversation/subscribe",
   conversationResync: "v4/conversation/resync",
   conversationUnsubscribe: "v4/conversation/unsubscribe",
+  // sessions-index 对账：只读、无状态、按明确 sessionId 查询持久事实。
+  // 不创建运行实例；snapshot 缺席不能据此推断删除。
+  sessionsIndexReconcile: "v4/sessionsIndex/reconcile",
   // 行分页 query（rows/range）：只读、无状态、超时重发安全。
   conversationRowsRange: "v4/conversation/rowsRange",
   // 当前有效分支的终态 ExitPlanMode 目录；只读、无状态、超时重发安全。
@@ -336,6 +339,10 @@ export const V4_METHODS = {
   conversationUsage: "v4/conversation/usage",
   conversationStorage: "v4/conversation/storage",
   conversationPurge: "v4/conversation/purge",
+  // 共享会话库维护：stats 只读、无状态；optimize 是显式、带确认的维护命令，
+  // 不进入普通请求租约，由 CLI resident pool 的 maintenance 闸门串行化。
+  storageDatabaseStats: "v4/storage/database/stats",
+  storageDatabaseOptimize: "v4/storage/database/optimize",
   // 附件事务：禁止 full-data RPC。每个 chunk 的 decoded bytes <=512KiB，
   // renderer->host Channel 与 host->CLI NDJSON 都必须逐 request 证明 <=1MiB。
   attachmentBegin: "v4/attachment/begin",
@@ -802,7 +809,11 @@ export const v4AttachmentBeginParamsSchema = z
       .string()
       .min(1)
       .max(255)
-      .regex(/^[^\0\r\n]+$/),
+      .refine(
+        (value) =>
+          !value.includes("\u0000") && !value.includes("\r") && !value.includes("\n"),
+        { message: "fileName must not contain NUL, CR, or LF" },
+      ),
     mime: z
       .string()
       .min(3)

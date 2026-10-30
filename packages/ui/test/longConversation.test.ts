@@ -7,7 +7,6 @@ import {
 } from "../src/v4/conversationTurnRenderUnits.js";
 import { buildConversationFindIndex } from "../src/v4/conversationFindIndex.js";
 import { toolCallRowToLegacyNode } from "../src/v4/toolCallRowAdapter.js";
-import { buildConversationTurnNavigatorItems } from "../src/v4/conversationTurnNavigatorHelpers.js";
 
 function turn(id: number, running = false): ConversationRow[] {
   const base = { turnId: `turn-${id}`, createdAt: id, createdAtSeq: id };

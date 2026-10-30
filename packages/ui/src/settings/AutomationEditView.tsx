@@ -103,7 +103,6 @@ import { resolveLocalizedAutomationCreateTitle } from "@/settings/automationEdit
 import { ModelConfigSelect } from "@/ModelConfigSelect.js";
 import { ThoughtLevelCycleControl } from "@/chat-input-toolbar/ThoughtLevelCycleControl.js";
 import { ConfigSelect } from "@/chat-input-toolbar/display.js";
-import { ChatEmptyWorkspacePreviewMenu, type ChatEmptyWorkspaceMenuTab } from "@/ChatEmptyState.js";
 import {
   AUTOMATION_DEFAULT_MODE,
   buildAutomationModelSelectGroups,
@@ -1443,17 +1442,6 @@ export function AutomationEditView({
           label: workspaceLabelFromPath(editing.workspacePath),
         }
       : null);
-  // 复用输入框空态的项目选择菜单：把表单的项目候选映射成它的 tab 结构。
-  const workspaceMenuTabs = useMemo<ChatEmptyWorkspaceMenuTab[]>(
-    () =>
-      workspaceOptions.map((option) => ({
-        workspacePath: option.workspacePath,
-        label: option.label,
-        ...(option.workspaceIdentity ? { workspaceIdentity: option.workspaceIdentity } : {}),
-        ...(option.workspacePurpose ? { workspacePurpose: option.workspacePurpose } : {}),
-      })),
-    [workspaceOptions],
-  );
   // 新建态无有效项目时保留空目标，避免模型配置读取悄悄回退到 conversation/default workspace。
   const selectedWorkspacePath = selectedWorkspace?.workspacePath ?? "";
   const selectedWorkspaceIdentity = selectedWorkspace?.workspaceIdentity;
@@ -1518,28 +1506,15 @@ export function AutomationEditView({
   const selectedWorkspaceDisplayLabel = isSelectedConversationWorkspace
     ? intl.formatMessage({ id: "chat.empty.workOutsideProject" })
     : (selectedWorkspace?.label ?? workspaceLabelFromPath(defaultWorkspacePath));
-  const conversationWorkspace = workspaceOptions.find(
-    (option) => option.workspacePurpose === "conversation",
-  );
-  const handleSelectWorkspace = (workspace: ChatEmptyWorkspaceMenuTab) => {
+  const handleSelectProject = (key: string) => {
+    if (!findAutomationWorkspaceOptionByKey(workspaceOptions, key)) return;
     modelManuallyChangedRef.current = false;
     thoughtManuallyChangedRef.current = false;
     modelSelection.current = "";
     setModel("");
-    // 远程工作区可以共享同一实际路径；旧回调只传 path 再 find，永远命中第一个
-    // 候选。选择事件必须携带 identity，确保模型预览、保存和派发使用用户点击的 workspaceKey。
-    setWorkspaceKey(resolveAutomationWorkspaceSelectionKey(workspace));
-  };
-  const handleSelectConversationWorkspace = () => {
-    if (!conversationWorkspace) return;
-    modelManuallyChangedRef.current = false;
-    thoughtManuallyChangedRef.current = false;
-    modelSelection.current = "";
-    setModel("");
-    // conversation backing workspace 曾被降格成名为 default 的普通项目，
-    // 导致菜单泄露内部目录名和 Folder 图标。这里按 purpose 选择 canonical backing，
-    // 展示则交给会话侧固定的「不在项目中工作」菜单项。
-    setWorkspaceKey(resolveAutomationWorkspaceSelectionKey(conversationWorkspace));
+    // 选项 value 已是完整 workspaceKey（含 identity），不能再只传 path 反查，
+    // 否则同路径的远端工作区会命中第一个候选。
+    setWorkspaceKey(key);
   };
   const modelTriggerLabel = resolveAutomationModelTriggerLabel({
     modelGroups: modelSelectGroups,
@@ -1796,15 +1771,11 @@ export function AutomationEditView({
           : null;
       // 只禁用按钮无法覆盖快捷键或异步回调；提交边界也必须拒绝无有效项目的新建。
       if (!target) return false;
-      try {
-        const ok = await onSubmit({ input, ...target });
-        if (ok) {
-          if (options?.returnToList !== false) onBack();
-        }
-        return ok;
-      } catch (error) {
-        throw error;
+      const ok = await onSubmit({ input, ...target });
+      if (ok) {
+        if (options?.returnToList !== false) onBack();
       }
+      return ok;
     },
     [
       buildSubmitInput,
@@ -2580,29 +2551,28 @@ export function AutomationEditView({
                         )}
                         <span className="max-w-40 truncate">{selectedWorkspaceDisplayLabel}</span>
                       </Button>
-                    ) : workspaceMenuTabs.length > 0 ? (
-                      // Automations 工具条与会话 composer 控件统一使用 rounded-lg，普通会话 chip 不变。
-                      <ChatEmptyWorkspacePreviewMenu
-                        workspacePath={selectedWorkspacePath}
-                        workspaceTabs={workspaceMenuTabs}
-                        // 定时任务允许选择 canonical conversation backing，但不提供 chip 上的快捷 X；
-                        // 菜单展示统一复用会话侧「不在项目中工作」文案和 MessageCircle 图标。
-                        allowConversationWorkspaceSelection={Boolean(conversationWorkspace)}
-                        allowConversationWorkspaceDetach={false}
-                        onSelectWorkspace={handleSelectWorkspace}
-                        onSelectConversationWorkspace={handleSelectConversationWorkspace}
-                        allowOpenWorkspace={false}
-                        allowRemoteWorkspace={false}
-                        onOpenFolder={() => {}}
-                        onConnectRemote={async () => ""}
-                        onSelectRemoteProject={async () => {}}
-                        onCancelRemoteProject={async (_sessionId) => {}}
-                        containerClassName="contents"
-                        triggerClassName={cn(
-                          AUTOMATION_INSTRUCTIONS_TOOLBAR_TRIGGER_CLASSNAME,
-                          "min-w-0 gap-1 px-2",
-                        )}
-                      />
+                    ) : workspaceOptions.length > 0 ? (
+                      <Select value={workspaceKey ?? ""} onValueChange={handleSelectProject}>
+                        <SelectTrigger
+                          data-testid="automation-project-select"
+                          variant="ghost"
+                          className={AUTOMATION_INSTRUCTIONS_TOOLBAR_TRIGGER_CLASSNAME}
+                        >
+                          <FolderOpen className="size-4" aria-hidden="true" />
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {workspaceOptions.map((option) => (
+                            <SelectItem
+                              key={resolveAutomationWorkspaceSelectionKey(option)}
+                              value={resolveAutomationWorkspaceSelectionKey(option)}
+                              data-project-name={option.label}
+                            >
+                              {option.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     ) : (
                       <Button
                         type="button"

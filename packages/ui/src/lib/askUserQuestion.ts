@@ -23,11 +23,6 @@ interface AskUserQuestionData {
   answers?: YCodeUserQuestionAnswers;
 }
 
-interface AskUserQuestionAnswerDraft {
-  selectedOptionIds: string[];
-  customInput: string;
-}
-
 const CUSTOM_INPUT_FLAGS = [
   "requiresInput",
   "customInput",
