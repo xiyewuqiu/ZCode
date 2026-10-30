@@ -485,6 +485,33 @@ function stageRemoteOfficialPlugins(glmDir) {
   }
 }
 
+/**
+ * 随 CLI 内置的技能包：远端 ycode.cjs 位于 glm/，bootstrap 只沿入口旁
+ * `packages/bundled-skills` 找，因此原样 stage 一份。缺它不会 brick 工作流编辑
+ * （技能门在技能不可发现时自动失效），但模型会失去 dynamic-workflows 写作指南。
+ */
+function stageRemoteBundledSkills(glmDir) {
+  const requiredPaths = [
+    "skills/dynamic-workflows/SKILL.md",
+    "skills/dynamic-workflows/patterns.md",
+    "skills/dynamic-workflows/examples.md",
+  ];
+  const sourceRoot = join(rootDir, "apps/ycode-cli/packages/bundled-skills");
+  for (const relativePath of requiredPaths) {
+    const sourcePath = join(sourceRoot, ...relativePath.split("/"));
+    if (!existsSync(sourcePath)) {
+      throw new Error(`[prepare-prebuilds] missing bundled skill asset: ${sourcePath}`);
+    }
+  }
+  const targetRoot = join(glmDir, "packages", "bundled-skills");
+  mkdirSync(targetRoot, { recursive: true });
+  cpSync(join(sourceRoot, "skills"), join(targetRoot, "skills"), {
+    recursive: true,
+    filter: (sourcePath) => basename(sourcePath) !== ".DS_Store",
+  });
+  console.log("  [ok] mock-cdn glm bundled skills");
+}
+
 // 远端 agent 现在跑编译出来的 ycode.cjs（而不是各平台独立的原生二进制）：
 // 远端部署时已经有一份独立 node（跑 ycode-server.cjs），agent 复用它执行 ycode.cjs 即可，
 // 不必再为每个平台准备一份内嵌 node 的 SEA 二进制。ycode.cjs 跨平台同一份，逐平台只是放进各自的
@@ -512,6 +539,7 @@ function stageRemoteAgentBundles() {
     mkdirSync(glmDir, { recursive: true });
     copyFileSync(cliBundlePath, join(glmDir, "ycode.cjs"));
     stageRemoteOfficialPlugins(glmDir);
+    stageRemoteBundledSkills(glmDir);
     console.log(`  [ok] mock-cdn glm/${platformKey}/ycode.cjs`);
   }
 }

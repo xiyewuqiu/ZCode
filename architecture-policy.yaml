@@ -31,6 +31,16 @@ modules:
     layers: { domain: domain, app: app, adapters: adapters }
     layerOrder: [domain, app, adapters]
     owner: desktop-settings
+  - id: task-facts
+    roots: [packages/services/src/task-facts]
+    managed: true
+    requires: [shared]
+    publicEntrypoints:
+      - packages/services/src/task-facts/index.ts
+      - packages/services/src/task-facts/contract.ts
+      - packages/services/src/task-facts/repairSubagentTaskIndex.ts
+    layers: { app: . }
+    owner: conversation
   - id: client
     roots: [packages/client/src]
     managed: false
