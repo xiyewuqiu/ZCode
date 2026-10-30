@@ -31,41 +31,57 @@ import {
   ServiceCollection,
   IFileService,
   IClientConfigService,
+  ICredentialService,
   IMediaPreviewService,
   IModelSelectionService,
   ISettingService,
+  IBroadcastService,
   IWindowControllerService,
   IYCodeAgentService,
   IYCodeTaskService,
   IYCodeSessionService,
   ICuaPipSessionService,
+  ISourceServerManagementService,
+  IProjectService,
+  IRemoteProjectService,
+  ISourceServerWorkspaceService,
+  IPromptAttachmentTransferService,
+  type RemoteProjectHost,
   createYCodeAgentConnectionScope,
+  type IServiceAccessor,
   type YCodeAgentV4ClientMode,
 } from "@ycode/services";
 
 import {
+  bindRemoteProjectIdentities,
   createLocalServices,
+  createRemoteProjectConnectionAdmission,
   disposeServiceResources,
   disposeServiceResourcesAndWait,
   AutomationRepo,
   createServiceLogger,
-  buildTaskChangeSummary,
   createHostApiNetworkTransport,
   createSettingServiceWithMigrations,
+  prepareRemoteServerConnection,
+  remoteProjectHostIdForProfile,
+  remoteProjectHostIdForTarget,
   type HostApiNetworkTransport,
 } from "@ycode/services/node";
 import { createHostResourceUsageResponder } from "./hostResourceUsage.js";
 import {
   HostMessageTypes,
   HostResponseTypes,
-  YCODE_VERSION,
   formatLogPrefix,
   formatYCodeHostProcessName,
   formatZodError,
   buildRemoteWorkspaceIdentity,
-  buildRemoteEnvironmentKey,
+  buildServerRemoteWorkspaceIdentity,
   isRemoteWorkspaceIdentity,
+  normalizeRemoteConnectionError,
+  parseRemoteWorkspaceIdentity,
+  remoteHostIdFromWorkspaceIdentity,
   resolveWorkspaceKey,
+  sanitizeRemoteConnectionLog,
   formatModelPickerValue,
   type YCodePromptAttachment,
   type YCodeStreamEvent,
@@ -78,6 +94,10 @@ import {
   type YCodeAutomationRun,
   type YCodeAutomationRunOutcome,
   type ModelSelection,
+  type ConnectionProfile,
+  type RemoteTarget,
+  type ServerRemoteInfo,
+  type SourceServerArtifactPolicy,
 } from "@ycode/shared";
 import {
   parseHostIncomingMessageEvent,
@@ -86,15 +106,7 @@ import {
 // remote backend 相关模块延迟加载：ssh2 的 CJS 依赖链（asn1 等）在 asar 打包后路径断裂，
 // 静态 import 会导致 local 模式的 host process 也崩溃。
 // 改为动态 import，仅 remote 模式时才加载。
-import type {
-  ConnectOptions,
-  DeployLockMode,
-  IRemoteBackend,
-  RemoteRuntimeNetworkOptions,
-  RemoteAssetNetworkPort,
-  RemoteConnection,
-} from "@ycode/server/remote";
-import type { RemoteTarget } from "@ycode/shared";
+import type { ConnectOptions, IRemoteBackend } from "@ycode/server/remote";
 import { wrapElectronPort } from "./electronPort.js";
 import { createTaskRealtimeBridgeForHostInit } from "./taskRealtimeBridge.js";
 import { resolveRpcLogLevel } from "./rpcLogLevel.js";
@@ -104,8 +116,12 @@ import {
   type RemoteMediaPreviewProxy,
 } from "./remoteMediaPreviewProxy.js";
 import { createHostRemoteWorkspaceProxyState } from "./hostRemoteWorkspaceProxyState.js";
-import { createRemoteWorkspaceServiceCollection } from "./remoteWorkspaceServiceCollection.js";
+import { createServerRemoteWorkspaceServiceCollection } from "./remoteWorkspaceServiceCollection.js";
+import { connectServerRemote } from "./serverRemoteConnection.js";
+import { connectSourceServerTarget } from "./connectSourceServerTarget.js";
 import { createRemotePromptAttachmentTransferService } from "./promptAttachmentTransferService.js";
+import { createSourceServerRecoveryCloseEvent } from "./sourceServerRecoveryPolicy.js";
+import { prepareRemoteWorkspaceIdentity } from "./remoteWorkspacePreparation.js";
 import { shouldReportHostConsoleError, stringifyHostLogArg } from "./hostLog.js";
 import { flushHostE2ECoverage } from "./e2eCoverage.js";
 import { runHostShutdownPhases, type HostShutdownResult } from "./hostShutdownPhases.js";
@@ -117,11 +133,6 @@ import {
   settleCronRunTerminalOutcome,
   settleManualDispatchFailureBestEffort,
 } from "./cronRunLifecycle.js";
-import {
-  createRemotePromptAttachmentSessionService,
-  createRemotePromptAttachmentTaskService,
-  materializeRemotePromptAttachments,
-} from "./remotePromptAttachments.js";
 import { createWindowHostAttachmentRegistry } from "./windowHostAttachmentRegistry.js";
 import {
   createWindowRemoteConnectionRegistry,
@@ -129,17 +140,47 @@ import {
   type WindowRemoteConnectionHandle,
 } from "./windowRemoteConnectionRegistry.js";
 import { createWindowHostControllerRuntime } from "./windowHostControllerService.js";
+import {
+  createSourceServerHostRuntime,
+  type SourceServerHostRuntime,
+} from "./sourceServerHostRuntime.js";
+import {
+  SourceServerInstallRequiredError,
+  SourceServerUpgradeRequiredError,
+} from "./sourceServerConnectionManager.js";
 import { resolveAutomationSubmissionModelSelection } from "./automationModelSelection.js";
 import { createRemoteConnectionProgressContext } from "@ycode/server/remote/remoteConnectionProgressContext.js";
-type RemoteBackendHostConnection = RemoteConnection & {
-  backend: IRemoteBackend;
+/**
+ * 窗口物理连接：直连 `kind=server` 与受管 SSH/WSL/Docker Source 都只暴露
+ * `serverInfo + RPC accessor`；受管 Source 的物理 owner 在 Manager，本 wrapper 只持有 lease。
+ */
+type WindowPhysicalConnection = {
+  serverInfo: ServerRemoteInfo;
+  services: IServiceAccessor;
+  dispose(): void | Promise<void>;
+  disposeAndWait?(options?: { timeoutMs?: number }): Promise<void>;
 };
-type HostRemoteConnection = RemoteBackendHostConnection;
 interface HostRemoteConnectionCapabilities {
+  /** 物理 Source 设备身份；Registry 用它建立稳定 workspace owner。 */
+  sourceServerId?: string;
   browserRecordingUploader?: Pick<IRemoteBackend, "upload">;
   remoteMediaPreviewFactory?: (
     scope: Extract<WindowHostAttachmentScope, { kind: "remote" }>,
   ) => RemoteMediaPreviewProxy;
+  /** 跨机附件暂存在 owning window Host attachment 内复用当前 transport，不读本地路径。 */
+  promptAttachmentTransferFactory?: (
+    scope: Extract<WindowHostAttachmentScope, { kind: "remote" }>,
+  ) => IPromptAttachmentTransferService;
+  /** Source 身份解析属于目标 Environment；窗口 Host 打开项目前必须先解析 canonical key。 */
+  bindWorkspaceIdentity?: (input: {
+    workspacePath: string;
+    stableWorkspaceIdentity: string;
+    legacyRouteHint?: string;
+    signal?: AbortSignal;
+  }) => Promise<void>;
+  /** 受管 Source 的 Profile 与物理连接由 Manager 持有，registry 不能按 logical session 回收。 */
+  persistentSourceConnection?: boolean;
+  profileId?: string;
 }
 
 let activeRemoteMediaRequests = 0;
@@ -1163,6 +1204,8 @@ function formatRemoteTargetForLog(target: RemoteTarget): string {
     }
     case "docker":
       return `docker:${target.container}`;
+    case "server":
+      return `server:${target.serverId?.trim() || target.url}`;
   }
 }
 
@@ -1194,6 +1237,11 @@ let databaseStartup: ReturnType<typeof createHostDatabaseStartup> | undefined;
 const pendingStartupAttachments = new Map<string, () => void>();
 let activeServices: ServiceCollection | null = null;
 let activeHostApiNetworkTransport: HostApiNetworkTransport | null = null;
+/**
+ * 每个 Window Host 唯一的 Source Server 运行时。物理连接 owner 只在这里；
+ * logical workspace / remoteSessionId 由未来的项目 UI attachment 引用，本切片不创建。
+ */
+let sourceServerHostRuntime: SourceServerHostRuntime | null = null;
 // 资源管理器采样只在 main 请求时执行一次，Host 不维护任何周期定时器。
 const hostResourceUsageResponder = createHostResourceUsageResponder({
   getAgentService: () => activeServices?.getOptional(IYCodeAgentService),
@@ -1211,37 +1259,36 @@ function requireActiveHostApiNetworkTransport(): HostApiNetworkTransport {
   return activeHostApiNetworkTransport;
 }
 
-async function resolveDesktopRemoteRuntimeNetwork(
-  target: RemoteTarget,
-): Promise<RemoteRuntimeNetworkOptions | undefined> {
-  if (target.kind !== "wsl") {
-    return undefined;
+async function disposeHostRemoteConnection(connection: WindowPhysicalConnection): Promise<void> {
+  if (connection.disposeAndWait) {
+    await connection.disposeAndWait({ timeoutMs: 5_000 });
+    return;
   }
-  const settingService = activeServices?.getOptional(ISettingService);
-  if (!settingService) {
-    return undefined;
-  }
-  try {
-    const settings = await settingService.get();
-    return {
-      authoritative: true,
-      httpProxy: settings.httpProxy,
-      noProxy: settings.httpProxyNoProxy,
-    };
-  } catch {
-    // 设置读取失败时保留原有远程连接行为，不让网络增强把 WSL 工作区直接阻断。
-    return undefined;
-  }
+  await connection.dispose();
 }
 
-async function disposeHostRemoteConnection(connection: HostRemoteConnection): Promise<void> {
-  await connection.disposeAndWait({ timeoutMs: 5_000 });
+function requireSourceServerRuntime(): SourceServerHostRuntime {
+  if (!sourceServerHostRuntime) {
+    throw new Error("Source Server runtime is not initialized");
+  }
+  return sourceServerHostRuntime;
+}
+
+/** Source 发布/项目广播只触发订阅者重新读取，不携带项目数据。 */
+function notifyProjectChange(): void {
+  void activeServices
+    ?.get(IBroadcastService)
+    .send({ channel: "state:projects", payload: {} })
+    .catch((error) => logger.warn("failed to notify project change", error));
 }
 
 async function createWindowRemoteConnectionHandle(params: {
   target: RemoteTarget;
+  membershipIntent?: "add" | "retain";
+  existingSourceServerId?: string;
   remoteAssets: RemoteAssetDirs;
   signal: AbortSignal;
+  confirmSourceServerInstall?: boolean;
 }): Promise<WindowRemoteConnectionHandle<ServiceCollection, HostRemoteConnectionCapabilities>> {
   if (!activeServices) throw new Error("Local Host services are not initialized.");
   const clientConfigService = activeServices.get(IClientConfigService);
@@ -1249,95 +1296,253 @@ async function createWindowRemoteConnectionHandle(params: {
     throw new Error("远程连接已取消");
   }
   const closeListeners = new Set<(event: WindowRemoteConnectionCloseEvent) => void>();
+  const reconnectListeners = new Set<() => void>();
   const notifyClose = (event: WindowRemoteConnectionCloseEvent) => {
     for (const listener of closeListeners) {
       listener(event);
     }
   };
-  const connection = await setupRemoteConnection(
-    params.target,
-    params.remoteAssets,
-    { fetch: requireActiveHostApiNetworkTransport().fetch },
-    await resolveDesktopRemoteRuntimeNetwork(params.target),
-    (exitCode) => notifyClose({ exitCode, signal: null }),
-    params.target.kind === "ssh" ? "caller-serialized" : "remote",
-    params.target.kind === "ssh" ? params.signal : undefined,
-  );
+  let connection: WindowPhysicalConnection;
+  let managedProfile: ConnectionProfile | undefined;
+  let reusedConnectionTarget: RemoteTarget | undefined;
+  let managerStateSubscription: { dispose(): void } | undefined;
+  let managerConnectionInvalidatedSubscription: { dispose(): void } | undefined;
+  let managerReconnectSubscription: { dispose(): void } | undefined;
+  let services: ServiceCollection;
+  let lastNotifiedRecoveryAttempt = 0;
+  let disposed = false;
+
+  if (params.target.kind === "server") {
+    // 直连 URL Source：成员 admission / commit 与 SSH/WSL/Docker 共用同一投影，
+    // 但物理连接不经过 SourceServerConnectionManager。
+    if (params.existingSourceServerId) throw new Error("project.host-offline");
+    const admission = await prepareRemoteServerConnection({
+      service: activeServices.get(IRemoteProjectService),
+      credentials: activeServices.get(ICredentialService),
+      target: params.target,
+      intent: params.membershipIntent ?? "add",
+    });
+    params.signal.throwIfAborted();
+    const serverConnection = await connectServerRemote(admission.target, {
+      signal: params.signal,
+      fetchImpl: requireActiveHostApiNetworkTransport().fetch,
+      commitMembership: admission.commit,
+      onClose: ({ code, reason }) => {
+        notifyClose({ exitCode: code, signal: null, ...(reason ? { error: reason } : {}) });
+      },
+    });
+    connection = {
+      serverInfo: serverConnection.serverInfo,
+      services: serverConnection.services,
+      dispose: () => serverConnection.dispose(),
+    };
+  } else {
+    const runtime = requireSourceServerRuntime();
+    const manager = runtime.manager;
+    const directory = runtime.directory;
+    const existingProfile = params.existingSourceServerId
+      ? (await directory.snapshot()).profiles.find(
+          (item) => item.sourceServerId === params.existingSourceServerId,
+        )
+      : undefined;
+    const existingConnection = params.existingSourceServerId
+      ? manager.getOnlineConnection(params.existingSourceServerId)
+      : undefined;
+    if (params.existingSourceServerId && (!existingProfile || !existingConnection)) {
+      throw new Error("project.host-offline");
+    }
+    const { profile, connection: managed } =
+      existingProfile && existingConnection
+        ? { profile: existingProfile, connection: existingConnection }
+        : await connectSourceServerTarget(directory, manager, {
+            ...(params.membershipIntent ? { membershipIntent: params.membershipIntent } : {}),
+            target: params.target,
+            // 窗口连接沿用既有部署语义：远端尚未安装 Source 时允许本次连接安装；
+            // 设置页的显式安装确认仍走 connectProfile / confirmIdentityChange。
+            allowInstall: params.confirmSourceServerInstall ?? true,
+            context: {
+              signal: params.signal,
+              onLog: (event) => {
+                const progress =
+                  event.progress == null
+                    ? ""
+                    : ` ${(Math.max(0, Math.min(1, event.progress)) * 100).toFixed(1)}%`;
+                const message =
+                  event.progress == null || event.message.startsWith("upload progress:")
+                    ? `[source-server:${event.phase}] ${event.message}`
+                    : `[source-server:${event.phase}] upload progress (${event.message}):${progress}`;
+                remoteConnectionProgressContext.report(event.level ?? "info", [message]);
+              },
+            },
+          });
+    managedProfile = profile;
+    reusedConnectionTarget = managed.reusedConnectionTarget;
+    managerStateSubscription = manager.onDidChangeState((state) => {
+      if (state.profileId !== profile.profileId) return;
+      if (state.state === "online") {
+        lastNotifiedRecoveryAttempt = 0;
+        return;
+      }
+      const closeEvent = createSourceServerRecoveryCloseEvent(state);
+      if (!closeEvent) return;
+      if (state.state === "retrying" && state.recoveryAttempt === lastNotifiedRecoveryAttempt) {
+        return;
+      }
+      if (state.state === "retrying") {
+        lastNotifiedRecoveryAttempt = state.recoveryAttempt ?? lastNotifiedRecoveryAttempt;
+      }
+      notifyClose(closeEvent);
+    });
+    connection = {
+      serverInfo: managed.serverInfo,
+      services: managed.services,
+      dispose() {
+        // Bug 原因：Window registry handle 是 logical/attachment lease，不是 Source connection owner。
+        // 旧 entry 取消或迟到恢复时若断开 Manager，会拆掉新 entry 正在共享的 Source。
+        // 真实物理连接由 SourceServerConnectionManager 在显式断开或 Host shutdown 回收。
+      },
+    };
+    managerConnectionInvalidatedSubscription = manager.onDidInvalidateConnection((event) => {
+      if (event.sourceServerId !== managed.sourceServerId || disposed) return;
+      // 物理连接被更新或 Profile 被删除时，logical workspace 不能继续以 online 持有失效 services。
+      // 更新允许自动恢复；删除当前 Profile 属于用户显式断开，必须发布 terminal close。
+      notifyClose({
+        exitCode: null,
+        signal: null,
+        recoverable: event.reason === "update",
+      });
+    });
+    managerReconnectSubscription = manager.onDidReconnect((reconnected) => {
+      if (reconnected.sourceServerId !== managed.sourceServerId || disposed) return;
+      connection = {
+        serverInfo: reconnected.serverInfo,
+        services: reconnected.services,
+        dispose() {
+          // 同上：只释放当前 wrapper 的订阅，不跨 lease 关闭共享 Source。
+        },
+      };
+      services = createServerRemoteWorkspaceServiceCollection({
+        clientConfigService,
+        connectionServices: reconnected.services,
+        virtualProjects: reconnected.serverInfo.capabilities.virtualProjects === true,
+        targetKind: params.target.kind,
+        ...(activeServices && params.target.kind !== "server"
+          ? { sourceServices: activeServices }
+          : {}),
+      });
+      lastNotifiedRecoveryAttempt = 0;
+      for (const listener of reconnectListeners) listener();
+    });
+  }
 
   if (params.signal.aborted) {
     await disposeHostRemoteConnection(connection);
     throw new Error("远程连接已取消");
   }
 
-  const backendConnection = connection;
-  const materializePromptAttachments = async (request: {
-    taskId: string;
-    traceId: TraceId | string;
-    content: string;
-    attachments?: YCodePromptAttachment[];
-  }) => {
-    const result = await materializeRemotePromptAttachments(request, {
-      backend: backendConnection.backend,
-    });
-    return { content: result.content, attachments: result.attachments };
-  };
-  const promptAttachmentTransferService = createRemotePromptAttachmentTransferService(
-    backendConnection.backend,
-    {
-      onJanitorError: (error: unknown) =>
-        logger.warn("remote prompt attachment janitor failed", error),
-    },
-  );
-  const services = createRemoteWorkspaceServiceCollection({
+  services = createServerRemoteWorkspaceServiceCollection({
     clientConfigService,
-    connectionServices: backendConnection.services,
-    sourceServices: activeServices ?? undefined,
-    parentPort,
-    createRemotePromptAttachmentSessionService: (service) =>
-      createRemotePromptAttachmentSessionService(service, {
-        materializePromptAttachments,
-      }),
-    createRemotePromptAttachmentTaskService: (service) =>
-      createRemotePromptAttachmentTaskService(service, {
-        materializePromptAttachments,
-      }),
-    createReportingRemoteYCodeTaskService: (service) =>
-      createReportingRemoteYCodeTaskService(service, {
-        taskRealtimePort: activeSessionRealtimePort ?? undefined,
-      }),
-    promptAttachmentTransferService,
-    runtimePreferencesBridge: {
-      onError: (error: unknown) => logger.warn("remote runtime preferences bridge failed", error),
-    },
+    connectionServices: connection.services,
+    virtualProjects: connection.serverInfo.capabilities.virtualProjects === true,
+    targetKind: params.target.kind,
+    ...(activeServices && params.target.kind !== "server"
+      ? { sourceServices: activeServices }
+      : {}),
   });
 
-  let disposed = false;
-  const remoteMediaPreviewFactory = !remoteMediaRangePreviewEnabled
-    ? undefined
-    : (scope: Extract<WindowHostAttachmentScope, { kind: "remote" }>) =>
-        createRemoteMediaPreviewProxy({
-          fileService: services.get(IFileService),
-          logger: {
-            debug: (message, metadata) => {
-              if (process.env.NODE_ENV !== "production") logger.info(message, metadata);
-            },
-            warn: (message, metadata) => logger.warn(message, metadata),
-          },
-          scope,
-          requestLimiter: hostRemoteMediaRequestLimiter,
-        });
-  return {
-    services,
-    capabilities:
-      "backend" in connection
+  const buildCapabilities = (): HostRemoteConnectionCapabilities => {
+    const serverId = connection.serverInfo.serverId;
+    // 受管 Source 的附件暂存必须复用 Manager 当前 transport；直连 server 直接走远端 RPC。
+    // 这里只登记能力，真正解析 file transfer 必须发生在 attachment/录制使用时：
+    // Registry 会频繁读取 capabilities（sourceServerId / keep-alive），离线恢复期间
+    // getFileTransfer 会拒绝，不能让它把 bookkeeping 变成连接失败。
+    const managedSource = managedProfile !== undefined && sourceServerHostRuntime !== null;
+    const resolveFileTransfer = () =>
+      requireSourceServerRuntime().manager.getFileTransfer(connection.serverInfo.serverId);
+    const browserRecordingUploader: Pick<IRemoteBackend, "upload"> | undefined = managedSource
+      ? {
+          upload: (localPath, remotePath, options) =>
+            resolveFileTransfer().upload(localPath, remotePath, options),
+        }
+      : undefined;
+    const remoteMediaPreviewFactory =
+      params.target.kind === "server" || !remoteMediaRangePreviewEnabled
+        ? undefined
+        : (scope: Extract<WindowHostAttachmentScope, { kind: "remote" }>) =>
+            createRemoteMediaPreviewProxy({
+              fileService: services.get(IFileService),
+              logger: {
+                debug: (message, metadata) => {
+                  if (process.env.NODE_ENV !== "production") logger.info(message, metadata);
+                },
+                warn: (message, metadata) => logger.warn(message, metadata),
+              },
+              scope,
+              requestLimiter: hostRemoteMediaRequestLimiter,
+            });
+    return {
+      sourceServerId: serverId,
+      ...(browserRecordingUploader ? { browserRecordingUploader } : {}),
+      ...(remoteMediaPreviewFactory ? { remoteMediaPreviewFactory } : {}),
+      persistentSourceConnection: true,
+      ...(managedProfile ? { profileId: managedProfile.profileId } : {}),
+      ...(managedSource
         ? {
-            browserRecordingUploader: connection.backend,
-            ...(remoteMediaPreviewFactory ? { remoteMediaPreviewFactory } : {}),
+            promptAttachmentTransferFactory: () =>
+              createRemotePromptAttachmentTransferService(resolveFileTransfer(), {
+                onJanitorError: (error: unknown) =>
+                  logger.warn("remote prompt attachment janitor failed", error),
+              }),
           }
-        : {},
+        : {}),
+      bindWorkspaceIdentity: async (input) => {
+        input.signal?.throwIfAborted();
+        const workspaceService = connection.services.sourceServerWorkspaceService;
+        if (!workspaceService) {
+          throw new Error("Source Server workspace identity service is unavailable");
+        }
+        const currentRouteHint = buildRemoteWorkspaceIdentity(input.workspacePath, params.target);
+        const runtime = sourceServerHostRuntime;
+        const profile = managedProfile;
+        if (runtime && profile) {
+          const legacyRouteHint = await runtime.directory.resolveLegacyWorkspaceIdentity({
+            profileId: profile.profileId,
+            workspacePath: input.workspacePath,
+            fallback: input.legacyRouteHint ?? currentRouteHint,
+          });
+          input.signal?.throwIfAborted();
+          await workspaceService.resolveWorkspace({
+            workspacePath: input.workspacePath,
+            legacyRouteHint,
+          });
+          return;
+        }
+        // 直连 server：身份由远端 Server 解析，不存在本地 Profile 历史。
+        await workspaceService.resolveWorkspace({
+          workspacePath: input.workspacePath,
+        });
+      },
+    };
+  };
+
+  return {
+    ...(reusedConnectionTarget ? { reusedConnectionTarget } : {}),
+    get services() {
+      return services;
+    },
+    get sourceServerId() {
+      return connection.serverInfo.serverId;
+    },
+    get capabilities() {
+      return buildCapabilities();
+    },
     onDidClose(listener) {
       closeListeners.add(listener);
       return { dispose: () => closeListeners.delete(listener) };
+    },
+    onDidReconnect(listener) {
+      reconnectListeners.add(listener);
+      return { dispose: () => reconnectListeners.delete(listener) };
     },
     async dispose() {
       if (disposed) {
@@ -1345,7 +1550,10 @@ async function createWindowRemoteConnectionHandle(params: {
       }
       disposed = true;
       closeListeners.clear();
-      await disposeServiceResourcesAndWait(services);
+      reconnectListeners.clear();
+      managerStateSubscription?.dispose();
+      managerConnectionInvalidatedSubscription?.dispose();
+      managerReconnectSubscription?.dispose();
       await disposeHostRemoteConnection(connection);
     },
   };
@@ -1357,6 +1565,18 @@ const windowRemoteConnectionRegistry = createWindowRemoteConnectionRegistry<
 >({
   connect: (request) => createWindowRemoteConnectionHandle(request),
   createId: randomUUID,
+  onConnectionChanged: notifyProjectChange,
+  resolveSourceServerId: (handle) => handle.capabilities?.sourceServerId,
+  // 受管 Source 的物理连接由 Manager 持有，logical session 清空只释放 lease；
+  // 直连 server 同样保持 window-scoped 在线连接，供项目导航复用。
+  shouldKeepConnectionAlive: (handle) => handle.capabilities?.persistentSourceConnection === true,
+  prepareWorkspaceIdentity: async (handle, input) => {
+    await prepareRemoteWorkspaceIdentity(
+      handle.services.get(IFileService),
+      input,
+      handle.capabilities?.bindWorkspaceIdentity,
+    );
+  },
   releaseWorkspace: async (services, context) => {
     await services.get(IYCodeTaskService).releaseWorkspacePreparation({
       workspacePath: context.workspacePath,
@@ -1381,6 +1601,7 @@ const windowRemoteConnectionRegistry = createWindowRemoteConnectionRegistry<
     if (session?.workspacePath && session.workspaceIdentity) {
       windowHostControllerRuntime.disconnectSource({
         kind: "remote",
+        ...(session.sourceServerId ? { sourceServerId: session.sourceServerId } : {}),
         remoteSessionId: event.remoteSessionId,
         workspacePath: session.workspacePath,
         workspaceIdentity: session.workspaceIdentity,
@@ -1392,9 +1613,88 @@ const windowRemoteConnectionRegistry = createWindowRemoteConnectionRegistry<
       reason: "connection-closed",
       exitCode: event.exitCode,
       signal: event.signal,
+      ...(event.recoverable !== undefined ? { recoverable: event.recoverable } : {}),
       ...(event.error ? { error: event.error } : {}),
+      ...(event.recoveryAttempt ? { recoveryAttempt: event.recoveryAttempt } : {}),
+      ...(event.recoveryLimit ? { recoveryLimit: event.recoveryLimit } : {}),
+      ...(event.recoveryBudgetExhausted !== undefined
+        ? { recoveryBudgetExhausted: event.recoveryBudgetExhausted }
+        : {}),
+      ...(event.reasonCode ? { reasonCode: event.reasonCode } : {}),
+      ...(event.retryable !== undefined ? { retryable: event.retryable } : {}),
     });
     logWindowHostTopology("remote-connection-closed");
+  },
+  onSessionReconnected: async ({
+    previous,
+    current,
+    services: currentServices,
+    isCurrent,
+    commit,
+  }) => {
+    if (!isCurrent()) {
+      throw new Error("Source 重连换代已失去 Registry owner");
+    }
+    if (
+      !previous.workspacePath ||
+      !previous.workspaceIdentity ||
+      !current.workspacePath ||
+      !current.workspaceIdentity
+    ) {
+      throw new Error("Source 重连换代缺少 workspace scope");
+    }
+    const previousScope = {
+      kind: "remote" as const,
+      ...(previous.sourceServerId ? { sourceServerId: previous.sourceServerId } : {}),
+      remoteSessionId: previous.remoteSessionId,
+      workspacePath: previous.workspacePath,
+      workspaceIdentity: previous.workspaceIdentity,
+    };
+    const currentScope = {
+      kind: "remote" as const,
+      ...(current.sourceServerId ? { sourceServerId: current.sourceServerId } : {}),
+      remoteSessionId: current.remoteSessionId,
+      workspacePath: current.workspacePath,
+      workspaceIdentity: current.workspaceIdentity,
+    };
+    // Source transport 已恢复：先尝试原子替换离线投影，再让 Registry 提交新 generation。
+    // 投影读取失败不能回滚已经恢复的物理连接；Controller 会保留 pending replacement，
+    // 后续 query 成功后原子替换（与手动重连路径一致）。
+    try {
+      await windowHostControllerRuntime.replaceDisconnectedSource(previousScope, {
+        scope: currentScope,
+        taskService: currentServices.get(IYCodeTaskService),
+        agentService: currentServices.getOptional(IYCodeAgentService),
+        sourceAvailability: "online",
+      });
+    } catch (error) {
+      logger.warn("failed to atomically replace disconnected Controller source", error);
+    }
+    if (!commit()) {
+      throw new Error("Source 重连换代在 Controller 提交后失去 Registry owner");
+    }
+    try {
+      parentPort?.postMessage({
+        type: HostResponseTypes.RemoteWorkspaceReconnected,
+        previousRemoteSessionId: previous.remoteSessionId,
+        descriptor: {
+          ...(current.sourceServerId ? { sourceServerId: current.sourceServerId } : {}),
+          remoteSessionId: current.remoteSessionId,
+          target: current.target,
+          workspacePath: current.workspacePath,
+          workspaceIdentity: current.workspaceIdentity,
+          generation: current.generation,
+        },
+      });
+    } catch (error) {
+      // Controller 已提交新 generation 后不能再让 Registry 回滚；parentPort 失效意味着
+      // Window Host 与 Main 的进程通道正在终止，交给既有 Host shutdown 回收全部 owner。
+      logger.error("failed to publish committed remote workspace replacement", error);
+    }
+    logWindowHostTopology("remote-connection-reconnected");
+  },
+  onSessionReconnectError: (error) => {
+    logger.warn("failed to replace Source Server logical sessions after reconnect", error);
   },
 });
 
@@ -1411,6 +1711,7 @@ const windowHostControllerRuntime = createWindowHostControllerRuntime({
     if (remoteSession?.workspacePath && remoteSession.workspaceIdentity) {
       const controllerScope = {
         kind: "remote" as const,
+        ...(remoteSession.sourceServerId ? { sourceServerId: remoteSession.sourceServerId } : {}),
         remoteSessionId: remoteSession.remoteSessionId,
         workspacePath: remoteSession.workspacePath,
         workspaceIdentity: remoteSession.workspaceIdentity,
@@ -1529,6 +1830,27 @@ function createControllerRoutedTaskService(
             confirmPermanent: params.confirmPermanent,
           });
       }
+      if (property === "getTaskDatabaseStats") {
+        return async (params: Parameters<IYCodeTaskService["getTaskDatabaseStats"]>[0]) =>
+          windowHostControllerRuntime.service.getTaskDatabaseStats({
+            address: await windowHostControllerRuntime.resolveTaskAddress({
+              ...params,
+              attachmentScope,
+              allowMissingTask: true,
+            }),
+          });
+      }
+      if (property === "optimizeTaskDatabase") {
+        return async (params: Parameters<IYCodeTaskService["optimizeTaskDatabase"]>[0]) =>
+          windowHostControllerRuntime.service.optimizeTaskDatabase({
+            address: await windowHostControllerRuntime.resolveTaskAddress({
+              ...params,
+              attachmentScope,
+              allowMissingTask: true,
+            }),
+            confirm: params.confirm,
+          });
+      }
       if (property === "deleteArchivedTasks") {
         return async (params: Parameters<IYCodeTaskService["deleteArchivedTasks"]>[0]) => {
           if (params.taskIds.length === 0) {
@@ -1615,6 +1937,14 @@ function exposeServicesOnMessagePort(
       : undefined;
   if (remoteMediaPreviewProxy) {
     overrides.set(IMediaPreviewService.channelName, remoteMediaPreviewProxy.service);
+  }
+  // 跨机附件暂存必须复用 owning Window Host 的当前 transport；远端 Source 无法读取 Desktop localPath。
+  const remotePromptAttachmentTransfer =
+    attachmentScope.kind === "remote"
+      ? capabilities?.promptAttachmentTransferFactory?.(attachmentScope)
+      : undefined;
+  if (remotePromptAttachmentTransfer) {
+    overrides.set(IPromptAttachmentTransferService.channelName, remotePromptAttachmentTransfer);
   }
   const taskService = services.getOptional(IYCodeTaskService);
   if (taskService) {
@@ -1746,6 +2076,14 @@ async function disposeHostResources(reason: string): Promise<HostShutdownResult>
           run: () => windowRemoteConnectionRegistry.dispose(),
           timeoutMs: 6_000,
         },
+        {
+          name: "source-server-runtime-dispose",
+          run: async () => {
+            sourceServerHostRuntime?.dispose();
+            sourceServerHostRuntime = null;
+          },
+          timeoutMs: 2_000,
+        },
         ...(servicesToDispose
           ? [
               {
@@ -1788,6 +2126,8 @@ function disposeHostResourcesBestEffort(reason: string): void {
   logger.info(`disposing host resources, reason=${reason}`);
   disposeAttachedServicePorts();
   windowHostControllerRuntime.dispose();
+  sourceServerHostRuntime?.dispose();
+  sourceServerHostRuntime = null;
   for (const key of Array.from(cronRunSubscriptions.keys())) {
     disposeCronRunSubscription(key);
   }
@@ -2049,6 +2389,10 @@ parentPort.on("message", async (e: Electron.MessageEvent) => {
           remoteAssets: msg.remoteAssets,
           workspacePath,
           workspaceIdentity,
+          ...(msg.workspacePurpose ? { workspacePurpose: msg.workspacePurpose } : {}),
+          ...(msg.confirmSourceServerInstall !== undefined
+            ? { confirmSourceServerInstall: msg.confirmSourceServerInstall }
+            : {}),
         }),
       )
       .then(async (descriptor) => {
@@ -2065,12 +2409,14 @@ parentPort.on("message", async (e: Electron.MessageEvent) => {
           if (replaced.workspacePath && replaced.workspaceIdentity) {
             const previousScope = {
               kind: "remote",
+              ...(replaced.sourceServerId ? { sourceServerId: replaced.sourceServerId } : {}),
               remoteSessionId: replaced.remoteSessionId,
               workspacePath: replaced.workspacePath,
               workspaceIdentity: replaced.workspaceIdentity,
             } as const;
             const nextScope = {
               kind: "remote",
+              ...(descriptor.sourceServerId ? { sourceServerId: descriptor.sourceServerId } : {}),
               remoteSessionId: descriptor.remoteSessionId,
               workspacePath: replaced.workspacePath,
               workspaceIdentity: replaced.workspaceIdentity,
@@ -2106,10 +2452,24 @@ parentPort.on("message", async (e: Electron.MessageEvent) => {
         logWindowHostTopology("remote-connected");
       })
       .catch((error) => {
+        const failure = normalizeRemoteConnectionError(error);
+        // 安装/升级等待是 typed 终态：Renderer 依赖 reasonCode + profileId 进入确认流程，
+        // 不能把 Source Server 需要安装误报成普通连接失败。
         parentPort.postMessage({
           type: HostResponseTypes.RemoteWorkspaceConnectFailed,
           requestId: msg.requestId,
-          error: error instanceof Error ? error.message : String(error),
+          error: sanitizeRemoteConnectionLog(failure.message) || "Remote connection failed",
+          reasonCode: failure.code,
+          ...(error instanceof SourceServerUpgradeRequiredError ||
+          error instanceof SourceServerInstallRequiredError
+            ? { profileId: error.profileId }
+            : {}),
+          ...((error instanceof SourceServerUpgradeRequiredError ||
+            error instanceof SourceServerInstallRequiredError) &&
+          msg.target.kind === "wsl"
+            ? { resolvedWslTarget: msg.target }
+            : {}),
+          ...(failure.retryable === undefined ? {} : { retryable: failure.retryable }),
         });
       });
     return;
@@ -2153,6 +2513,7 @@ parentPort.on("message", async (e: Electron.MessageEvent) => {
     if (previous?.workspacePath && previous.workspaceIdentity) {
       windowHostControllerRuntime.removeSource({
         kind: "remote",
+        ...(previous.sourceServerId ? { sourceServerId: previous.sourceServerId } : {}),
         remoteSessionId: msg.remoteSessionId,
         workspacePath: previous.workspacePath,
         workspaceIdentity: previous.workspaceIdentity,
@@ -2173,6 +2534,9 @@ parentPort.on("message", async (e: Electron.MessageEvent) => {
         if (disposedSession?.workspacePath && disposedSession.workspaceIdentity) {
           windowHostControllerRuntime.removeSource({
             kind: "remote",
+            ...(disposedSession.sourceServerId
+              ? { sourceServerId: disposedSession.sourceServerId }
+              : {}),
             remoteSessionId: msg.remoteSessionId,
             workspacePath: disposedSession.workspacePath,
             workspaceIdentity: disposedSession.workspaceIdentity,
@@ -2315,6 +2679,167 @@ parentPort.on("message", async (e: Electron.MessageEvent) => {
                 runtimeSurface: "desktop_local_host",
               },
               serviceAuthorityMode: "desktop-local",
+              // 远端项目入口的物理连接器：直连 server 走窗口 registry；隧道 Source 复用
+              // 同一 runtime 的 Management（Profile/凭据由 Directory 持有）。
+              remoteProjectConnection: {
+                connectHost: async (host) => {
+                  if (host.target?.kind === "server") {
+                    const connected = await windowRemoteConnectionRegistry.connectSource({
+                      target: host.target,
+                      remoteAssets: msg.remoteAssets ?? {},
+                      membershipIntent: "retain",
+                    });
+                    return remoteProjectHostIdForTarget(host.target, connected.sourceServerId);
+                  }
+                  if (!sourceServerHostRuntime) {
+                    throw new Error(
+                      "remote-project.connector-unavailable: Source Server runtime is not initialized",
+                    );
+                  }
+                  const management = sourceServerHostRuntime.management;
+                  const snapshot = await management.getSnapshot();
+                  const profiles = snapshot.profiles.filter(
+                    (profile) =>
+                      profile.lifecycleState !== "retired" &&
+                      remoteProjectHostIdForProfile(profile) === host.id,
+                  );
+                  const preferred = new Set(
+                    snapshot.servers.map((server) => server.preferredProfileId),
+                  );
+                  const profile =
+                    profiles.find((item) => preferred.has(item.profileId)) ?? profiles[0];
+                  if (!profile) throw new Error("remote-project.profile-not-found");
+                  const connected = await management.connectProfile(profile.profileId, {
+                    retainedOnly: true,
+                  });
+                  const resolved = connected.profiles.find(
+                    (item) => item.profileId === profile.profileId,
+                  );
+                  if (
+                    !resolved ||
+                    !connected.states.some(
+                      (state) => state.profileId === resolved.profileId && state.state === "online",
+                    )
+                  ) {
+                    throw new Error("project.host-offline");
+                  }
+                  return remoteProjectHostIdForProfile(resolved);
+                },
+                readConnectionStates: async () => {
+                  const result = new Map<
+                    string,
+                    Pick<
+                      RemoteProjectHost,
+                      | "connectionStatus"
+                      | "lastConnectionError"
+                      | "lastConnectionStatus"
+                      | "upgradeTarget"
+                    >
+                  >();
+                  for (const state of windowRemoteConnectionRegistry.listConnections()) {
+                    if (state.target.kind !== "server") continue;
+                    result.set(remoteProjectHostIdForTarget(state.target, state.sourceServerId), {
+                      connectionStatus:
+                        state.state === "online"
+                          ? "online"
+                          : state.state === "connecting"
+                            ? "connecting"
+                            : "offline",
+                    });
+                  }
+                  if (!sourceServerHostRuntime) return result;
+                  const snapshot = await sourceServerHostRuntime.directory.snapshot();
+                  for (const state of sourceServerHostRuntime.manager.listStates()) {
+                    const profile = snapshot.profiles.find(
+                      (item) => item.profileId === state.profileId,
+                    );
+                    if (!profile) continue;
+                    const id = remoteProjectHostIdForProfile(profile);
+                    const value =
+                      state.state === "online"
+                        ? "online"
+                        : ["bootstrapping", "retrying", "updating"].includes(state.state)
+                          ? "connecting"
+                          : "offline";
+                    if (
+                      result.get(id)?.connectionStatus !== "online" &&
+                      (result.get(id)?.connectionStatus !== "connecting" || value === "online")
+                    ) {
+                      result.set(id, {
+                        connectionStatus: value,
+                        lastConnectionError: state.error,
+                        lastConnectionStatus: state.state,
+                        upgradeTarget: state.upgradeTarget,
+                      });
+                    }
+                  }
+                  return result;
+                },
+              },
+              // 项目服务的跨 host 路由只复用窗口内既有 remote attachment；没有在线 workspace 时显式失败。
+              resolveProjectHostService: async (hostId) => {
+                // Source 隧道连接没有独立 logical session 时，仍按设备身份路由到既有物理连接；
+                // 项目读写前先解析 canonical workspace key，避免 UI 用 stable identity 直接查库。
+                const sourceState = sourceServerHostRuntime?.manager.listStates().find((state) => {
+                  if (!state.sourceServerId) return false;
+                  return (
+                    remoteHostIdFromWorkspaceIdentity(
+                      buildServerRemoteWorkspaceIdentity({
+                        serverId: state.sourceServerId,
+                        workspacePath: "/",
+                      }),
+                    ) === hostId
+                  );
+                });
+                const sourceConnection = sourceState?.sourceServerId
+                  ? sourceServerHostRuntime?.manager.getOnlineConnection(sourceState.sourceServerId)
+                  : undefined;
+                if (sourceConnection?.services.projectService) {
+                  const projectService = sourceConnection.services.projectService;
+                  const workspaceService = sourceConnection.services.sourceServerWorkspaceService;
+                  const sourceServerId = sourceState!.sourceServerId!;
+                  if (!workspaceService) throw new Error("project.host-offline");
+                  return bindRemoteProjectIdentities(projectService, async (workspacePath) => {
+                    await workspaceService.resolveWorkspace({ workspacePath });
+                    return buildServerRemoteWorkspaceIdentity({
+                      serverId: sourceServerId,
+                      workspacePath,
+                    });
+                  });
+                }
+                const session = windowRemoteConnectionRegistry
+                  .listSessions()
+                  .find(
+                    (item) =>
+                      item.workspaceIdentity &&
+                      remoteHostIdFromWorkspaceIdentity(item.workspaceIdentity) === hostId,
+                  );
+                if (!session?.workspacePath || !session.workspaceIdentity)
+                  throw new Error("project.host-offline");
+                const scoped = windowRemoteConnectionRegistry.resolveScopedServices({
+                  kind: "remote",
+                  remoteSessionId: session.remoteSessionId,
+                  workspacePath: session.workspacePath,
+                  workspaceIdentity: session.workspaceIdentity,
+                });
+                const service = scoped.getOptional(IProjectService);
+                if (!service) throw new Error("project.host-offline");
+                const sourceServerId = parseRemoteWorkspaceIdentity(
+                  session.workspaceIdentity,
+                )?.sourceServerId;
+                const workspaceService = scoped.getOptional(ISourceServerWorkspaceService);
+                if (!sourceServerId || !workspaceService) return service;
+                return bindRemoteProjectIdentities(service, async (workspacePath) => {
+                  await workspaceService.resolveWorkspace({
+                    workspacePath,
+                    legacyRouteHint: session.workspaceIdentity,
+                  });
+                  return buildServerRemoteWorkspaceIdentity({
+                    serverId: sourceServerId,
+                    workspacePath,
+                  });
+                });
+              },
               ycodeAgentSpawnFallbackCwd: msg.agentSpawnFallbackCwd,
               ycodeBuiltinProviderConfigFilePath: msg.ycodeBuiltinProviderConfigFilePath,
               processLifecycleReporter: runtimeProcessLifecycleReporter,
@@ -2359,6 +2884,37 @@ parentPort.on("message", async (e: Electron.MessageEvent) => {
           );
           services.register(IYCodeTaskService, reportingYCodeTaskService);
         }
+        // Source Server 运行时仅存在于 desktop local host；远端 Host 不注册管理频道。
+        // Application data 目录由 Main 的 remoteAssets 下发，Directory 本身只写 AppSettings。
+        const sourceServerArtifactPolicy: SourceServerArtifactPolicy =
+          msg.remoteAssets?.sourceServerArtifactPolicy ?? "release-versioned";
+        sourceServerHostRuntime = createSourceServerHostRuntime({
+          settingService: services.get(ISettingService),
+          credentialService: services.get(ICredentialService),
+          logger,
+          ...(msg.remoteAssets ? { remoteAssets: msg.remoteAssets } : {}),
+          artifactPolicy: sourceServerArtifactPolicy,
+          fetch: hostApiNetworkTransport.fetch,
+          isDisposed: () => hasDisposedHostResources,
+          // 成员 admission 与项目广播都注入既有 RemoteProjectService；Manager 不直接持库。
+          admitConnection: createRemoteProjectConnectionAdmission(
+            services.get(IRemoteProjectService),
+          ),
+          onProjectChange: notifyProjectChange,
+          onBeforeSourceServerRemoved: async (sourceServerId) => {
+            // 删除 Source 时同时移除其设备级远端项目 host；不调用远端删除。
+            const hostId = remoteHostIdFromWorkspaceIdentity(
+              buildServerRemoteWorkspaceIdentity({ serverId: sourceServerId, workspacePath: "/" }),
+            );
+            if (!hostId) throw new Error("remote-project.invalid-host-identity");
+            await services.get(IRemoteProjectService).removeHost(hostId);
+          },
+          onConnectionLog: (event) => {
+            const progress = event.progress == null ? "" : ` ${Math.round(event.progress * 100)}%`;
+            logger.info(`[source-server:${event.phase}] ${event.message}${progress}`);
+          },
+        });
+        services.register(ISourceServerManagementService, sourceServerHostRuntime.management);
         hasDisposedHostResources = false;
         disposeHostResourcesInFlight = null;
         const agentWarmupTargets =
@@ -2392,42 +2948,32 @@ parentPort.on("message", async (e: Electron.MessageEvent) => {
           });
         logWindowHostTopology("base-attachment-ready");
         logger.info("local services ready, all channels registered");
+        // Directory 初始化与启动重连属于远程附加能力：base attachment 已就绪后再后台执行，
+        // 不阻塞首帧。开关关闭或目录初始化失败只记录日志，本地 Host 保持可用。
+        void sourceServerHostRuntime
+          .startStartupReconnect()
+          .then((results) => {
+            const online = results.filter((result) => result.status === "online").length;
+            for (const result of results) {
+              if (result.status === "failed") {
+                logger.warn("Source Server startup reconnect failed", {
+                  profileId: result.profileId,
+                  error: result.error,
+                });
+              }
+            }
+            logger.info(
+              `Source Server startup reconnect finished, online=${online}, failed=${results.length - online}`,
+            );
+          })
+          .catch((error) =>
+            logger.warn(
+              "Source Server directory initialization failed; local services remain available",
+              error,
+            ),
+          );
       },
     });
     await databaseStartup.coordinator.start();
   }
 });
-
-async function setupRemoteConnection(
-  target: RemoteTarget,
-  remoteAssets: RemoteAssetDirs,
-  remoteAssetNetwork: RemoteAssetNetworkPort,
-  remoteRuntimeNetwork: RemoteRuntimeNetworkOptions | undefined,
-  onDidRemoteClose: (exitCode: number) => void,
-  deployLockMode: DeployLockMode = "remote",
-  signal?: AbortSignal,
-): Promise<HostRemoteConnection> {
-  // 延迟加载 remote backend，避免 local 模式下因 ssh2 依赖链进入 asar 后崩溃
-  const { createRemoteBackend, connectRemote, pickRemoteRuntimeEnv } =
-    await import("@ycode/server/remote");
-  const backend = await createRemoteBackend(target);
-  const connection = await connectRemote(backend, {
-    ...remoteAssets,
-    remoteAssetNetwork,
-    remoteRuntimeNetwork,
-    signal,
-    // SSH/Docker 远端 server 由 host process 单独启动，不能依赖桌面 main 的环境继承。
-    // 这里显式透传编译期版本，避免漏导入后生成裸 YCODE_VERSION 引用导致 SSH 初始化直接 ReferenceError。
-    appVersion: YCODE_VERSION,
-    // 远端 ycode-server/agent 是独立进程，不能继承 host 里的测试/生产 endpoint 选择。
-    // 这里只透传 server 侧白名单允许的公开环境变量，避免把 credential/token 带到远端机器。
-    remoteRuntimeEnv: pickRemoteRuntimeEnv(process.env),
-    assetInstallMode: target.kind === "ssh" ? target.assetInstallMode : undefined,
-    // SSH 由窗口级 registry 串行复用，其余 transport 仍保留远端 connector 自身锁。
-    deployLockMode,
-    onDidRemoteClose: ({ code }) => {
-      onDidRemoteClose(code);
-    },
-  });
-  return { ...connection, backend };
-}

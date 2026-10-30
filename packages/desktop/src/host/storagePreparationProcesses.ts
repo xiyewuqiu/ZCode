@@ -40,13 +40,20 @@ export async function prepareHostStorage(
   path: string,
   report: (phase: Phase, migration?: DatabaseMigrationFacts) => void,
   signal: AbortSignal,
+  settings?: Parameters<typeof prepareTasksIndexStorage>[2],
+  hostId?: string,
 ): Promise<void> {
   if (signal.aborted) throw statusError("transport_closed");
   try {
-    await prepareTasksIndexStorage(path, (phase, migration) => {
-      if (signal.aborted) throw statusError("transport_closed");
-      report(phase, migration);
-    });
+    await prepareTasksIndexStorage(
+      path,
+      (phase, migration) => {
+        if (signal.aborted) throw statusError("transport_closed");
+        report(phase, migration);
+      },
+      settings,
+      hostId,
+    );
   } catch (error) {
     const migration = databaseMigrationFactsSchema.safeParse(
       error && typeof error === "object"

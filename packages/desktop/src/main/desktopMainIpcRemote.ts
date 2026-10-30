@@ -2,11 +2,15 @@
 import { app, BrowserWindow, ipcMain, shell } from "electron";
 import {
   formatZodError,
+  normalizeRemoteConnectionError,
   normalizeUnknownError,
   InternalChannels,
   PlatformChannels,
   remoteTargetSchema,
+  type BindRemoteWorkspaceSessionContextResult,
   type RemoteTarget,
+  type WindowHostRemoteWorkspaceDescriptor,
+  type WorkspacePurpose,
 } from "@ycode/shared";
 import { dispatchTaskNotification } from "./desktopNotifications.js";
 import { clearDeepLinkRoutesForWindow, deliverPendingDeepLink } from "./desktopDeepLinkRouter.js";
@@ -49,7 +53,16 @@ export function registerRemoteIpcHandlers(options: {
     win: BrowserWindow,
     target: RemoteTarget,
     requestId?: string,
-    context?: { workspacePath: string; workspaceIdentity?: string },
+    context?: {
+      workspacePath?: string;
+      workspaceIdentity?: string;
+      workspacePurpose?: WorkspacePurpose;
+      confirmSourceServerInstall?: boolean;
+    },
+    lifecycle?: {
+      remoteUsageTelemetryEligible?: boolean;
+      onConnected?: (descriptor: WindowHostRemoteWorkspaceDescriptor) => void;
+    },
   ) => Promise<string>;
   disposeRemoteWorkspaceSession: (
     sessionId: string,
@@ -63,9 +76,13 @@ export function registerRemoteIpcHandlers(options: {
   ) => void;
   bindRemoteWorkspaceSessionContext: (
     sessionId: string,
-    context: { workspacePath: string; workspaceIdentity?: string },
+    context: {
+      workspacePath: string;
+      workspaceIdentity?: string;
+      workspacePurpose?: WorkspacePurpose;
+    },
     expectedWebContentsId?: number,
-  ) => Promise<void>;
+  ) => Promise<BindRemoteWorkspaceSessionContextResult>;
   confirmRendererAttachmentReady: (
     webContentsId: number,
     payload: { sessionId: string; attachmentId: string },
@@ -134,6 +151,8 @@ export function registerRemoteIpcHandlers(options: {
       requestId?: unknown;
       workspacePath?: unknown;
       workspaceIdentity?: unknown;
+      workspacePurpose?: unknown;
+      confirmSourceServerInstall?: unknown;
       connectTrigger?: unknown;
     } =
       rawPayload && typeof rawPayload === "object" && "target" in rawPayload
@@ -142,6 +161,8 @@ export function registerRemoteIpcHandlers(options: {
             requestId?: unknown;
             workspacePath?: unknown;
             workspaceIdentity?: unknown;
+            workspacePurpose?: unknown;
+            confirmSourceServerInstall?: unknown;
             connectTrigger?: unknown;
           })
         : { target: rawPayload, requestId: undefined };
@@ -165,21 +186,51 @@ export function registerRemoteIpcHandlers(options: {
       wrappedPayload.workspaceIdentity.trim().length > 0
         ? wrappedPayload.workspaceIdentity
         : undefined;
+    const workspacePurpose =
+      wrappedPayload.workspacePurpose === "project" ||
+      wrappedPayload.workspacePurpose === "conversation"
+        ? wrappedPayload.workspacePurpose
+        : undefined;
+    const confirmSourceServerInstall =
+      typeof wrappedPayload.confirmSourceServerInstall === "boolean"
+        ? wrappedPayload.confirmSourceServerInstall
+        : undefined;
     try {
       const win = BrowserWindow.fromWebContents(event.sender);
       if (!win) {
         throw new Error("未找到当前窗口，无法创建远程 session");
       }
 
+      let reusedConnectionTarget: RemoteTarget | undefined;
       const sessionId = await options.createRemoteWorkspaceSession(
         win,
         result.data,
         requestId,
-        workspacePath ? { workspacePath, workspaceIdentity } : undefined,
+        workspacePath ||
+          workspaceIdentity ||
+          workspacePurpose ||
+          confirmSourceServerInstall !== undefined
+          ? {
+              ...(workspacePath ? { workspacePath } : {}),
+              ...(workspaceIdentity ? { workspaceIdentity } : {}),
+              ...(workspacePurpose ? { workspacePurpose } : {}),
+              ...(confirmSourceServerInstall !== undefined ? { confirmSourceServerInstall } : {}),
+            }
+          : undefined,
+        {
+          onConnected: (descriptor) => {
+            reusedConnectionTarget = descriptor.reusedConnectionTarget;
+          },
+        },
       );
-      return { success: true, sessionId };
+      return {
+        success: true,
+        sessionId,
+        ...(reusedConnectionTarget ? { reusedConnectionTarget } : {}),
+      };
     } catch (error) {
       const normalizedError = normalizeUnknownError(error);
+      const failure = normalizeRemoteConnectionError(error);
       // 这里之前直接把 Error 对象交给 logger，落盘时会被 JSON.stringify 压成 `{}`。
       // 改成显式展开 message/code/stack，保证远程建连失败时主进程日志里能看到真实上下文。
       options.logger.error("[connect-remote] caught error:", {
@@ -187,7 +238,29 @@ export function registerRemoteIpcHandlers(options: {
         code: normalizedError.code,
         stack: error instanceof Error ? error.stack : undefined,
       });
-      return { success: false, error: normalizedError.message };
+      const installContext = error as {
+        profileId?: unknown;
+        resolvedWslTarget?: unknown;
+      };
+      return {
+        success: false,
+        error: failure.message,
+        ...(failure.code && failure.code !== "remote-connection-unknown"
+          ? { reasonCode: failure.code }
+          : {}),
+        ...(failure.retryable !== undefined ? { retryable: failure.retryable } : {}),
+        ...(typeof installContext.profileId === "string"
+          ? { profileId: installContext.profileId }
+          : {}),
+        ...(installContext.resolvedWslTarget
+          ? {
+              resolvedWslTarget: installContext.resolvedWslTarget as Extract<
+                RemoteTarget,
+                { kind: "wsl" }
+              >,
+            }
+          : {}),
+      };
     }
   });
 
@@ -221,20 +294,26 @@ export function registerRemoteIpcHandlers(options: {
         remoteSessionId?: unknown;
         workspacePath?: unknown;
         workspaceIdentity?: unknown;
+        workspacePurpose?: unknown;
       };
       const remoteSessionId =
         typeof payload.remoteSessionId === "string" ? payload.remoteSessionId.trim() : "";
       const workspacePath = typeof payload.workspacePath === "string" ? payload.workspacePath : "";
       const workspaceIdentity =
         typeof payload.workspaceIdentity === "string" ? payload.workspaceIdentity.trim() : "";
+      const workspacePurpose: WorkspacePurpose | undefined =
+        payload.workspacePurpose === "project" || payload.workspacePurpose === "conversation"
+          ? payload.workspacePurpose
+          : undefined;
       if (!remoteSessionId || !workspacePath.trim()) {
         throw new Error("远程 workspace context 缺少 sessionId 或 workspacePath");
       }
-      await options.bindRemoteWorkspaceSessionContext(
+      return await options.bindRemoteWorkspaceSessionContext(
         remoteSessionId,
         {
           workspacePath,
           ...(workspaceIdentity ? { workspaceIdentity } : {}),
+          ...(workspacePurpose ? { workspacePurpose } : {}),
         },
         event.sender.id,
       );

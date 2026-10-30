@@ -5,6 +5,7 @@ import {
 } from "@ycode/shared";
 /* eslint-disable max-lines -- preload bridge 集中暴露桌面平台 IPC，拆散会让 contextBridge 权限边界更难审计。 */
 import { contextBridge, ipcRenderer, webFrame, webUtils } from "electron";
+import { installPluginSandboxHostBridge } from "./pluginSandbox/hostBridge.js";
 
 /** 从 command-line 参数中解析 --device-id= */
 function parseDeviceIdFromArgs(): string {
@@ -47,6 +48,7 @@ import type {
   TaskNotificationPayload,
   PostUpdateReleaseNotesPayload,
   RemoteSessionClosedEvent,
+  RemoteSessionReconnectedEvent,
   UpdateCheckResultPayload,
   UpdateStatePayload,
   YCodeStdioTapDevState,
@@ -194,6 +196,7 @@ function notifyUpdateStateCallbacks(payload: UpdateStatePayload): void {
 // 进程检索体验优化：renderer 在系统里通常只会显示成通用 helper 名称，
 // 这里在 preload 阶段补上 ycode-* title，便于按窗口角色筛选。
 updateRendererProcessTitle();
+installPluginSandboxHostBridge();
 window.addEventListener("DOMContentLoaded", updateRendererProcessTitle, {
   once: true,
 });
@@ -209,8 +212,10 @@ contextBridge.exposeInMainWorld("ycode", {
     options: RemoteTarget,
     requestId?: string,
     context?: {
-      workspacePath: string;
+      workspacePath?: string;
       workspaceIdentity?: string;
+      connectTrigger?: "new" | "reconnect" | "restore";
+      confirmSourceServerInstall?: boolean;
     },
   ) =>
     ipcRenderer.invoke(PlatformChannels.ConnectRemote, {
@@ -226,8 +231,8 @@ contextBridge.exposeInMainWorld("ycode", {
     remoteSessionId: string;
     workspacePath: string;
     workspaceIdentity?: string;
-  }): Promise<void> =>
-    ipcRenderer.invoke(PlatformChannels.BindRemoteWorkspaceSessionContext, context),
+    workspacePurpose?: "project" | "conversation";
+  }) => ipcRenderer.invoke(PlatformChannels.BindRemoteWorkspaceSessionContext, context),
   disposeRemoteSession: (sessionId: string): Promise<void> =>
     ipcRenderer.invoke(PlatformChannels.DisposeRemoteSession, sessionId),
   isDockerAvailable: (): Promise<boolean> => ipcRenderer.invoke(PlatformChannels.IsDockerAvailable),
@@ -280,6 +285,13 @@ contextBridge.exposeInMainWorld("ycode", {
       callback(payload as RemoteSessionClosedEvent);
     ipcRenderer.on(PlatformChannels.RemoteSessionClosed, handler);
     return () => ipcRenderer.removeListener(PlatformChannels.RemoteSessionClosed, handler);
+  },
+  /** 订阅 Source 自动重连后的 logical session 换代事件。 */
+  onRemoteSessionReconnected: (callback: (event: RemoteSessionReconnectedEvent) => void) => {
+    const handler = (_event: unknown, payload: unknown) =>
+      callback(payload as RemoteSessionReconnectedEvent);
+    ipcRenderer.on(PlatformChannels.RemoteSessionReconnected, handler);
+    return () => ipcRenderer.removeListener(PlatformChannels.RemoteSessionReconnected, handler);
   },
   /** 检查目录是否已在其他窗口打开 */
   activateOrSetWorkspace: (path: string): Promise<{ activated: boolean }> =>

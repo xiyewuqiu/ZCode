@@ -304,7 +304,8 @@ function handleServicePortMessage(event: MessageEvent): void {
 
 function initializeBusinessRoot(port: MessagePort): void {
   appInitialized = true;
-  const services = connectViaMessagePort(port);
+  // 项目优先目录由 desktop local host 提供管理面；remote session port 不开启该频道。
+  const services = connectViaMessagePort(port, { sourceServerManagementService: true });
   baseServicesForRemoteSessions = services;
   registerBaseWorkspaceServices(services);
   flushPendingRemoteWorkspaceServicePorts();

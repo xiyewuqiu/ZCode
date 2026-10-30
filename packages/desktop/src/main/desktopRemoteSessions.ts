@@ -4,19 +4,31 @@ import { BrowserWindow, MessageChannelMain } from "electron";
 import type { MessagePortMain, UtilityProcess as ElectronUtilityProcess } from "electron";
 import {
   buildRemoteWorkspaceIdentity,
+  parseRemoteWorkspaceIdentity,
   HostMessageTypes,
   HostResponseTypes,
   hostResponseMessageSchema,
   InternalChannels,
   PlatformChannels,
+  type BindRemoteWorkspaceSessionContextResult,
   type RemoteTarget,
   type WindowHostRemoteWorkspaceDescriptor,
+  type WorkspacePurpose,
 } from "@ycode/shared";
 import type { RemoteAssetDirs } from "./desktopRuntimeEnv.js";
 
 interface RemoteWorkspaceSessionContext {
+  workspacePath?: string;
+  workspaceIdentity?: string;
+  workspacePurpose?: WorkspacePurpose;
+  /** 用户已确认安装 Source Server；Host 缺省沿用窗口连接自动安装语义。 */
+  confirmSourceServerInstall?: boolean;
+}
+
+interface RemoteWorkspaceBindContext {
   workspacePath: string;
   workspaceIdentity?: string;
+  workspacePurpose?: WorkspacePurpose;
 }
 
 interface PendingConnect {
@@ -24,6 +36,8 @@ interface PendingConnect {
   webContentsId: number;
   win: BrowserWindow;
   remoteUsageTelemetryEligible: boolean;
+  /** Host 握手后回传实际复用目标；Main 只转发，不持久化凭据。 */
+  onConnected?: (descriptor: WindowHostRemoteWorkspaceDescriptor) => void;
   resolve: (sessionId: string) => void;
   reject: (error: Error) => void;
 }
@@ -300,6 +314,7 @@ export function createRemoteWorkspaceSessionManager(options: {
       return;
     }
     pendingByRequestKey.delete(key);
+    pending.onConnected?.(descriptor);
     const route: RemoteAttachmentRoute = {
       webContentsId,
       descriptor,
@@ -327,6 +342,62 @@ export function createRemoteWorkspaceSessionManager(options: {
           remoteSessionId: descriptor.remoteSessionId,
         });
         pending.reject(error instanceof Error ? error : new Error(String(error)));
+      });
+  }
+
+  function handleReconnected(
+    child: ElectronUtilityProcess,
+    webContentsId: number,
+    previousRemoteSessionId: string,
+    descriptor: WindowHostRemoteWorkspaceDescriptor,
+  ): void {
+    const route = routesBySessionId.get(previousRemoteSessionId);
+    const win = BrowserWindow.getAllWindows().find(
+      (candidate) => candidate.webContents.id === webContentsId,
+    );
+    if (!route || route.webContentsId !== webContentsId || !win) {
+      // Main 已丢失旧 route：新 session 无法被任何窗口接管，必须立即让 Host 释放。
+      child.postMessage({
+        type: HostMessageTypes.DisposeRemoteWorkspaceSession,
+        requestId: randomUUID(),
+        remoteSessionId: descriptor.remoteSessionId,
+      });
+      return;
+    }
+    routesBySessionId.delete(previousRemoteSessionId);
+    route.descriptor = descriptor;
+    route.attachmentState = "attachable";
+    routesBySessionId.set(descriptor.remoteSessionId, route);
+    // Source transport 已恢复：同一 tab 的 remoteSessionId 换代，但 workspace scope 不变。
+    // 先按新 session 重新 attach renderer port，再通知 Renderer 切换 session id。
+    void attachRendererPort(win, route, "source-server-reconnected")
+      .then(() => {
+        if (!descriptor.workspacePath || !descriptor.workspaceIdentity) return;
+        win.webContents.send(PlatformChannels.RemoteSessionReconnected, {
+          previousSessionId: previousRemoteSessionId,
+          sessionId: descriptor.remoteSessionId,
+          workspacePath: descriptor.workspacePath,
+          workspaceIdentity: descriptor.workspaceIdentity,
+        });
+        emitConnectionLog(win, {
+          sessionId: descriptor.remoteSessionId,
+          level: "info",
+          message: `远程 ${descriptor.target.kind} workspace 已自动重连`,
+        });
+      })
+      .catch((error: unknown) => {
+        // Main 不再持有该 route 的可用端口：让 Host 释放新 session，Renderer 保持离线状态。
+        routesBySessionId.delete(descriptor.remoteSessionId);
+        child.postMessage({
+          type: HostMessageTypes.DisposeRemoteWorkspaceSession,
+          requestId: randomUUID(),
+          remoteSessionId: descriptor.remoteSessionId,
+        });
+        options.logger.warn("[window-host-remote] renderer reattach after reconnect failed", {
+          previousRemoteSessionId,
+          remoteSessionId: descriptor.remoteSessionId,
+          error: error instanceof Error ? error.message : String(error),
+        });
       });
   }
 
@@ -369,6 +440,12 @@ export function createRemoteWorkspaceSessionManager(options: {
       exitCode?: number | null;
       signal?: string | null;
       error?: string;
+      recoverable?: boolean;
+      recoveryAttempt?: number;
+      recoveryLimit?: number;
+      recoveryBudgetExhausted?: boolean;
+      reasonCode?: string;
+      retryable?: boolean;
     },
   ): void {
     const route = routesBySessionId.get(event.remoteSessionId);
@@ -403,6 +480,15 @@ export function createRemoteWorkspaceSessionManager(options: {
         reason: "host-exit" as const,
         exitCode: event.exitCode ?? null,
         signal: event.signal ?? null,
+        ...(event.error ? { error: event.error } : {}),
+        ...(event.recoverable !== undefined ? { recoverable: event.recoverable } : {}),
+        ...(event.recoveryAttempt ? { recoveryAttempt: event.recoveryAttempt } : {}),
+        ...(event.recoveryLimit ? { recoveryLimit: event.recoveryLimit } : {}),
+        ...(event.recoveryBudgetExhausted !== undefined
+          ? { recoveryBudgetExhausted: event.recoveryBudgetExhausted }
+          : {}),
+        ...(event.reasonCode ? { reasonCode: event.reasonCode } : {}),
+        ...(event.retryable !== undefined ? { retryable: event.retryable } : {}),
       });
       emitConnectionLog(win, {
         sessionId: event.remoteSessionId,
@@ -447,6 +533,15 @@ export function createRemoteWorkspaceSessionManager(options: {
         pending.reject(new Error(parsed.data.error));
         return;
       }
+      if (parsed.data.type === HostResponseTypes.RemoteWorkspaceReconnected) {
+        handleReconnected(
+          child,
+          webContentsId,
+          parsed.data.previousRemoteSessionId,
+          parsed.data.descriptor,
+        );
+        return;
+      }
       if (parsed.data.type === HostResponseTypes.RemoteWorkspaceClosed) {
         handleClosed(webContentsId, parsed.data);
       }
@@ -477,7 +572,10 @@ export function createRemoteWorkspaceSessionManager(options: {
     target: RemoteTarget,
     requestId?: string,
     context?: RemoteWorkspaceSessionContext,
-    lifecycle?: { remoteUsageTelemetryEligible?: boolean },
+    lifecycle?: {
+      remoteUsageTelemetryEligible?: boolean;
+      onConnected?: (descriptor: WindowHostRemoteWorkspaceDescriptor) => void;
+    },
   ): Promise<string> {
     if (appShutdownStarted) {
       throw new Error("应用正在退出，无法创建远程工作区连接");
@@ -511,6 +609,7 @@ export function createRemoteWorkspaceSessionManager(options: {
         webContentsId: win.webContents.id,
         win,
         remoteUsageTelemetryEligible: lifecycle?.remoteUsageTelemetryEligible ?? false,
+        ...(lifecycle?.onConnected ? { onConnected: lifecycle.onConnected } : {}),
         resolve,
         reject,
       });
@@ -521,21 +620,30 @@ export function createRemoteWorkspaceSessionManager(options: {
         remoteAssets: options.resolveRemoteAssetDirs(),
         ...(context?.workspacePath ? { workspacePath: context.workspacePath } : {}),
         ...(context?.workspaceIdentity ? { workspaceIdentity: context.workspaceIdentity } : {}),
+        ...(context?.workspacePurpose ? { workspacePurpose: context.workspacePurpose } : {}),
+        ...(context?.confirmSourceServerInstall !== undefined
+          ? { confirmSourceServerInstall: context.confirmSourceServerInstall }
+          : {}),
       });
     });
   }
 
   async function bindRemoteWorkspaceSessionContext(
     sessionId: string,
-    context: RemoteWorkspaceSessionContext,
+    context: RemoteWorkspaceBindContext,
     expectedWebContentsId?: number,
-  ): Promise<void> {
+  ): Promise<BindRemoteWorkspaceSessionContextResult> {
     const route = routesBySessionId.get(sessionId);
     if (!route) {
       if (expectedWebContentsId != null) {
         throw new Error(`未找到远程 workspace session，sessionId=${sessionId}`);
       }
-      return;
+      return {
+        remoteSessionId: sessionId,
+        workspacePath: context.workspacePath,
+        workspaceIdentity: context.workspaceIdentity ?? context.workspacePath,
+        ...(context.workspacePurpose ? { workspacePurpose: context.workspacePurpose } : {}),
+      };
     }
     if (expectedWebContentsId != null && route.webContentsId !== expectedWebContentsId) {
       throw new Error(`远程 workspace session 不属于当前窗口，sessionId=${sessionId}`);
@@ -543,6 +651,7 @@ export function createRemoteWorkspaceSessionManager(options: {
     const workspaceIdentity =
       context.workspaceIdentity?.trim() ||
       buildRemoteWorkspaceIdentity(context.workspacePath, route.descriptor.target);
+    const previousWorkspaceIdentity = route.descriptor.workspaceIdentity;
     const child = options.windowHostProcessMap.get(route.webContentsId);
     const win = BrowserWindow.getAllWindows().find(
       (candidate) => candidate.webContents.id === route.webContentsId,
@@ -565,6 +674,18 @@ export function createRemoteWorkspaceSessionManager(options: {
     };
     // 同一 parentPort 上 Bind 先于 Attach 处理；IPC 只在 renderer 注册新 port 后返回。
     await attachRendererPort(win, route, "workspace-context-bound");
+    const parsedIdentity = parseRemoteWorkspaceIdentity(workspaceIdentity);
+    return {
+      remoteSessionId: sessionId,
+      workspacePath: context.workspacePath,
+      workspaceIdentity,
+      ...(context.workspacePurpose ? { workspacePurpose: context.workspacePurpose } : {}),
+      ...(parsedIdentity?.sourceServerId ? { sourceServerId: parsedIdentity.sourceServerId } : {}),
+      // 同一 tab 的稳定 identity 换代提示；没有旧身份或未变化时不下发。
+      ...(previousWorkspaceIdentity && previousWorkspaceIdentity !== workspaceIdentity
+        ? { previousWorkspaceIdentity }
+        : {}),
+    };
   }
 
   function reattachRemoteWorkspaceSessionsForWindow(win: BrowserWindow, reason: string): void {

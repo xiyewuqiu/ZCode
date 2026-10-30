@@ -174,6 +174,10 @@ import { registerPlatformIpcHandlers } from "./desktopMainIpcPlatform.js";
 
 import { registerRemoteIpcHandlers } from "./desktopMainIpcRemote.js";
 import { applyDesktopChromiumNetworkPolicies } from "./desktopNetworkPolicy.js";
+import {
+  PLUGIN_SANDBOX_PRIVILEGED_SCHEME,
+  installPluginSandboxHost,
+} from "./pluginSandbox/index.js";
 
 import {
   findWindowsProcessesReferencingResourceMarkers,
@@ -184,7 +188,7 @@ import {
   WINDOWS_UPDATE_LOCK_RELEASE_GRACE_MS,
 } from "./windowsInstallResourceLocks.js";
 
-registerLocalMediaPreviewScheme(protocol);
+registerLocalMediaPreviewScheme(protocol, [PLUGIN_SANDBOX_PRIVILEGED_SCHEME]);
 const localMediaPreviewPathRegistry = createLocalMediaPreviewPathRegistry();
 
 // e2e 由 Chromedriver 管理远程调试端口；如果这里继续固定到 9229，
@@ -1564,6 +1568,9 @@ function createWindowInstance(startupBootstrap: StartupWindowBootstrap = {}) {
     // 已恢复 workspace 建立后台索引。始终注入 canonical fallback，才能覆盖非 active 历史目录已删除的情况。
     agentSpawnFallbackCwd: getConversationWorkspaceDir(),
     deviceMid,
+    // Source Server release 缓存 / 开发态 mock-cdn 与远程 workspace 使用同一份 Main 解析结果。
+    resolveRemoteAssetDirs: () =>
+      resolveRemoteAssetDirs({ locale: currentApplicationLocale }, hostProcessLocalEnv),
     runtimeProcessEnvPatchPromise: runtimeProcessEnvPreparation.patchPromise,
     runtimeProcessEnvFallbackPatch: runtimeProcessEnvPreparation.fallbackPatch,
     initialDesktopZoomLevel: currentDesktopZoomLevel,
@@ -1644,6 +1651,10 @@ app.on("second-instance", (_event, argv, _workingDirectory, additionalData) => {
 
 app.whenReady().then(async () => {
   markMainLaunchAppReady();
+  installPluginSandboxHost({
+    preloadPath: join(import.meta.dirname, "../preload/pluginSandbox.cjs"),
+    logger,
+  });
   installLocalMediaPreviewProtocol(session.defaultSession.protocol, {
     isPathAuthorized: localMediaPreviewPathRegistry.isAuthorized,
   });

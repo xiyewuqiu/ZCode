@@ -1,0 +1,19 @@
+{
+  "extends": "../tsconfig.main.json",
+  "compilerOptions": {
+    "composite": false,
+    "incremental": false,
+    "noEmit": true,
+    "rootDir": ".."
+  },
+  "include": [
+    "./pluginSandboxCspProtocol.test.ts",
+    "./pluginSandboxPermissions.test.ts",
+    "./pluginSandboxGuestPolicy.test.ts"
+  ],
+  "references": [
+    { "path": "../../shared" },
+    { "path": "../../services" },
+    { "path": "../../server" }
+  ]
+}

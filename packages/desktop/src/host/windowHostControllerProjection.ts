@@ -1,6 +1,11 @@
 /* eslint-disable max-lines -- 投影状态、V4 帧与离线替换属于同一个一致性边界。 */
 import { isDeepStrictEqual } from "node:util";
-import type { SessionStoragePreview, SessionPurgeResult } from "@ycode/shared";
+import type {
+  SessionDatabaseOptimizeResult,
+  SessionDatabaseStats,
+  SessionStoragePreview,
+  SessionPurgeResult,
+} from "@ycode/shared";
 import type { YCodeTaskMeta } from "@ycode/shared";
 import type { YCodeArchivedTaskDeletionResult } from "@ycode/services";
 import {
@@ -25,7 +30,9 @@ export type WindowHostControllerSourceScope =
     }
   | {
       kind: "remote";
-      remoteSessionId: string;
+      sourceServerId?: string;
+      serverDisplayName?: string;
+      remoteSessionId?: string;
       workspacePath: string;
       workspaceIdentity: string;
     };
@@ -53,6 +60,8 @@ export interface WindowHostControllerSessionOverlay {
 export type WindowHostControllerMutation =
   | { kind: "storage-preview" }
   | { kind: "storage-purge"; expectedRevision: string; confirmPermanent: true }
+  | { kind: "database-stats" }
+  | { kind: "database-optimize"; confirm: true }
   | { kind: "pin"; pinned: boolean }
   | { kind: "archive"; archived: boolean }
   | { kind: "delete" }
@@ -68,7 +77,9 @@ export type WindowHostControllerMutationResult =
   | boolean
   | YCodeArchivedTaskDeletionResult
   | SessionStoragePreview
-  | SessionPurgeResult;
+  | SessionPurgeResult
+  | SessionDatabaseStats
+  | SessionDatabaseOptimizeResult;
 
 interface ControllerSource {
   scope: WindowHostControllerSourceScope;
@@ -97,13 +108,18 @@ interface TopicState {
 function sourceKey(scope: WindowHostControllerSourceScope): string {
   const workspaceKey = scope.workspaceIdentity?.trim() || scope.workspacePath;
   return scope.kind === "remote"
-    ? `remote\0${scope.remoteSessionId}\0${workspaceKey}`
+    ? `remote\0${scope.sourceServerId ?? scope.remoteSessionId}\0${workspaceKey}`
     : `local\0${workspaceKey}`;
 }
 
 function addressFor(scope: WindowHostControllerSourceScope, taskId: string): WindowHostTaskAddress {
   return {
-    ...(scope.kind === "remote" ? { remoteSessionId: scope.remoteSessionId } : {}),
+    ...(scope.kind === "remote"
+      ? {
+          ...(scope.sourceServerId ? { sourceServerId: scope.sourceServerId } : {}),
+          remoteSessionId: scope.remoteSessionId,
+        }
+      : {}),
     workspacePath: scope.workspacePath,
     ...(scope.workspaceIdentity ? { workspaceIdentity: scope.workspaceIdentity } : {}),
     taskId,
@@ -111,7 +127,7 @@ function addressFor(scope: WindowHostControllerSourceScope, taskId: string): Win
 }
 
 function taskKey(address: WindowHostTaskAddress): string {
-  return `${address.remoteSessionId ?? "local"}\0${address.workspaceIdentity?.trim() || address.workspacePath}\0${address.taskId}`;
+  return `${address.sourceServerId ?? address.remoteSessionId ?? "local"}\0${address.workspaceIdentity?.trim() || address.workspacePath}\0${address.taskId}`;
 }
 
 function defaultLiveStatus(meta: YCodeTaskMeta): WindowHostControllerTaskRow["liveStatus"] {
@@ -191,7 +207,15 @@ function validateMembershipScope(
 
 function workspaceFact(source: ControllerSource): WindowHostControllerWorkspaceFact {
   return {
-    ...(source.scope.kind === "remote" ? { remoteSessionId: source.scope.remoteSessionId } : {}),
+    ...(source.scope.kind === "remote"
+      ? {
+          ...(source.scope.sourceServerId ? { sourceServerId: source.scope.sourceServerId } : {}),
+          ...(source.scope.serverDisplayName
+            ? { serverDisplayName: source.scope.serverDisplayName }
+            : {}),
+          remoteSessionId: source.scope.remoteSessionId,
+        }
+      : {}),
     workspacePath: source.scope.workspacePath,
     ...(source.scope.workspaceIdentity
       ? { workspaceIdentity: source.scope.workspaceIdentity }
@@ -221,8 +245,8 @@ export function createWindowHostControllerProjection(options: { createId: () => 
 
   function allWorkspaceFacts(): WindowHostControllerWorkspaceFact[] {
     return Array.from(sources.values(), workspaceFact).sort((left, right) => {
-      const leftKey = `${left.remoteSessionId ?? "local"}\0${left.workspaceIdentity ?? left.workspacePath}`;
-      const rightKey = `${right.remoteSessionId ?? "local"}\0${right.workspaceIdentity ?? right.workspacePath}`;
+      const leftKey = `${left.sourceServerId ?? left.remoteSessionId ?? "local"}\0${left.workspaceIdentity ?? left.workspacePath}`;
+      const rightKey = `${right.sourceServerId ?? right.remoteSessionId ?? "local"}\0${right.workspaceIdentity ?? right.workspacePath}`;
       return leftKey.localeCompare(rightKey);
     });
   }
@@ -405,7 +429,12 @@ export function createWindowHostControllerProjection(options: { createId: () => 
               {
                 op: "workspace.removed" as const,
                 ...(replacedSource.scope.kind === "remote"
-                  ? { remoteSessionId: replacedSource.scope.remoteSessionId }
+                  ? {
+                      ...(replacedSource.scope.sourceServerId
+                        ? { sourceServerId: replacedSource.scope.sourceServerId }
+                        : {}),
+                      remoteSessionId: replacedSource.scope.remoteSessionId,
+                    }
                   : {}),
                 workspacePath: replacedSource.scope.workspacePath,
                 ...(replacedSource.scope.workspaceIdentity
@@ -469,7 +498,12 @@ export function createWindowHostControllerProjection(options: { createId: () => 
       publishWorkspaceDeltas([
         {
           op: "workspace.removed",
-          ...(scope.kind === "remote" ? { remoteSessionId: scope.remoteSessionId } : {}),
+          ...(scope.kind === "remote"
+            ? {
+                ...(scope.sourceServerId ? { sourceServerId: scope.sourceServerId } : {}),
+                remoteSessionId: scope.remoteSessionId,
+              }
+            : {}),
           workspacePath: scope.workspacePath,
           ...(scope.workspaceIdentity ? { workspaceIdentity: scope.workspaceIdentity } : {}),
         },
@@ -478,7 +512,9 @@ export function createWindowHostControllerProjection(options: { createId: () => 
 
     getTasks: allRows,
     getGroupedTaskFacts(): WindowHostControllerTaskRow[] {
-      return allRows().filter((task) => !task.address.remoteSessionId);
+      return allRows().filter(
+        (task) => !task.address.remoteSessionId && !task.address.sourceServerId,
+      );
     },
 
     async mutate(
@@ -493,9 +529,11 @@ export function createWindowHostControllerProjection(options: { createId: () => 
           return false;
         }
         if (candidate.scope.kind === "remote") {
-          return candidate.scope.remoteSessionId === address.remoteSessionId;
+          return address.sourceServerId
+            ? candidate.scope.sourceServerId === address.sourceServerId
+            : candidate.scope.remoteSessionId === address.remoteSessionId;
         }
-        return address.remoteSessionId == null;
+        return address.remoteSessionId == null && address.sourceServerId == null;
       });
       if (
         !source ||
@@ -503,6 +541,8 @@ export function createWindowHostControllerProjection(options: { createId: () => 
           mutation.kind !== "delete-archived-batch" &&
           mutation.kind !== "storage-preview" &&
           mutation.kind !== "storage-purge" &&
+          mutation.kind !== "database-stats" &&
+          mutation.kind !== "database-optimize" &&
           !source.rows.has(taskKey(address)))
       ) {
         throw new Error("没有与任务地址匹配的 source");

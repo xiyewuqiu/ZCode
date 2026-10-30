@@ -234,6 +234,30 @@ const PACKAGING_PRUNE_PATTERNS = [
   "!**/SECURITY*",
 ];
 
+// Renderer 是 Vite 全量打包进 out/renderer 的；这些包只被 @ycode/ui 的浏览器代码引用，
+// main/host/out/host 均不 import（已按源码核查）。electron-builder 仍会因 workspace 依赖
+// 把整棵生产依赖树塞进 app.asar，重复携带 renderer 依赖是当前 262MB asar 的最大来源。
+// 新增 main/host 运行时依赖时，必须加入 REQUIRED_ASAR_RUNTIME_MODULES 或本列表之外，
+// 不能把这里的裁剪当成“所有 node_modules 都可删”。
+const RENDERER_ONLY_ASAR_EXCLUDES = [
+  "!node_modules/lucide-react/**",
+  "!node_modules/es-toolkit/**",
+  "!node_modules/highlight.js/**",
+  "!node_modules/@shikijs/**",
+  "!node_modules/shiki/**",
+  "!node_modules/echarts/**",
+  "!node_modules/zrender/**",
+  "!node_modules/recharts/**",
+  "!node_modules/victory-vendor/**",
+  "!node_modules/@lexical/**",
+  "!node_modules/@radix-ui/**",
+  "!node_modules/media-chrome/**",
+  "!node_modules/framer-motion/**",
+  "!node_modules/motion-dom/**",
+  "!node_modules/msw/**",
+  "!node_modules/@mswjs/**",
+];
+
 function buildDesktopArtifactName(platformName, extension = "${ext}") {
   // 测试环境产物必须和正式安装包文件名区分，避免上传、下载或人工验收时混用。
   return `\${productName}-\${version}-${platformName}-\${arch}${desktopArtifactEnvSuffix}.${extension}`;
@@ -494,6 +518,7 @@ export default {
     "!node_modules/@ycode/**",
     "!node_modules/react/**",
     "!node_modules/react-dom/**",
+    ...RENDERER_ONLY_ASAR_EXCLUDES,
   ],
   asarUnpack: [
     // node-pty 的 target prebuild 还包含 spawn-helper / winpty-agent.exe 等辅助可执行文件，

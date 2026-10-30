@@ -175,6 +175,7 @@ export default defineConfig([
       "preload/embeddedBrowserJavaScriptDialog": "src/preload/embeddedBrowserJavaScriptDialog.ts",
       "preload/browserVideoRecorder": "src/preload/browserVideoRecorder.ts",
       "preload/index": "src/preload/index.ts",
+      "preload/pluginSandbox": "src/preload/pluginSandbox/index.ts",
       "preload/resourceManager": "src/preload/resourceManager.ts",
       "preload/cuaPermissionPanel": "src/preload/cuaPermissionPanel.ts",
     },

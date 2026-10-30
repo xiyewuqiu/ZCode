@@ -2,6 +2,7 @@
 import {
   ServiceCollection,
   IFileService,
+  IMediaPreviewService,
   IGitService,
   IGitCheckpointService,
   ISystemService,
@@ -9,6 +10,7 @@ import {
   ISettingService,
   ICredentialService,
   IBroadcastService,
+  IOnboardingRecordService,
   IYCodeTaskService,
   IYCodeAgentService,
   IYCodeSessionService,
@@ -29,7 +31,15 @@ import {
   IHooksService,
   IMemoryService,
   ISettingsSyncService,
+  IFeedbackService,
   IPromptAttachmentTransferService,
+  IProjectService,
+  IRemoteProjectService,
+  ISourceServerWorkspaceService,
+  IWindowProjectService,
+  IWindowRemoteProjectService,
+  IWindowProjectChangesService,
+  createWindowProjectChangesService,
   type IServiceAccessor,
 } from "@ycode/services";
 
@@ -50,6 +60,7 @@ import {
 
 import {
   DEFAULT_YCODE_MODEL_CONTEXT_BUDGET_STRATEGY,
+  type RemoteTarget,
   type YCodeSessionRuntimePreferencesResult,
 } from "@ycode/shared";
 import { assertLegacyRemoteWorkspaceRpcContract } from "./legacyRemoteWorkspaceRpcContract.js";
@@ -156,6 +167,8 @@ export function createRemoteWorkspaceServiceCollection(params: {
               askUserQuestionAutoResolutionEnabled:
                 settings.askUserQuestionAutoResolutionEnabled !== false,
               nativeSearchEnhancementsEnabled: settings.nativeSearchEnhancementsEnabled !== false,
+              // 远端会话也读取桌面 Host 的权威设置；模式仅在远端 create/resume 时读取一次。
+              toolSearchMode: settings.toolSearchMode ?? "off",
               memoryEnabled: settings.memoryEnabled === true,
               modelContextBudgetStrategy,
               // remote workspace 与本地 Host 保持同一 scope 边界，首次执行不得再次等待 client config。
@@ -245,6 +258,127 @@ export function createRemoteWorkspaceServiceCollection(params: {
       createSettingsSyncService({ settingService: localSettingService }),
     )
     .register(IPromptAttachmentTransferService, params.promptAttachmentTransferService);
+  // 项目 RPC 属于目标 Environment。旧远端可能没有这两个 channel；注册代理后调用会显式
+  // reject unknown channel，而不是回落到本机项目库。
+  if (params.connectionServices.projectService) {
+    services.register(IProjectService, params.connectionServices.projectService);
+  }
+  if (params.connectionServices.remoteProjectService) {
+    services.register(IRemoteProjectService, params.connectionServices.remoteProjectService);
+  }
+  // Source 身份解析属于目标 Environment；窗口 Host 打开项目前必须经该连接解析 canonical key。
+  if (params.connectionServices.sourceServerWorkspaceService) {
+    services.register(
+      ISourceServerWorkspaceService,
+      params.connectionServices.sourceServerWorkspaceService,
+    );
+  }
+  // 手机 replayable 使用窗口 owner 的项目目录，而不是把 Source 内部 project channel 当窗口目录。
+  // 旧 Host 未提供 sourceServices 时保持不发布，避免部分频道或回落到远端服务。
+  if (params.sourceServices) {
+    const windowProject = params.sourceServices.getOptional(IProjectService);
+    const windowRemoteProject = params.sourceServices.getOptional(IRemoteProjectService);
+    const windowBroadcast = params.sourceServices.getOptional(IBroadcastService);
+    if (windowProject && windowRemoteProject && windowBroadcast) {
+      services
+        .register(IWindowProjectService, windowProject)
+        .register(IWindowRemoteProjectService, windowRemoteProject)
+        .register(IWindowProjectChangesService, createWindowProjectChangesService(windowBroadcast));
+    }
+  }
   registerHostApiNetworkTransportForDispose(services, hostApiNetworkTransport);
+  return services;
+}
+
+/**
+ * 受管 Source 的远端集合：目标是一个已经运行的完整 ycode-server，
+ * Host 只做 RPC 转接，不替 server 决定 workspace/runtime/provider 归属。
+ * `ssh` / `wsl` / `docker` 隧道 Source 与直连 `kind=server` 共用同一集合：
+ * 设置、凭据、广播、Provider 视图全部来自远端，不注入本机配置，
+ * 避免把桌面设置伪装成远端事实。
+ */
+export function createServerRemoteWorkspaceServiceCollection(params: {
+  clientConfigService: IClientConfigService;
+  connectionServices: IServiceAccessor;
+  virtualProjects?: boolean;
+  targetKind: RemoteTarget["kind"];
+  /**
+   * 本机 Local Host 服务；手机 `web-remote-replayable` 进入 SSH/WSL/Docker 任务时
+   * 仍用窗口 owner 的项目目录（`IWindow*ProjectService`），不能把远端项目 channel
+   * 当成窗口目录。桌面 `desktop-continuous` 仍以目标 Environment 为准。
+   */
+  sourceServices?: ServiceCollection;
+}): ServiceCollection {
+  assertLegacyRemoteWorkspaceRpcContract(params.connectionServices);
+  const services = new ServiceCollection()
+    .register(IFileService, params.connectionServices.fileService)
+    .register(IGitService, params.connectionServices.gitService)
+    .register(IGitCheckpointService, params.connectionServices.gitCheckpointService)
+    .register(ISystemService, params.connectionServices.systemService)
+    .register(ITerminalService, params.connectionServices.terminalService)
+    .register(ISettingService, params.connectionServices.settingService)
+    .register(ICredentialService, params.connectionServices.credentialService)
+    .register(IBroadcastService, params.connectionServices.broadcastService)
+    .register(IYCodeTaskService, params.connectionServices.ycodeTaskService)
+    .register(IYCodeAgentService, params.connectionServices.ycodeAgentService)
+    .register(IYCodeSessionService, params.connectionServices.ycodeSessionService)
+    .register(IFileWatcherService, params.connectionServices.fileWatcherService)
+    .register(IProviderSettingsService, params.connectionServices.providerSettingsService)
+    .register(IModelSelectionService, params.connectionServices.modelSelectionService)
+    .register(IUsageStatsService, params.connectionServices.usageStatsService)
+    .register(IClientConfigService, params.clientConfigService)
+    .register(IClientScenesService, params.connectionServices.clientScenesService)
+    .register(ISkillsService, params.connectionServices.skillsService)
+    .register(ISkillSyncService, params.connectionServices.skillSyncService)
+    .register(IMcpSyncService, params.connectionServices.mcpSyncService)
+    .register(IPluginSyncService, params.connectionServices.pluginSyncService)
+    .register(IPluginsService, params.connectionServices.pluginsService)
+    .register(IPluginManagementService, params.connectionServices.pluginManagementService)
+    .register(ISubagentsService, params.connectionServices.subagentsService)
+    .register(ICommandsService, params.connectionServices.commandsService)
+    .register(IHooksService, params.connectionServices.hooksService)
+    .register(IMemoryService, params.connectionServices.memoryService)
+    .register(ISettingsSyncService, params.connectionServices.settingsSyncService)
+    .register(IFeedbackService, params.connectionServices.feedbackService)
+    .register(
+      IPromptAttachmentTransferService,
+      params.connectionServices.promptAttachmentTransferService,
+    );
+  if (params.connectionServices.mediaPreviewService) {
+    services.register(IMediaPreviewService, params.connectionServices.mediaPreviewService);
+  }
+  if (params.connectionServices.onboardingRecordService) {
+    services.register(IOnboardingRecordService, params.connectionServices.onboardingRecordService);
+  }
+  if (params.connectionServices.sourceServerWorkspaceService) {
+    services.register(
+      ISourceServerWorkspaceService,
+      params.connectionServices.sourceServerWorkspaceService,
+    );
+  }
+  // 项目 RPC 属于目标 Environment；旧 Server 未声明 virtualProjects 时注册代理会 unknown channel，
+  // 因此只在握手能力显式支持时转发。
+  if (params.virtualProjects) {
+    if (!params.connectionServices.projectService) {
+      throw new Error("Remote virtual-project RPC registration incomplete");
+    }
+    services.register(IProjectService, params.connectionServices.projectService);
+    if (params.connectionServices.remoteProjectService) {
+      services.register(IRemoteProjectService, params.connectionServices.remoteProjectService);
+    }
+  }
+  // 手机 replayable 使用窗口 owner 的项目目录，而不是把 Source 内部 project channel 当窗口目录。
+  // 旧 Host 未提供 sourceServices 时保持不发布，避免部分频道或回落到远端服务。
+  if (params.sourceServices) {
+    const windowProject = params.sourceServices.getOptional(IProjectService);
+    const windowRemoteProject = params.sourceServices.getOptional(IRemoteProjectService);
+    const windowBroadcast = params.sourceServices.getOptional(IBroadcastService);
+    if (windowProject && windowRemoteProject && windowBroadcast) {
+      services
+        .register(IWindowProjectService, windowProject)
+        .register(IWindowRemoteProjectService, windowRemoteProject)
+        .register(IWindowProjectChangesService, createWindowProjectChangesService(windowBroadcast));
+    }
+  }
   return services;
 }

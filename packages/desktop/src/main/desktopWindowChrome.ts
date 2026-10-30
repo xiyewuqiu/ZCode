@@ -34,6 +34,7 @@ import {
   resolveDesktopWindowSize,
   type DesktopWindowSize,
 } from "./desktopWindowSize.js";
+import { getPluginSandboxHost, isPluginSandboxSrc, parsePluginSandboxUrl } from "./pluginSandbox/index.js";
 // CDP-on-guest pivot：内置浏览器改回 `<webview>` 渲染，宿主 BrowserWindow 需重新开 webviewTag，
 // 并在 will/did-attach-webview 里做 guest 硬化 + URL 白名单 + popup 路由回内部 tab。
 const ALLOWED_EMBEDDED_BROWSER_PROTOCOLS = new Set([
@@ -404,6 +405,9 @@ export function createBrowserWindow(options: {
       nodeIntegration: false,
       // CDP-on-guest pivot：内置浏览器改回 `<webview>` 渲染，宿主需开 webviewTag。
       webviewTag: true,
+      // 聊天/代码输入不依赖 Chromium 拼写检查；关闭后不再为每个 renderer 加载
+      // 字典与后台检查器，是主窗口最稳定的一块常驻内存节省。
+      spellcheck: false,
       // 永久 backgroundThrottling=false 会唤醒整窗 renderer、所有 webview guest
       // 和 GPU。窗口保持默认节流；截图期只临时唤醒 owner renderer 与当前目标 guest。
       zoomFactor: initialDesktopZoomFactor,
@@ -455,6 +459,26 @@ export function createBrowserWindow(options: {
   );
 
   win.webContents.on("will-attach-webview", (event, webPreferences, params) => {
+    // 插件 UI 沙箱：只接受 main 已登记且 owner 匹配的 ycode-sandbox:// 文档；
+    // 未安装 host（或登记已过期）时直接拒绝，不让未硬化的 webview 挂上。
+    if (isPluginSandboxSrc(params.src)) {
+      const sandboxHost = getPluginSandboxHost();
+      if (!sandboxHost) {
+        options.logger.warn("[plugin-sandbox] host unavailable; blocking webview");
+        event.preventDefault();
+        return;
+      }
+      const decision = sandboxHost.configureGuest({
+        webPreferences,
+        params,
+        ownerWebContentsId: win.webContents.id,
+      });
+      if (!decision.ok) {
+        options.logger.warn(`[plugin-sandbox] rejected webview: ${decision.reason}`);
+        event.preventDefault();
+      }
+      return;
+    }
     // CDP 在原生 Dialog 已创建后再替换 UI，macOS 仍可能显示已经排队的
     // Chromium NSAlert。固定 preload 在每个 frame 调用原生 API 前拦截，且隔离世界只
     // 暴露 alert/confirm 同步桥；网页主世界仍没有 Node 或任意 IPC 能力。
@@ -488,6 +512,15 @@ export function createBrowserWindow(options: {
   });
 
   win.webContents.on("did-attach-webview", (_event, guestWebContents) => {
+    const sandboxTarget = parsePluginSandboxUrl(guestWebContents.getURL());
+    if (sandboxTarget) {
+      getPluginSandboxHost()?.attachGuest({
+        guest: guestWebContents,
+        hostWebContents: win.webContents,
+        sandboxId: sandboxTarget.sandboxId,
+      });
+      return;
+    }
     attachEmbeddedBrowserWindowOpenHandler({
       guestWebContents,
       hostWebContents: win.webContents,

@@ -1,6 +1,7 @@
 import { DesktopCommandIds, buildLocalMediaPreviewUrl, type IPlatformService } from "@ycode/shared";
 
 import { desktopBrowserPlatformBridge } from "./desktopBrowserPlatformBridge.js";
+import { desktopPluginSandboxPlatform } from "./desktopPluginSandboxPlatform.js";
 
 export function createDesktopPlatform(options: {
   isLocalDevelopmentRuntime: boolean;
@@ -15,14 +16,21 @@ export function createDesktopPlatform(options: {
     createTempTextAttachment: (payload) => window.ycode.createTempTextAttachment(payload),
     onRemoteConnectionLog: (handler) => window.ycode.onRemoteConnectionLog(handler),
     onRemoteSessionClosed: (handler) => window.ycode.onRemoteSessionClosed(handler),
+    onRemoteSessionReconnected: (handler) =>
+      window.ycode.onRemoteSessionReconnected?.(handler) ?? (() => {}),
     activateOrSetWorkspace: (path) =>
       window.ycode.activateOrSetWorkspace?.(path) ?? Promise.resolve({ activated: false }),
     connectRemote: (remoteOptions, requestId, context) =>
       window.ycode.connectRemote(remoteOptions, requestId, context),
     cancelPendingRemoteConnection: (requestId) =>
       window.ycode.cancelPendingRemoteConnection?.(requestId) ?? Promise.resolve(),
-    bindRemoteWorkspaceSessionContext: (context) =>
-      window.ycode.bindRemoteWorkspaceSessionContext?.(context) ?? Promise.resolve(),
+    bindRemoteWorkspaceSessionContext: async (context) =>
+      (await window.ycode.bindRemoteWorkspaceSessionContext?.(context)) ?? {
+        remoteSessionId: context.remoteSessionId,
+        workspacePath: context.workspacePath,
+        workspaceIdentity: context.workspaceIdentity ?? context.workspacePath,
+        ...(context.workspacePurpose ? { workspacePurpose: context.workspacePurpose } : {}),
+      },
     disposeRemoteSession: (sessionId) => window.ycode.disposeRemoteSession(sessionId),
     isDockerAvailable: () => window.ycode.isDockerAvailable(),
     listWSLDistros: () => window.ycode.listWSLDistros(),
@@ -69,6 +77,7 @@ export function createDesktopPlatform(options: {
     browserViewScreenshotSurfaceReady: (payload) =>
       window.ycode.browserViewScreenshotSurfaceReady?.(payload),
     ...desktopBrowserPlatformBridge,
+    ...desktopPluginSandboxPlatform,
     onNewTask: (handler) => window.ycode.onNewTask(handler),
     onOpenWorkspace: (handler) => {
       // 开发态或升级后的旧窗口可能仍运行未暴露 onOpenWorkspace 的 preload，

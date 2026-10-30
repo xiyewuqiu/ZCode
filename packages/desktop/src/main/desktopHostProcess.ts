@@ -44,6 +44,7 @@ import {
   buildHostProcessEnv,
   hostModulePath,
   resolveBundledGlmBinaryPath,
+  type RemoteAssetDirs,
 } from "./desktopRuntimeEnv.js";
 import { createFeedbackLogArchiveFromExportLogs } from "./exportLogs.js";
 import { buildHostE2ECoverageEnv } from "./e2eCoverage.js";
@@ -72,6 +73,8 @@ export interface HostInitMessage {
     workspaceIdentity?: string;
   }>;
   agentSpawnFallbackCwd?: string;
+  /** Main 解析后的 remote assets 目录；Source Server release 缓存/开发 mock-cdn 使用。 */
+  remoteAssets?: RemoteAssetDirs;
   /** Main 解析后的 YCode Built-in Provider Config 路径；Host/Services 不感知 Electron 安装布局。 */
   ycodeBuiltinProviderConfigFilePath: string;
   /** Main 提前异步采集并过滤的本机 runtime 环境；只允许传给 InitLocal。 */

@@ -51,6 +51,8 @@ export function createWindow(options: {
   agentWarmupTargets?: readonly StartupWorkspaceWarmupTarget[];
   agentSpawnFallbackCwd: string;
   deviceMid: string;
+  /** Main 已解析的 remote assets 目录；InitLocal 用它初始化 Source Server release 缓存。 */
+  resolveRemoteAssetDirs?: () => import("./desktopRuntimeEnv.js").RemoteAssetDirs;
   initialDesktopZoomLevel?: number;
   initialWindowSize?: DesktopWindowSize;
   currentApplicationLocale?: () => Locale;
@@ -142,6 +144,9 @@ export function createWindow(options: {
           workspaceIdentity: primaryWarmupTarget?.workspaceIdentity,
           ...(options.agentWarmupTargets && options.agentWarmupTargets.length > 0
             ? { agentWarmupTargets: [...options.agentWarmupTargets] }
+            : {}),
+          ...(options.resolveRemoteAssetDirs
+            ? { remoteAssets: options.resolveRemoteAssetDirs() }
             : {}),
           runtimeProcessEnvPatch,
           // fallback 随 local Host 常驻，覆盖非 active 历史目录被删除后失效 cwd 反复 spawn 的场景。

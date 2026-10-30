@@ -1,7 +1,12 @@
 /* eslint-disable max-lines -- Controller source 聚合、路由、订阅与生命周期属于同一个 Host 边界。 */
 import { Emitter } from "@ycode/rpc";
 import type { YCodeTaskMeta } from "@ycode/shared";
-import { sessionStoragePreviewSchema, sessionPurgeResultSchema } from "@ycode/shared";
+import {
+  sessionDatabaseOptimizeResultSchema,
+  sessionDatabaseStatsSchema,
+  sessionStoragePreviewSchema,
+  sessionPurgeResultSchema,
+} from "@ycode/shared";
 import type {
   ControllerSubscribeParams,
   WindowHostControllerTaskRow,
@@ -254,6 +259,10 @@ export function createWindowHostControllerRuntime(options: {
               confirmPermanent: mutation.confirmPermanent,
             });
       }
+      case "database-stats":
+        return service.getTaskDatabaseStats(base);
+      case "database-optimize":
+        return service.optimizeTaskDatabase({ ...base, confirm: mutation.confirm });
       case "pin":
         await service.setTaskPinned({ ...base, pinned: mutation.pinned });
         break;
@@ -627,6 +636,17 @@ export function createWindowHostControllerRuntime(options: {
             options.onSourceError?.(resolved.scope, "refresh", error),
           );
         return result;
+      },
+      async getTaskDatabaseStats({ address }) {
+        return sessionDatabaseStatsSchema.parse(
+          await projection.mutate(address, { kind: "database-stats" }),
+        );
+      },
+      async optimizeTaskDatabase({ address, confirm }) {
+        // 整理只改 SQLite 物理布局，不改变任务 membership；不做 source 刷新。
+        return sessionDatabaseOptimizeResultSchema.parse(
+          await projection.mutate(address, { kind: "database-optimize", confirm }),
+        );
       },
       async deleteArchivedTasks({ address, taskIds }) {
         if (taskIds.length === 0) {
